@@ -4,13 +4,14 @@ import os
 from threading import Thread
 from random import randint
 import socket
+import parameters
 import json
 
 
 
-ECART=0.005
-MONTANT_ACHAT=30
-MONTANT_VENTE=27
+ECART = parameters.ECART
+MONTANT_ACHAT = parameters.MONTANT_ACHAT
+MONTANT_VENTE = parameters.MONTANT_VENTE
 
 def main():
 
@@ -417,31 +418,31 @@ class basics():
 
     def lecture_achat(self,achat): 
         try:
-            fichier_achat=open("achat.txt",'r')
+            fichier_achat=open("LOG/achat.txt",'r')
             achat_tmp= json.load(fichier_achat)
             fichier_achat.close()
         except:
             pass
         achat=achat_tmp
-        print("achat.txt : \n"+str(achat))
+        print("LOG/achat.txt : \n"+str(achat))
         return achat
 
 
     def lecture_vente(self,vente): 
         try:
-            fichier_vente=open("vente.txt",'r')
+            fichier_vente=open("LOG/vente.txt",'r')
             vente_tmp= json.load(fichier_vente)
             fichier_vente.close()
         except:
             pass
         vente=vente_tmp
-        print("vente.txt : \n"+str(vente))
+        print("LOG/vente.txt : \n"+str(vente))
         return vente
 
 
     def ecriture_achat_vente(self,achat,vente):
-        fichier_achat=open("achat.txt",'w')
-        fichier_vente=open("vente.txt",'w')
+        fichier_achat=open("LOG/achat.txt",'w')
+        fichier_vente=open("LOG/vente.txt",'w')
         json.dump(achat,fichier_achat)
         json.dump(vente,fichier_vente)
         fichier_achat.close()
