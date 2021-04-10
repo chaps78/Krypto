@@ -12,6 +12,7 @@ import json
 ECART = parameters.ECART
 MONTANT_ACHAT = parameters.MONTANT_ACHAT
 MONTANT_VENTE = parameters.MONTANT_VENTE
+PSEUDO_FIBO = 5
 
 def main():
 
@@ -36,6 +37,14 @@ class eval(Thread):
 
         achat = basic.lecture_achat(achat) 
         vente = basic.lecture_vente(vente) 
+
+
+        #Recuperation des niveaux de vente et d achat
+        dico_niv = basic.lecture_niveaux()
+        count_vente = dico_niv["vente"]
+        count_achat = dico_niv["achat"]
+        delta_achat_niveau=0
+        delta_vente_niveau=0
 
 
         try:
@@ -70,10 +79,6 @@ class eval(Thread):
         haut = float(min(vente.keys()))
         print("BAS  : "+ str(bas))
         print("HAUT : "+ str(haut))
-        count_vente=0
-        count_achat=0
-        delta_achat_niveau=0
-        delta_vente_niveau=0
 
         time.sleep(self.TIME_SLEEP)
         delta_achat_desh=0
@@ -140,7 +145,7 @@ class eval(Thread):
                     count_achat +=1
                     count_vente=0
                     haut=round(bas+2*self.ecart,3)
-                    delta_achat_niveau=5
+                    delta_achat_niveau=PSEUDO_FIBO
                     delta_vente_niveau=0
                     achat={}
                     vente={}
@@ -151,7 +156,7 @@ class eval(Thread):
                     count_achat +=1
                     count_vente=0
                     haut=round(bas+2*self.ecart,3)
-                    delta_achat_niveau=10
+                    delta_achat_niveau=PSEUDO_FIBO*2
                     delta_vente_niveau=0
                     achat={}
                     vente={}
@@ -162,7 +167,7 @@ class eval(Thread):
                     count_achat +=1
                     count_vente=0
                     haut=round(bas+3*self.ecart,3)
-                    delta_achat_niveau=15
+                    delta_achat_niveau=PSEUDO_FIBO*3
                     delta_vente_niveau=0
                     achat={}
                     vente={}
@@ -173,7 +178,7 @@ class eval(Thread):
                     count_achat +=1
                     count_vente=0
                     haut=round(bas+3*self.ecart,3)
-                    delta_achat_niveau=20
+                    delta_achat_niveau=PSEUDO_FIBO*4
                     delta_vente_niveau=0
                     achat={}
                     vente={}
@@ -184,7 +189,7 @@ class eval(Thread):
                     count_achat +=1
                     count_vente=0
                     haut=round(bas+4*self.ecart,3)
-                    delta_achat_niveau=25
+                    delta_achat_niveau=PSEUDO_FIBO*5
                     achat={}
                     vente={}
                     basic.flush_zero(kraken)
@@ -203,7 +208,9 @@ class eval(Thread):
 
                 print("ACHAT "+str(bas)+" /// "+str(haut) + " b : "+str(prix)+"  //echelon  "+str(self.ecart))
 
-
+                #Enregistrement du niveau achat_vente pour revenir au meme etat en cas de redemarrage
+                basic.ecriture_niveaux(count_achat , count_vente)
+                #Enregistrement des ordres d achat et vente qui viennent d etre passe
                 basic.ecriture_achat_vente(achat,vente)
 
 #                cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";ACHAT;1;"+str(bas)+";"+str(haut)+";"+str(prix['result']['XXRPZEUR']['b'][0]) + "' >> "+str(self.ecart)+".csv"
@@ -221,7 +228,7 @@ class eval(Thread):
                     count_achat=0
                     count_vente+=1
                     delta_achat_niveau=0
-                    delta_vente_niveau=5
+                    delta_vente_niveau=PSEUDO_FIBO
                     achat={}
                     vente={}
                     basic.flush_zero(kraken)
@@ -232,7 +239,7 @@ class eval(Thread):
                     count_achat=0
                     count_vente+=1
                     delta_achat_niveau=0
-                    delta_vente_niveau=10
+                    delta_vente_niveau=PSEUDO_FIBO*2
                     achat={}
                     vente={}
                     basic.flush_zero(kraken)
@@ -243,7 +250,7 @@ class eval(Thread):
                     count_achat=0
                     count_vente+=1
                     delta_achat_niveau=0
-                    delta_vente_niveau=15
+                    delta_vente_niveau=PSEUDO_FIBO*3
                     achat={}
                     vente={}
                     basic.flush_zero(kraken)
@@ -254,7 +261,7 @@ class eval(Thread):
                     count_achat=0
                     count_vente+=1
                     delta_achat_niveau=0
-                    delta_vente_niveau=20
+                    delta_vente_niveau=PSEUDO_FIBO*4
                     achat={}
                     vente={}
                     basic.flush_zero(kraken)
@@ -265,7 +272,7 @@ class eval(Thread):
                     count_achat=0
                     count_vente+=1
                     delta_achat_niveau=0
-                    delta_vente_niveau=25
+                    delta_vente_niveau=PSEUDO_FIBO*5
                     achat={}
                     vente={}
                     basic.flush_zero(kraken)
@@ -286,6 +293,9 @@ class eval(Thread):
                 print("VENTE "+str(bas)+" /// "+str(haut)+" b : "+str(prix)+"  //echelon  "+str(self.ecart) )
 
 
+                #Enregistrement du niveau achat_vente pour revenir au meme etat en cas de redemarrage
+                basic.ecriture_niveaux(count_achat , count_vente)
+                #Enregistrement des ordres d achat et vente qui viennent d etre passe
                 basic.ecriture_achat_vente(achat,vente)
 
 
@@ -447,7 +457,24 @@ class basics():
         json.dump(vente,fichier_vente)
         fichier_achat.close()
         fichier_vente.close()
-    
+   
+# sauvegarde le niveau achat et vente pour revenir au meme point en cas de reboot du script
+    def ecriture_niveaux(self , niv_achat , niv_vente):
+        fichier_niveaux = open("LOG/niveaux.txt",'w')
+        dico_niveaux = {"achat":niv_achat,"vente":niv_vente}
+        json.dump(dico_niveaux , fichier_niveaux)
+        fichier_niveaux.close()
+
+
+#Recuperation du niveau d achat et de vente suite à un redemarrage
+    def lecture_niveaux(self):
+        try:
+            fichier_niveaux = open("LOG/niveaux.txt",'r')
+            dico_niveaux = json.load(fichier_niveaux)
+            fichier_niveaux.close()
+        except:
+            dico_niveaux = {"achat": 0 ,"vente": 0 }
+        return dico_niveaux
 
 
 
