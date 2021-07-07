@@ -12,7 +12,7 @@ import json
 ECART = parameters.ECART
 MONTANT_ACHAT = parameters.MONTANT_ACHAT
 MONTANT_VENTE = parameters.MONTANT_VENTE
-PSEUDO_FIBO = 5
+PSEUDO_FIBO = parameters.PSEUDO_FIBO
 
 def main():
 
@@ -100,7 +100,7 @@ class eval(Thread):
                         flag_achat_desh=10
                 else:
                     #Cas nominal
-                    passage_haut = basic.order_status(kraken,vente[str(haut)])=='closed'
+                    passage_haut = basic.order_status(kraken,vente[str(haut)],count_vente)=='closed'
                     if flag_vente_desh>-1:
                         flag_vente-=1
                 time.sleep(1)
@@ -112,7 +112,7 @@ class eval(Thread):
                         flag_vente_desh=10
                 else:
                     #Cas nominal
-                    passage_bas = basic.order_status(kraken,achat[str(bas)])=='closed'
+                    passage_bas = basic.order_status(kraken,achat[str(bas)],count_achat)=='closed'
                     if flag_achat_desh>-1:
                         flag_achat-=1
             except KeyboardInterrupt:
@@ -346,7 +346,7 @@ class basics():
         os.system(cmd)
         return ID
 
-    def order_status(self,kraken, order_id):
+    def order_status(self,kraken, order_id,niveau):
         result = kraken.query_private('QueryOrders', {'txid': order_id})
         ret = result['result'][order_id]['status']
 
@@ -357,7 +357,12 @@ class basics():
             type_B_S = result['result'][order_id]['descr']['type']
             print("\n")
 #            print(str(result))
-            cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";"+ret+";"+type_B_S+";"+prix+";"+ volume +";"+frais+";"+ order_id +";"+str(result['error'])+"' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
+
+#ECART = parameters.ECART
+#MONTANT_ACHAT = parameters.MONTANT_ACHAT
+#MONTANT_VENTE = parameters.MONTANT_VENTE
+#PSEUDO_FIBO = parameters.PSEUDO_FIBO
+            cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";"+ret+";"+type_B_S+";"+prix+";"+ volume +";"+frais+";"+ order_id +";"+str(result['error'])+";"+MONTANT_ACHAT+";"+PSEUDO_FIBO+";"+niveau+";"+ECART+";"+"' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
             os.system(cmd)
         
         return ret
