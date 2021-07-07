@@ -362,7 +362,7 @@ class basics():
 #MONTANT_ACHAT = parameters.MONTANT_ACHAT
 #MONTANT_VENTE = parameters.MONTANT_VENTE
 #PSEUDO_FIBO = parameters.PSEUDO_FIBO
-            cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";"+ret+";"+type_B_S+";"+prix+";"+ volume +";"+frais+";"+ order_id +";"+str(result['error'])+";"+montant+";"+fibo+";"+niveau+";"+ecart+";"+"' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
+            cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";"+ret+";"+type_B_S+";"+prix+";"+ volume +";"+frais+";"+ order_id +";"+str(result['error'])+";"+str(montant)+";"+str(fibo)+";"+str(niveau)+";"+str(ecart)+";"+"' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
             os.system(cmd)
         
         return ret
