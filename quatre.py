@@ -309,6 +309,14 @@ class basics():
         self.PRIX=0.7
         self.tendance=0
 
+    def get_found(selk,kraken,devise):
+        try:
+            response = kraken.query_private('Balance')
+            retour = response['result'][devise]
+        except:
+            retour = "ça pas marche"
+        return retour
+
     def new_order(self,kraken,pair,type_B_S,ordertype,price,volume):
         try:
             response = kraken.query_private('AddOrder',
@@ -362,7 +370,8 @@ class basics():
 #MONTANT_ACHAT = parameters.MONTANT_ACHAT
 #MONTANT_VENTE = parameters.MONTANT_VENTE
 #PSEUDO_FIBO = parameters.PSEUDO_FIBO
-            cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";"+ret+";"+type_B_S+";"+prix+";"+ volume +";"+frais+";"+ order_id +";"+str(result['error'])+";"+str(montant)+";"+str(fibo)+";"+str(niveau)+";"+str(ecart)+";"+"' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
+            euros = str(self.get_found(kraken,'ZEUR'))
+            cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";"+ret+";"+type_B_S+";"+prix+";"+ volume +";"+frais+";"+ order_id +";"+str(result['error'])+";"+str(montant)+";"+str(fibo)+";"+str(niveau)+";"+str(ecart)+";"+ euros +";"+"' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
             os.system(cmd)
         
         return ret
