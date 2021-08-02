@@ -371,7 +371,8 @@ class basics():
 #MONTANT_VENTE = parameters.MONTANT_VENTE
 #PSEUDO_FIBO = parameters.PSEUDO_FIBO
             euros = str(self.get_found(kraken,'ZEUR'))
-            cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";"+ret+";"+type_B_S+";"+prix+";"+ volume +";"+frais+";"+ order_id +";"+str(result['error'])+";"+str(montant)+";"+str(fibo)+";"+str(niveau)+";"+str(ecart)+";"+ euros +";"+"' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
+            xrp = str(self.get_found(kraken,'XXRP'))
+            cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";"+ret+";"+type_B_S+";"+prix+";"+ volume +";"+frais+";"+ order_id +";"+str(result['error'])+";"+str(montant)+";"+str(fibo)+";"+str(niveau)+";"+str(ecart)+";"+ euros +";"+xrp+";"+"' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
             os.system(cmd)
         
         return ret
