@@ -334,6 +334,7 @@ class basics():
                                              #'close[volume]': '100'})
         except:
             print("PROBLEME D'OUVERTURE D'ORDRE")
+            cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";"str(response) + "' >> LOG/ERROR.log"
         try:
             print(str(response['result']))
         except:
