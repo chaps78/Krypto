@@ -309,6 +309,7 @@ class basics():
         self.PRIX=0.7
         self.tendance=0
 
+    # return le nombre de crypto sur le compte
     def get_found(selk,kraken,devise):
         try:
             response = kraken.query_private('Balance')
@@ -340,6 +341,8 @@ class basics():
             print(str(response['result']))
         except:
             print("Erreur (surement une evolution trop brutale) : \n" + str(response['error']))
+            cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + str(response) + "' >> LOG/ERROR.log"
+            os.system(cmd)
         if(response['error']==['EOrder:Insufficient funds']):
             print("pas assez d'argent pour " + type_B_S)
             return -1
