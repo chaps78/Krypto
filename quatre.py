@@ -15,10 +15,14 @@ MONTANT_VENTE = parameters.MONTANT_VENTE
 PSEUDO_FIBO = parameters.PSEUDO_FIBO
 
 def main():
-    cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";START APPLI' >> LOG/ERROR.log"
+    cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";START APPLI' >> LOG/ERROR.error"
     os.system(cmd)
     thread=eval(ECART)
-    thread.run()
+    try:
+        thread.run()
+    except:
+        cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI' >> LOG/ERROR.error"
+        os.system(cmd)
 
 class eval(Thread):
 
@@ -122,9 +126,8 @@ class eval(Thread):
             except:
                 passage_bas=False
                 passage_haut=False
-                print("On relance la machine 2 "+time.strftime(' %H:%M:%S'))
-                print("bas : "+str(bas))
-                print("haut : "+str(haut))
+                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI dans le while' >> LOG/ERROR.error"
+                os.system(cmd)
             if flag_achat_desh>0:
                 delta_achat_desh=5
             else:
@@ -336,13 +339,13 @@ class basics():
                                              #'close[volume]': '100'})
         except:
             print("PROBLEME D'OUVERTURE D'ORDRE")
-            cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + str(response) + "' >> LOG/ERROR.log"
+            cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + str(response) + "ouverture ordre 1' >> LOG/ERROR.error"
             os.system(cmd)
         try:
             print(str(response['result']))
         except:
             print("Erreur (surement une evolution trop brutale) : \n" + str(response['error']))
-            cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + str(response) + "' >> LOG/ERROR.log"
+            cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + str(response) + "ouverture ordre 2' >> LOG/ERROR.error"
             os.system(cmd)
         if(response['error']==['EOrder:Insufficient funds']):
             print("pas assez d'argent pour " + type_B_S)
@@ -356,6 +359,8 @@ class basics():
                 print(str(response['result']['txid'][0]))
         except:
             print("resultat non present dans lordre")
+            print("Erreur (surement une evolution trop brutale) : \n" + str(response['error']))
+            cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + str(response) + "ouverture ordre 3 resultat non present dans lordre' >> LOG/ERROR.error"
         cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";;"+type_B_S+";"+str(price) +";"+ str(volume)+";;"+ str(ID) +";"+str(response['error'])+"' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
         os.system(cmd)
         return ID
