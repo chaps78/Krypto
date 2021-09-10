@@ -15,7 +15,8 @@ MONTANT_VENTE = parameters.MONTANT_VENTE
 PSEUDO_FIBO = parameters.PSEUDO_FIBO
 
 def main():
-
+    cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";START APPLI' >> LOG/ERROR.log"
+    os.system(cmd)
     thread=eval(ECART)
     thread.run()
 
