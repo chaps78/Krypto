@@ -20,8 +20,8 @@ def main():
     thread=eval(ECART)
     try:
         thread.run()
-    except:
-        cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI sorti du thread' >> LOG/ERROR.error"
+    except Exception as inst:
+        cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI sorti du thread ; "+inst.args+"' >> LOG/ERROR.error"
         os.system(cmd)
 
 class eval(Thread):
