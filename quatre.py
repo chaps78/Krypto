@@ -21,7 +21,9 @@ def main():
     try:
         thread.run()
     except Exception as inst:
-        cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI sorti du thread ; "+inst.args+"' >> LOG/ERROR.error"
+        cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI sorti du thread ; ' >> LOG/ERROR.error"
+        os.system(cmd)
+        cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI sorti du thread ; "+str(inst.args)+"' >> LOG/ERROR.error"
         os.system(cmd)
 
 class eval(Thread):
