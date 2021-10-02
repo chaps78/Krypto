@@ -145,8 +145,6 @@ class eval(Thread):
             try:
                 if passage_bas:
                     print(str(time.strftime('%Y#%m#%d;%H:%M:%S')))
-#                    print("delta achat desh : "+str(delta_achat_desh))
-#                    print("delta vente desh : "+str(delta_vente_desh))
                     del achat[str(bas)]
                     if count_achat == 0:
                         bas=round(bas-self.ecart,3)
