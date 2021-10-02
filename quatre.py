@@ -128,7 +128,9 @@ class eval(Thread):
             except:
                 passage_bas=False
                 passage_haut=False
-                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI dans le while vente: "+str(vente)+";"+"achat"+str(achat)+";achat desh"+flag_achat_desh+";vente desh"+str(flag_vente_desh)+";prix"+str(prix)+";bas"+str(bas)+";haut"+str(haut)+"' >> LOG/ERROR.error"
+                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI dans le while vente c'est ici le problème: ' >> LOG/ERROR.error"
+                os.system(cmd)
+                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI dans le while vente: "+str(vente)+";"+"achat"+str(achat)+";achat desh"+str(flag_achat_desh)+";vente desh"+str(flag_vente_desh)+";prix"+str(prix)+";bas"+str(bas)+";haut"+str(haut)+"' >> LOG/ERROR.error"
                 os.system(cmd)
             if flag_achat_desh>0:
                 delta_achat_desh=5
