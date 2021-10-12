@@ -26,7 +26,7 @@ def main():
         cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI sorti du thread ; "+str(inst.args)+"' >> LOG/ERROR.error"
         os.system(cmd)
 
-class eval(Thread):
+class eval():
 
     def __init__(self,ecart):
         Thread.__init__(self)
@@ -321,7 +321,7 @@ class basics():
             print("Erreur (surement une evolution trop brutale) : \n" + str(response['error']))
             cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + str(response) + "ouverture ordre 2' >> LOG/ERROR.error"
             os.system(cmd)
-        if(response['error']!=['']):
+        if(response['error']!=['[]']):
             cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";l erreur d ouverture d ordre est la suivante;" + str(response['error']) + "ouverture ordre 4' >> LOG/ERROR.error"
             os.system(cmd)
         if(response['error']==['EOrder:Insufficient funds']):
@@ -338,6 +338,7 @@ class basics():
             print("resultat non present dans lordre")
             print("Erreur (surement une evolution trop brutale) : \n" + str(response['error']))
             cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + str(response) + "ouverture ordre 3 resultat non present dans lordre' >> LOG/ERROR.error"
+            os.system(cmd)
         cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";;"+type_B_S+";"+str(price) +";"+ str(volume)+";;"+ str(ID) +";"+str(response['error'])+"' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
         os.system(cmd)
         return ID
@@ -367,6 +368,8 @@ class basics():
 
     def order_close(self,kraken, order_id):
         result = kraken.query_private('CancelOrder', {'txid': order_id})
+        cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";cancel;;;;;"+ order_id +";;;;;;;;' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
+        os.system(cmd)
         return result
 
     def latest_price(self,kraken,pair):
