@@ -21,9 +21,9 @@ def main():
     try:
         thread.run()
     except Exception as inst:
-        cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI sorti du thread ; ' >> LOG/ERROR.error"
+        cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI sorti du thread ce message doit apparaitre; ' >> LOG/ERROR.error"
         os.system(cmd)
-        cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI sorti du thread ; "+str(inst.args)+"' >> LOG/ERROR.error"
+        cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI sorti du thread et celui ci aussi; "+str(inst)+"' >> LOG/ERROR.error"
         os.system(cmd)
 
 class eval():
@@ -321,7 +321,7 @@ class basics():
             print("Erreur (surement une evolution trop brutale) : \n" + str(response['error']))
             cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + str(response) + "ouverture ordre 2' >> LOG/ERROR.error"
             os.system(cmd)
-        if(response['error']!=['[]']):
+        if(response['error']!=[]):
             cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";l erreur d ouverture d ordre est la suivante;" + str(response['error']) + "ouverture ordre 4' >> LOG/ERROR.error"
             os.system(cmd)
         if(response['error']==['EOrder:Insufficient funds']):
