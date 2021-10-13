@@ -74,7 +74,7 @@ class eval():
             print("ERROR key")
             verif_OK = False
         if verif_OK == False or (achat == {} and vente == {}):
-            #supprime l'ensemble des ordres et créé 2 nouveaux ordres pour partir sur de nouvelles bases
+            #supprime l'ensemble des ordres et cree 2 nouveaux ordres pour partir sur de nouvelles bases
             basic.flush(ordres_ouverts,kraken,achat,vente,prix)
             achat = basic.lecture_achat(achat) 
             vente = basic.lecture_vente(vente) 
@@ -107,7 +107,7 @@ class eval():
             except:
                 passage_bas=False
                 passage_haut=False
-                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI dans le while vente c'est ici le problème: ' >> LOG/ERROR.error"
+                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI dans le while vente c'est ici le probleme: ' >> LOG/ERROR.error"
                 os.system(cmd)
                 cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI dans le while vente: "+str(vente)+";"+"achat"+str(achat)+";prix"+str(prix)+";bas"+str(bas)+";haut"+str(haut)+"' >> LOG/ERROR.error"
                 os.system(cmd)
