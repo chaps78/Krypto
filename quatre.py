@@ -13,7 +13,7 @@ ECART = parameters.ECART
 MONTANT_ACHAT = parameters.MONTANT_ACHAT
 MONTANT_VENTE = parameters.MONTANT_VENTE
 PSEUDO_FIBO = parameters.PSEUDO_FIBO
-VERSION="1.0"
+VERSION="1.1"
 
 def main():
     cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";START APPLI;VERSION "+VERSION+"' >> LOG/ERROR.error"
