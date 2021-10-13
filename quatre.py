@@ -16,7 +16,7 @@ PSEUDO_FIBO = parameters.PSEUDO_FIBO
 VERSION="1.0"
 
 def main():
-    cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";START APPLI;VERSION "+VERSION=+"' >> LOG/ERROR.error"
+    cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";START APPLI;VERSION "+VERSION+"' >> LOG/ERROR.error"
     os.system(cmd)
     thread=eval(ECART)
     try:
@@ -24,7 +24,7 @@ def main():
     except Exception as inst:
         cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI sorti du thread ce message doit apparaitre; ' >> LOG/ERROR.error"
         os.system(cmd)
-        cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI sorti du thread et celui ci aussi; "+str(inst)+"' >> LOG/ERROR.error"
+        cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI sorti du thread et celui ci aussi; "+str(inst).replace("'","")+"' >> LOG/ERROR.error"
         os.system(cmd)
 
 class eval():
