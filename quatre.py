@@ -13,20 +13,21 @@ ECART = parameters.ECART
 MONTANT_ACHAT = parameters.MONTANT_ACHAT
 MONTANT_VENTE = parameters.MONTANT_VENTE
 PSEUDO_FIBO = parameters.PSEUDO_FIBO
+VERSION="1.1"
 
 def main():
-    cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";START APPLI' >> LOG/ERROR.error"
+    cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";START APPLI;VERSION "+VERSION+"' >> LOG/ERROR.error"
     os.system(cmd)
     thread=eval(ECART)
     try:
         thread.run()
     except Exception as inst:
-        cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI sorti du thread ; ' >> LOG/ERROR.error"
+        cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI sorti du thread ce message doit apparaitre; ' >> LOG/ERROR.error"
         os.system(cmd)
-        cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI sorti du thread ; "+str(inst.args)+"' >> LOG/ERROR.error"
+        cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI sorti du thread et celui ci aussi; "+str(inst).replace("'","")+"' >> LOG/ERROR.error"
         os.system(cmd)
 
-class eval(Thread):
+class eval():
 
     def __init__(self,ecart):
         Thread.__init__(self)
@@ -73,7 +74,7 @@ class eval(Thread):
             print("ERROR key")
             verif_OK = False
         if verif_OK == False or (achat == {} and vente == {}):
-            #supprime l'ensemble des ordres et créé 2 nouveaux ordres pour partir sur de nouvelles bases
+            #supprime l'ensemble des ordres et cree 2 nouveaux ordres pour partir sur de nouvelles bases
             basic.flush(ordres_ouverts,kraken,achat,vente,prix)
             achat = basic.lecture_achat(achat) 
             vente = basic.lecture_vente(vente) 
@@ -88,10 +89,6 @@ class eval(Thread):
         print("HAUT : "+ str(haut))
 
         time.sleep(self.TIME_SLEEP)
-        delta_achat_desh=0
-        delta_vente_desh=0
-        flag_achat_desh=-1
-        flag_vente_desh=-1
 
         while 1:
             passage_haut = False
@@ -99,54 +96,26 @@ class eval(Thread):
             try:
                 prix = basic.latest_price(kraken,"XRPEUR")
                 time.sleep(1)
-                #if permettant de gérer si un achat n'a pas eu suffisement de fonds
-                if(vente[str(haut)] == "-1"):
-                    if prix > haut:
-                        print("Les caisses sont vides pour une vente mais on se lance quand même")
-                        passage_haut = True
-                        flag_achat_desh=10
-                else:
-                    #Cas nominal
-                    passage_haut = basic.order_status(kraken,vente[str(haut)],count_vente,MONTANT_ACHAT,PSEUDO_FIBO,ECART)=='closed'
-                    if flag_vente_desh>-1:
-                        flag_vente-=1
+                #Cas nominal
+                passage_haut = basic.order_status(kraken,vente[str(haut)],count_vente,MONTANT_ACHAT,PSEUDO_FIBO,ECART)=='closed'
+                #Cas nominal
+                passage_bas = basic.order_status(kraken,achat[str(bas)],count_achat,MONTANT_ACHAT,PSEUDO_FIBO,ECART)=='closed'
                 time.sleep(1)
-                #if permettant de gérer si une vente n'a pas eu suffisement de fonds
-                if(achat[str(bas)] == "-1"):
-                    if prix < bas:
-                        print("Les caisses sont vides pour un achat mais on se lance quand même")
-                        passage_bas = True
-                        flag_vente_desh=10
-                else:
-                    #Cas nominal
-                    passage_bas = basic.order_status(kraken,achat[str(bas)],count_achat,MONTANT_ACHAT,PSEUDO_FIBO,ECART)=='closed'
-                    if flag_achat_desh>-1:
-                        flag_achat-=1
             except KeyboardInterrupt:
                 print("ctrl + C")
                 break
             except:
                 passage_bas=False
                 passage_haut=False
-                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI dans le while vente c'est ici le problème: ' >> LOG/ERROR.error"
+                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI dans le while vente c'est ici le probleme: ' >> LOG/ERROR.error"
                 os.system(cmd)
-                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI dans le while vente: "+str(vente)+";"+"achat"+str(achat)+";achat desh"+str(flag_achat_desh)+";vente desh"+str(flag_vente_desh)+";prix"+str(prix)+";bas"+str(bas)+";haut"+str(haut)+"' >> LOG/ERROR.error"
+                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI dans le while vente: "+str(vente)+";"+"achat"+str(achat)+";prix"+str(prix)+";bas"+str(bas)+";haut"+str(haut)+"' >> LOG/ERROR.error"
                 os.system(cmd)
-            if flag_achat_desh>0:
-                delta_achat_desh=5
-            else:
-                delat_achat_desh=0
-            if flag_vente_desh>0:
-                delta_vente_desh=5
-            else:
-                delat_vente_desh=0
 
 #            prix_cour = float(prix['result']['XXRPZEUR']['b'][0])
             try:
                 if passage_bas:
                     print(str(time.strftime('%Y#%m#%d;%H:%M:%S')))
-#                    print("delta achat desh : "+str(delta_achat_desh))
-#                    print("delta vente desh : "+str(delta_vente_desh))
                     del achat[str(bas)]
                     if count_achat == 0:
                         bas=round(bas-self.ecart,3)
@@ -204,12 +173,12 @@ class eval(Thread):
                         print("Niveau 5")
                     ####attention l'achat existe peut etre deja ####################
                     if not str(bas) in achat.keys():
-                        buy = basic.new_order(kraken,"XRPEUR","buy","limit",str(bas),str(MONTANT_ACHAT+delta_achat_niveau + delta_achat_desh))
+                        buy = basic.new_order(kraken,"XRPEUR","buy","limit",str(bas),str(MONTANT_ACHAT+delta_achat_niveau))
                         #print(str(buy))
                         achat[str(bas)]=str(buy)
                     else:
                         print("l'achat est deja dans le dictionnaire")
-                    buy = basic.new_order(kraken,"XRPEUR","sell","limit",str(haut),str(MONTANT_VENTE + delta_vente_desh))
+                    buy = basic.new_order(kraken,"XRPEUR","sell","limit",str(haut),str(MONTANT_VENTE ))
                     #print(str(buy))
                     vente[str(haut)]=str(buy)
                 
@@ -285,12 +254,12 @@ class eval(Thread):
                         vente={}
                         basic.flush_zero(kraken)
                         print("Niveau 5")
-                    buy = basic.new_order(kraken,"XRPEUR","buy","limit",str(bas),str(MONTANT_ACHAT + delta_achat_desh))
+                    buy = basic.new_order(kraken,"XRPEUR","buy","limit",str(bas),str(MONTANT_ACHAT ))
                     #print(str(buy))
                     achat[str(bas)]=str(buy)
                     ######        Attention la vente existe peut etre deja
                     if not str(haut) in vente.keys():
-                        buy = basic.new_order(kraken,"XRPEUR","sell","limit",str(haut),str(MONTANT_VENTE + delta_vente_niveau + delta_vente_desh))
+                        buy = basic.new_order(kraken,"XRPEUR","sell","limit",str(haut),str(MONTANT_VENTE + delta_vente_niveau ))
                         #try:
                             #print(str(buy))
                         #except:
@@ -353,6 +322,9 @@ class basics():
             print("Erreur (surement une evolution trop brutale) : \n" + str(response['error']))
             cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + str(response) + "ouverture ordre 2' >> LOG/ERROR.error"
             os.system(cmd)
+        if(response['error']!=[]):
+            cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";l erreur d ouverture d ordre est la suivante;" + str(response['error']) + "ouverture ordre 4' >> LOG/ERROR.error"
+            os.system(cmd)
         if(response['error']==['EOrder:Insufficient funds']):
             print("pas assez d'argent pour " + type_B_S)
             return -1
@@ -367,6 +339,7 @@ class basics():
             print("resultat non present dans lordre")
             print("Erreur (surement une evolution trop brutale) : \n" + str(response['error']))
             cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + str(response) + "ouverture ordre 3 resultat non present dans lordre' >> LOG/ERROR.error"
+            os.system(cmd)
         cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";;"+type_B_S+";"+str(price) +";"+ str(volume)+";;"+ str(ID) +";"+str(response['error'])+"' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
         os.system(cmd)
         return ID
@@ -396,6 +369,8 @@ class basics():
 
     def order_close(self,kraken, order_id):
         result = kraken.query_private('CancelOrder', {'txid': order_id})
+        cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";cancel;;;;;"+ order_id +";;;;;;;;' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
+        os.system(cmd)
         return result
 
     def latest_price(self,kraken,pair):
