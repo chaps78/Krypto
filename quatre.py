@@ -107,7 +107,7 @@ class eval():
             except:
                 passage_bas=False
                 passage_haut=False
-                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI dans le while vente c'est ici le probleme: ' >> LOG/ERROR.error"
+                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI dans le while vente c est ici le probleme: ' >> LOG/ERROR.error"
                 os.system(cmd)
                 cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI dans le while vente: "+str(vente)+";"+"achat"+str(achat)+";prix"+str(prix)+";bas"+str(bas)+";haut"+str(haut)+"' >> LOG/ERROR.error"
                 os.system(cmd)
@@ -372,7 +372,7 @@ class basics():
 
         #verifie que l'ordre clos a ete execute partiellement et si il a ete partiellement execute, il integre dans les logs le volume execute
         partial_execute = kraken.query_private('QueryOrders', {'txid': order_id})
-        if float(result['result'][order_id]['vol_exec']) == 0:
+        if float(partial_execute['result'][order_id]['vol_exec']) == 0:
             cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";cancel;;;;;"+ order_id +";;;;;;;;' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
             os.system(cmd)
         else:
