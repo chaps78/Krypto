@@ -6,7 +6,7 @@ from random import randint
 import socket
 import parameters
 import json
-
+import telebot
 
 
 ECART = parameters.ECART
@@ -20,8 +20,11 @@ def main():
     cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";START APPLI;VERSION "+VERSION+"' >> LOG/ERROR.error"
     os.system(cmd)
     thread=eval(ECART)
-    cmd='./telegram_bot.sh "RESTART"'
-    os.system(cmd)
+    #cmd='curl https://api.telegram.org/bot'+parameters.TELEGRAM_TOKEN+'/sendMessage -d chat_id=-728193409 -d text=RESTART'
+    #cmd="./telegram_bot.sh RESTART"
+    #os.system(cmd)
+    bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+    bot.send_message(-728193409, 'RESTART V:'+VERSION)
     try:
         thread.run()
     except Exception as inst:
@@ -29,6 +32,7 @@ def main():
         os.system(cmd)
         cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI sorti du thread et celui ci aussi; "+str(inst).replace("'","")+"' >> LOG/ERROR.error"
         os.system(cmd)
+        bot.send_message(-728193409, 'CRASHHHHHHHHHHHH:')
 
 class eval():
 
