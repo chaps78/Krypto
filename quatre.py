@@ -20,6 +20,8 @@ def main():
     cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";START APPLI;VERSION "+VERSION+"' >> LOG/ERROR.error"
     os.system(cmd)
     thread=eval(ECART)
+    cmd='./telegram_bot.sh "RESTART"'
+    os.system(cmd)
     try:
         thread.run()
     except Exception as inst:
