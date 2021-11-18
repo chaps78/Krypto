@@ -6,19 +6,25 @@ from random import randint
 import socket
 import parameters
 import json
-
+import telebot
 
 
 ECART = parameters.ECART
 MONTANT_ACHAT = parameters.MONTANT_ACHAT
 MONTANT_VENTE = parameters.MONTANT_VENTE
 PSEUDO_FIBO = parameters.PSEUDO_FIBO
-VERSION="1.3"
+FIBO=MONTANT_VENTE
+VERSION="1.4"
 
 def main():
     cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";START APPLI;VERSION "+VERSION+"' >> LOG/ERROR.error"
     os.system(cmd)
     thread=eval(ECART)
+    #cmd='curl https://api.telegram.org/bot'+parameters.TELEGRAM_TOKEN+'/sendMessage -d chat_id=-728193409 -d text=RESTART'
+    #cmd="./telegram_bot.sh RESTART"
+    #os.system(cmd)
+    bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+    bot.send_message(-728193409, 'RESTART V:'+VERSION)
     try:
         thread.run()
     except Exception as inst:
@@ -26,6 +32,7 @@ def main():
         os.system(cmd)
         cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI sorti du thread et celui ci aussi; "+str(inst).replace("'","")+"' >> LOG/ERROR.error"
         os.system(cmd)
+        bot.send_message(-728193409, 'CRASHHHHHHHHHHHH:')
 
 class eval():
 
@@ -118,59 +125,59 @@ class eval():
                     print(str(time.strftime('%Y#%m#%d;%H:%M:%S')))
                     del achat[str(bas)]
                     if count_achat == 0:
-                        bas=round(bas-self.ecart,3)
+                        bas=round(bas-self.ecart,4)
                         count_achat +=1
                         count_vente=0
-                        haut=round(bas+2*self.ecart,3)
-                        delta_achat_niveau=PSEUDO_FIBO
+                        haut=round(bas+2*self.ecart,4)
+                        delta_achat_niveau=0
                         delta_vente_niveau=0
                         achat={}
                         vente={}
                         basic.flush_zero(kraken)
                         print("Niveau 1")
                     elif count_achat == 1:
-                        bas=round(bas-self.ecart,3)
+                        bas=round(bas-2*self.ecart,4)
                         count_achat +=1
                         count_vente=0
-                        haut=round(bas+2*self.ecart,3)
-                        delta_achat_niveau=PSEUDO_FIBO*2
+                        haut=round(bas+3*self.ecart,4)
+                        delta_achat_niveau=FIBO
                         delta_vente_niveau=0
                         achat={}
                         vente={}
                         basic.flush_zero(kraken)
                         print("Niveau 2")
-                    elif count_achat == 2:
-                        bas=round(bas-2*self.ecart,3)
+#                    elif count_achat == 2:
+#                        bas=round(bas-2*self.ecart,4)
+#                        count_achat +=1
+#                        count_vente=0
+#                        haut=round(bas+5*self.ecart,4)
+#                        delta_achat_niveau=FIBO*2
+#                        delta_vente_niveau=0
+#                        achat={}
+#                        vente={}
+#                        basic.flush_zero(kraken)
+#                        print("Niveau 3")
+#                    elif count_achat == 3:
+#                        bas=round(bas-2*self.ecart,4)
+#                        count_achat +=1
+#                        count_vente=0
+#                        haut=round(bas+3*self.ecart,4)
+#                        delta_achat_niveau=PSEUDO_FIBO*4
+#                        delta_vente_niveau=0
+#                        achat={}
+#                        vente={}
+#                        basic.flush_zero(kraken)
+#                        print("Niveau 4")
+                    else:
+                        bas=round(bas-3*self.ecart,4)
                         count_achat +=1
                         count_vente=0
-                        haut=round(bas+3*self.ecart,3)
-                        delta_achat_niveau=PSEUDO_FIBO*3
-                        delta_vente_niveau=0
+                        haut=round(bas+4*self.ecart,4)
+                        delta_achat_niveau=2*FIBO
                         achat={}
                         vente={}
                         basic.flush_zero(kraken)
                         print("Niveau 3")
-                    elif count_achat == 3:
-                        bas=round(bas-2*self.ecart,3)
-                        count_achat +=1
-                        count_vente=0
-                        haut=round(bas+3*self.ecart,3)
-                        delta_achat_niveau=PSEUDO_FIBO*4
-                        delta_vente_niveau=0
-                        achat={}
-                        vente={}
-                        basic.flush_zero(kraken)
-                        print("Niveau 4")
-                    else:
-                        bas=round(bas-3*self.ecart,3)
-                        count_achat +=1
-                        count_vente=0
-                        haut=round(bas+4*self.ecart,3)
-                        delta_achat_niveau=PSEUDO_FIBO*5
-                        achat={}
-                        vente={}
-                        basic.flush_zero(kraken)
-                        print("Niveau 5")
                     ####attention l'achat existe peut etre deja ####################
                     if not str(bas) in achat.keys():
                         buy = basic.new_order(kraken,"XRPEUR","buy","limit",str(bas),str(MONTANT_ACHAT+delta_achat_niveau))
@@ -200,60 +207,38 @@ class eval():
 #                    print("delta vente desh : "+str(delta_vente_desh))
                     del vente[str(haut)]
                     if count_vente == 0:
-                        haut=round(haut+self.ecart,3)
-                        bas=round(haut-2*self.ecart,3)
+                        haut=round(haut+self.ecart,4)
+                        bas=round(haut-2*self.ecart,4)
                         count_achat=0
                         count_vente+=1
                         delta_achat_niveau=0
-                        delta_vente_niveau=PSEUDO_FIBO
+                        delta_vente_niveau=0
                         achat={}
                         vente={}
                         basic.flush_zero(kraken)
                         print("Niveau 1")
                     elif count_vente == 1:
-                        haut=round(haut+self.ecart,3)
-                        bas=round(haut-2*self.ecart,3)
+                        haut=round(haut+2*self.ecart,4)
+                        bas=round(haut-3*self.ecart,4)
                         count_achat=0
                         count_vente+=1
                         delta_achat_niveau=0
-                        delta_vente_niveau=PSEUDO_FIBO*2
+                        delta_vente_niveau=FIBO
                         achat={}
                         vente={}
                         basic.flush_zero(kraken)
                         print("Niveau 2")
-                    elif count_vente == 2:
-                        haut=round(haut+2*self.ecart,3)
-                        bas=round(haut-3*self.ecart,3)
+                    else:
+                        haut=round(haut+3*self.ecart,4)
+                        bas=round(haut-4*self.ecart,4)
                         count_achat=0
                         count_vente+=1
                         delta_achat_niveau=0
-                        delta_vente_niveau=PSEUDO_FIBO*3
+                        delta_vente_niveau=2*FIBO
                         achat={}
                         vente={}
                         basic.flush_zero(kraken)
                         print("Niveau 3")
-                    elif count_vente == 3:
-                        haut=round(haut+2*self.ecart,3)
-                        bas=round(haut-3*self.ecart,3)
-                        count_achat=0
-                        count_vente+=1
-                        delta_achat_niveau=0
-                        delta_vente_niveau=PSEUDO_FIBO*4
-                        achat={}
-                        vente={}
-                        basic.flush_zero(kraken)
-                        print("Niveau 4")
-                    else:
-                        haut=round(haut+3*self.ecart,3)
-                        bas=round(haut-4*self.ecart,3)
-                        count_achat=0
-                        count_vente+=1
-                        delta_achat_niveau=0
-                        delta_vente_niveau=PSEUDO_FIBO*5
-                        achat={}
-                        vente={}
-                        basic.flush_zero(kraken)
-                        print("Niveau 5")
                     buy = basic.new_order(kraken,"XRPEUR","buy","limit",str(bas),str(MONTANT_ACHAT ))
                     #print(str(buy))
                     achat[str(bas)]=str(buy)
