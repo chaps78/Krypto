@@ -348,7 +348,7 @@ class basics():
 
             #ouvre un ordre au prix du marche pour contrebalancer l ordre partiellement clos, cela permet de conserver le prix d equilibre
             ID_partial = ""
-            if type_B_S == "buy"
+            if type_B_S == "buy":
                 ID_partial = self.new_order(kraken,"XRPEUR","sell","market",prix,volume)
             else:
                 ID_partial = self.new_order(kraken,"XRPEUR","buy","market",prix,volume)
