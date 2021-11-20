@@ -356,7 +356,7 @@ class basics():
 
             time.sleep(2)
             #Appel de la fonction pour effectuer le log de l ordre
-            self.order_status(kraken, ID_partial,"NA",volume,"",""):
+            self.order_status(kraken, ID_partial,"NA",volume,"","")
 
 
 
