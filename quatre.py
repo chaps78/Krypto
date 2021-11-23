@@ -14,7 +14,7 @@ MONTANT_ACHAT = parameters.MONTANT_ACHAT
 MONTANT_VENTE = parameters.MONTANT_VENTE
 PSEUDO_FIBO = parameters.PSEUDO_FIBO
 FIBO=MONTANT_VENTE
-VERSION="1.4"
+VERSION="1.5"
 
 def main():
     cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";START APPLI;VERSION "+VERSION+"' >> LOG/ERROR.error"
@@ -146,28 +146,6 @@ class eval():
                         vente={}
                         basic.flush_zero(kraken)
                         print("Niveau 2")
-#                    elif count_achat == 2:
-#                        bas=round(bas-2*self.ecart,4)
-#                        count_achat +=1
-#                        count_vente=0
-#                        haut=round(bas+5*self.ecart,4)
-#                        delta_achat_niveau=FIBO*2
-#                        delta_vente_niveau=0
-#                        achat={}
-#                        vente={}
-#                        basic.flush_zero(kraken)
-#                        print("Niveau 3")
-#                    elif count_achat == 3:
-#                        bas=round(bas-2*self.ecart,4)
-#                        count_achat +=1
-#                        count_vente=0
-#                        haut=round(bas+3*self.ecart,4)
-#                        delta_achat_niveau=PSEUDO_FIBO*4
-#                        delta_vente_niveau=0
-#                        achat={}
-#                        vente={}
-#                        basic.flush_zero(kraken)
-#                        print("Niveau 4")
                     else:
                         bas=round(bas-3*self.ecart,4)
                         count_achat +=1
@@ -341,10 +319,6 @@ class basics():
             print("\n")
 #            print(str(result))
 
-#ECART = parameters.ECART
-#MONTANT_ACHAT = parameters.MONTANT_ACHAT
-#MONTANT_VENTE = parameters.MONTANT_VENTE
-#PSEUDO_FIBO = parameters.PSEUDO_FIBO
             euros = str(self.get_found(kraken,'ZEUR'))
             xrp = str(self.get_found(kraken,'XXRP'))
             cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";"+ret+";"+type_B_S+";"+prix+";"+ volume +";"+frais+";"+ order_id +";"+str(result['error'])+";"+str(montant)+";"+str(fibo)+";"+str(niveau)+";"+str(ecart)+";"+ euros +";"+xrp+";"+"' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
@@ -367,6 +341,26 @@ class basics():
             type_B_S = partial_execute['result'][order_id]['descr']['type']
             cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";closed;"+type_B_S+";"+prix+";"+ volume +";"+frais+";"+ order_id +";"+str(partial_execute['error'])+"__partialy_closed;;;;;;;"+"' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
             os.system(cmd)
+
+            #Envoi un message sur telegram en cas d ordre partiellement clos
+            bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+            bot.send_message(-728193409, 'ORDRE PARTIEL')
+
+            #ouvre un ordre au prix du marche pour contrebalancer l ordre partiellement clos, cela permet de conserver le prix d equilibre
+            ID_partial = ""
+            if type_B_S == "buy":
+                ID_partial = self.new_order(kraken,"XRPEUR","sell","market",prix,volume)
+            else:
+                ID_partial = self.new_order(kraken,"XRPEUR","buy","market",prix,volume)
+
+
+            time.sleep(2)
+            #Appel de la fonction pour effectuer le log de l ordre
+            self.order_status(kraken, ID_partial,"NA",volume,"","")
+
+
+
+
         return result
 
     def latest_price(self,kraken,pair):
