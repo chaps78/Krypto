@@ -12,7 +12,6 @@ import telebot
 ECART = parameters.ECART
 MONTANT_ACHAT = parameters.MONTANT_ACHAT
 MONTANT_VENTE = parameters.MONTANT_VENTE
-PSEUDO_FIBO   = parameters.PSEUDO_FIBO
 FIBO          = MONTANT_VENTE
 
 #Token pour le bot telegram
@@ -108,9 +107,9 @@ class tr_bot():
                 prix = basic.latest_price(kraken,"XRPEUR")
                 time.sleep(1)
                 #Cas nominal
-                passage_haut = basic.order_status(kraken,vente[str(haut)],count_vente,MONTANT_ACHAT,ECART)=='closed'
+                passage_haut = basic.order_status(kraken,vente[str(haut)],count_vente,MONTANT_ACHAT,basic.ecart)=='closed'
                 #Cas nominal
-                passage_bas = basic.order_status(kraken,achat[str(bas)],count_achat,MONTANT_ACHAT,ECART)=='closed'
+                passage_bas = basic.order_status(kraken,achat[str(bas)],count_achat,MONTANT_ACHAT,basic.ecart)=='closed'
                 time.sleep(1)
             except KeyboardInterrupt:
                 print("ctrl + C")
@@ -129,10 +128,10 @@ class tr_bot():
                     print(str(time.strftime('%Y#%m#%d;%H:%M:%S')))
                     del achat[str(bas)]
                     if count_achat == 0:
-                        bas=round(bas-ECART,4)
+                        bas=round(bas-basic.ecart,4)
                         count_achat +=1
                         count_vente=0
-                        haut=round(bas+2*ECART,4)
+                        haut=round(bas+2*basic.ecart,4)
                         delta_achat_niveau=0
                         delta_vente_niveau=0
                         achat={}
@@ -140,10 +139,10 @@ class tr_bot():
                         basic.flush_zero(kraken)
                         print("Niveau 1")
                     elif count_achat == 1:
-                        bas=round(bas-2*ECART,4)
+                        bas=round(bas-2*basic.ecart,4)
                         count_achat +=1
                         count_vente=0
-                        haut=round(bas+3*ECART,4)
+                        haut=round(bas+3*basic.ecart,4)
                         delta_achat_niveau=FIBO
                         delta_vente_niveau=0
                         achat={}
@@ -151,10 +150,10 @@ class tr_bot():
                         basic.flush_zero(kraken)
                         print("Niveau 2")
                     else:
-                        bas=round(bas-3*ECART,4)
+                        bas=round(bas-3*basic.ecart,4)
                         count_achat +=1
                         count_vente=0
-                        haut=round(bas+4*ECART,4)
+                        haut=round(bas+4*basic.ecart,4)
                         delta_achat_niveau=2*FIBO
                         achat={}
                         vente={}
@@ -172,7 +171,7 @@ class tr_bot():
                     vente[str(haut)]=str(buy)
                 
 
-                    print("ACHAT "+str(bas)+" /// "+str(haut) + " b : "+str(prix)+"  //echelon  "+str(ECART))
+                    print("ACHAT "+str(bas)+" /// "+str(haut) + " b : "+str(prix)+"  //echelon  "+str(basic.ecart))
 
                     #Enregistrement du niveau achat_vente pour revenir au meme etat en cas de redemarrage
                     basic.ecriture_niveaux(count_achat , count_vente)
@@ -185,8 +184,8 @@ class tr_bot():
                     print(str(time.strftime('%Y#%m#%d;%H:%M:%S')))
                     del vente[str(haut)]
                     if count_vente == 0:
-                        haut=round(haut+ECART,4)
-                        bas=round(haut-2*ECART,4)
+                        haut=round(haut+basic.ecart,4)
+                        bas=round(haut-2*basic.ecart,4)
                         count_achat=0
                         count_vente+=1
                         delta_achat_niveau=0
@@ -196,8 +195,8 @@ class tr_bot():
                         basic.flush_zero(kraken)
                         print("Niveau 1")
                     elif count_vente == 1:
-                        haut=round(haut+2*ECART,4)
-                        bas=round(haut-3*ECART,4)
+                        haut=round(haut+2*basic.ecart,4)
+                        bas=round(haut-3*basic.ecart,4)
                         count_achat=0
                         count_vente+=1
                         delta_achat_niveau=0
@@ -207,8 +206,8 @@ class tr_bot():
                         basic.flush_zero(kraken)
                         print("Niveau 2")
                     else:
-                        haut=round(haut+3*ECART,4)
-                        bas=round(haut-4*ECART,4)
+                        haut=round(haut+3*basic.ecart,4)
+                        bas=round(haut-4*basic.ecart,4)
                         count_achat=0
                         count_vente+=1
                         delta_achat_niveau=0
@@ -230,7 +229,7 @@ class tr_bot():
                         vente[str(haut)]=str(buy)
                     else:
                         print("La vente est deja dans le dictionnaire")
-                    print("VENTE "+str(bas)+" /// "+str(haut)+" b : "+str(prix)+"  //echelon  "+str(ECART) )
+                    print("VENTE "+str(bas)+" /// "+str(haut)+" b : "+str(prix)+"  //echelon  "+str(basic.ecart) )
 
 
                     #Enregistrement du niveau achat_vente pour revenir au meme etat en cas de redemarrage
@@ -251,23 +250,26 @@ class tr_bot():
 
 class basics():
 
+    def __init__(self):
+        #Declaration d'une variable interne pour l ecart
+        self.ecart=ECART
+
     #############################################
     #
-    # return le nombre de crypto sur le compte
+    # return le dictionnaire de crypto ou devise sur le compte avec le solde de la crypto (la devise est la key et le solde le contenu du dictionnaire
     # IN:
     #   -API kraken connetion objet
-    #   -Devise (str)
     # OUT:
-    #   -montant de la devise sur mon compte
+    #   -dictionnaire DEVISE:SOLDE
     #
     #############################################
 
-    def get_found(selk,kraken,devise):
+    def get_found(selk,kraken):
         try:
             response = kraken.query_private('Balance')
-            retour = response['result'][devise]
+            retour = response['result']
         except:
-            retour = "ça pas marche"
+            retour = ["ERROR"]
         return retour
 
 
@@ -355,8 +357,16 @@ class basics():
             frais = result['result'][order_id]['fee']
             type_B_S = result['result'][order_id]['descr']['type']
 
-            euros = str(self.get_found(kraken,'ZEUR'))
-            xrp = str(self.get_found(kraken,'XXRP'))
+            soldes = self.get_found(kraken)
+            euros = str(soldes['ZEUR'])
+            xrp = str(soldes['XXRP'])
+            # Marge de sécurite si il n y a plus de cash ou plus de crypto, on multiplie l ecart par deux
+            if float(euros) < 300 or float(xrp)<500:
+                self.ecart = 2 * ECART
+            else:
+                self.ecart = ECART
+
+
             cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";"+ret+";"+type_B_S+";"+prix+";"+ volume +";"+frais+";"+ order_id +";"+str(result['error'])+";"+str(montant)+";;"+str(niveau)+";"+str(ecart)+";"+ euros +";"+xrp+";"+"' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
             os.system(cmd)
         
@@ -482,8 +492,8 @@ class basics():
         for el in ordres_ouverts['result']['open'].keys():
             self.order_close(kraken_key,el)
         prix_cour = float(prix)
-        bas=round(prix_cour - prix_cour%ECART,3)
-        haut=round(bas + ECART,3)
+        bas=round(prix_cour - prix_cour%self.ecart,3)
+        haut=round(bas + self.ecart,3)
         buy = self.new_order(kraken_key,"XRPEUR","buy","limit",str(bas),MONTANT_ACHAT)
         print(str(buy))
         
