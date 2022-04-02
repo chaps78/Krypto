@@ -19,4 +19,4 @@ RUN python3 app/toto.py
 WORKDIR /app 
 
 
-CMD python3 quatre.py
+CMD python3 trader.py
