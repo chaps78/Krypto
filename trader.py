@@ -18,7 +18,7 @@ BOT_CHAT_ID = parameters.TELEGRAM_CHAT_ID
 
 
 
-VERSION="1.6"
+VERSION="1.7"
 
 def main():
     cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";START APPLI;VERSION "+VERSION+"' >> LOG/ERROR.error"
