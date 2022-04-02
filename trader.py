@@ -99,13 +99,10 @@ class tr_bot():
             try:
                 prix = basic.latest_price(kraken,"XRPEUR")
                 time.sleep(2)
-                niveau = dico_orders[order_id]["niveau"]
-                montant = dico_orders[order_id]["montant"]
-                ecart = dico_orders[order_id]["ecart"]
 
-
-                dico_orders = {vente[str(haut)]:{"niveau":count_vente,"montant":MONTANT_ACHAT,"ecart":basic.ecart}}
-                dico_orders = {achat[str(bas)]:{"niveau":count_vente,"montant":MONTANT_ACHAT,"ecart":basic.ecart}}
+                dico_orders={}
+                dico_orders[vente[str(haut)]] = {"niveau":count_vente,"montant":MONTANT_ACHAT,"ecart":basic.ecart}
+                dico_orders[achat[str(bas)]] = {"niveau":count_vente,"montant":MONTANT_ACHAT,"ecart":basic.ecart}
 
                 return_status = basic.orders_status(kraken,dico_orders)
                 passage_haut = return_status[vente[str(haut)]] == 'closed'
@@ -115,17 +112,18 @@ class tr_bot():
             except KeyboardInterrupt:
                 print("ctrl + C")
                 break
-            except:
+            except Exception as inst:
                 passage_bas=False
                 passage_haut=False
-                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI dans le while vente c est ici le probleme: ' >> LOG/ERROR.error"
-                os.system(cmd)
                 cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI dans le while vente: "+str(vente)+";"+"achat"+str(achat)+";prix"+str(prix)+";bas"+str(bas)+";haut"+str(haut)+"' >> LOG/ERROR.error"
+                os.system(cmd)
+                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";retour error; "+str(inst).replace("'","")+"' >> LOG/ERROR.error"
                 os.system(cmd)
 
             try:
                 if passage_bas:
-                    print(str(time.strftime('%Y#%m#%d;%H:%M:%S')))
+                    bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+                    bot.send_message(BOT_CHAT_ID, 'ORDRE PASSE')
                     del achat[str(bas)]
                     if count_achat == 0:
                         bas=round(bas-basic.ecart,4)
@@ -137,7 +135,6 @@ class tr_bot():
                         achat={}
                         vente={}
                         basic.flush_zero(kraken)
-                        print("Niveau 1")
                     elif count_achat == 1:
                         bas=round(bas-2*basic.ecart,4)
                         count_achat +=1
@@ -148,7 +145,6 @@ class tr_bot():
                         achat={}
                         vente={}
                         basic.flush_zero(kraken)
-                        print("Niveau 2")
                     else:
                         bas=round(bas-3*basic.ecart,4)
                         count_achat +=1
@@ -158,7 +154,6 @@ class tr_bot():
                         achat={}
                         vente={}
                         basic.flush_zero(kraken)
-                        print("Niveau 3")
                     ####attention l'achat existe peut etre deja ####################
                     if not str(bas) in achat.keys():
                         buy = basic.new_order(kraken,"XRPEUR","buy","limit",str(bas),str(MONTANT_ACHAT+delta_achat_niveau))
@@ -179,7 +174,8 @@ class tr_bot():
 
 
                 if passage_haut:
-                    print(str(time.strftime('%Y#%m#%d;%H:%M:%S')))
+                    bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+                    bot.send_message(BOT_CHAT_ID, 'ORDRE PASSE')
                     del vente[str(haut)]
                     if count_vente == 0:
                         haut=round(haut+basic.ecart,4)
@@ -191,7 +187,6 @@ class tr_bot():
                         achat={}
                         vente={}
                         basic.flush_zero(kraken)
-                        print("Niveau 1")
                     elif count_vente == 1:
                         haut=round(haut+2*basic.ecart,4)
                         bas=round(haut-3*basic.ecart,4)
@@ -202,7 +197,6 @@ class tr_bot():
                         achat={}
                         vente={}
                         basic.flush_zero(kraken)
-                        print("Niveau 2")
                     else:
                         haut=round(haut+3*basic.ecart,4)
                         bas=round(haut-4*basic.ecart,4)
@@ -213,9 +207,7 @@ class tr_bot():
                         achat={}
                         vente={}
                         basic.flush_zero(kraken)
-                        print("Niveau 3")
                     buy = basic.new_order(kraken,"XRPEUR","buy","limit",str(bas),str(MONTANT_ACHAT ))
-                    #print(str(buy))
                     achat[str(bas)]=str(buy)
 
 
@@ -290,31 +282,23 @@ class basics():
                                              'price': price,
                                              'volume': volume})
         except:
-            print("PROBLEME D'OUVERTURE D'ORDRE")
             cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + str(response) + "ouverture ordre 1' >> LOG/ERROR.error"
             os.system(cmd)
         try:
             print(str(response['result']))
         except:
-            print("Erreur (surement une evolution trop brutale) : \n" + str(response['error']))
             cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + str(response) + "ouverture ordre 2' >> LOG/ERROR.error"
             os.system(cmd)
         if(response['error']!=[]):
             cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";l erreur d ouverture d ordre est la suivante;" + str(response['error']) + "ouverture ordre 4' >> LOG/ERROR.error"
             os.system(cmd)
         if(response['error']==['EOrder:Insufficient funds']):
-            print("pas assez d'argent pour " + type_B_S)
             return -1
 
         ID=""
         try:
             ID=str(response['result']['txid'][0])
-            if len(response['result']['txid'])>1:
-                print("Plusieurs Ordres ouvert !!!!!!!!!!!!!!!!!!!!!!!")
-                print(str(response['result']['txid'][0]))
         except:
-            print("resultat non present dans lordre")
-            print("Erreur (surement une evolution trop brutale) : \n" + str(response['error']))
             cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + str(response) + "ouverture ordre 3 resultat non present dans lordre' >> LOG/ERROR.error"
             os.system(cmd)
         cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";;"+type_B_S+";"+str(price) +";"+ str(volume)+";;"+ str(ID) +";"+str(response['error'])+"' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
@@ -355,7 +339,7 @@ class basics():
             euros = str(soldes['ZEUR'])
             xrp = str(soldes['XXRP'])
 
-
+            
             cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";"+ret+";"+type_B_S+";"+prix+";"+ volume +";"+frais+";"+ order_id +";"+str(result['error'])+";"+str(montant)+";;"+str(niveau)+";"+str(ecart)+";"+ euros +";"+xrp+";"+"' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
             os.system(cmd)
         
@@ -378,10 +362,23 @@ class basics():
     def orders_status(self,kraken, dico_orders):
         #order_id,niveau,montant,ecart):
         list_id_orders = list(dico_orders.keys())
-        result = kraken.query_private('QueryOrders', {'txid': list_id_orders})
+        try:
+            ids_order_for_API = str(list_id_orders[0]) + "," + str(list_id_orders[1])
+            result = kraken.query_private('QueryOrders', {'txid': ids_order_for_API})
+        except Exception as inst:
+            cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";error dans call API; "+str(inst).replace("'","")+"' >> LOG/ERROR.error"
+            os.system(cmd)
         return_value = {}
         for order_id in list_id_orders:
-            ret = result['result'][order_id]['status']
+            try:
+                ret = result['result'][order_id]['status']
+            except Exception as inst:
+                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";error dans lecture du retour; ERROR: "+str(inst).replace("'","")+"' >> LOG/ERROR.error"
+                os.system(cmd)
+                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";error dans lecture du retour; RETOUR API"+str(result).replace("'","")+"' >> LOG/ERROR.error"
+                os.system(cmd)
+                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";error dans lecture du retour; KEY"+str(list_id_orders).replace("'","")+"' >> LOG/ERROR.error"
+                os.system(cmd)
             return_value[order_id] = ret
             if ret == 'closed':
                 volume = result['result'][order_id]['vol_exec']
