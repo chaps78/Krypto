@@ -1,9 +1,6 @@
 import krakenex
 import time
 import os
-from threading import Thread
-from random import randint
-import socket
 import parameters
 import json
 import telebot
@@ -41,7 +38,6 @@ def main():
 class tr_bot():
 
     def __init__(self):
-        Thread.__init__(self)
         self.TIME_SLEEP=2
 
     def run(self):
@@ -75,9 +71,6 @@ class tr_bot():
         try:
             print(str(ordres_ouverts['result']['open'].keys()))
  
-            #print("achat.txt : \n"+str(achat))
-            #print("vente.txt : \n"+str(vente))
-
             #verification de la synchro entre kraken et les listes
             verif_OK = basic.verif(achat,vente,ordres_ouverts)
         except KeyError:
@@ -105,12 +98,20 @@ class tr_bot():
             passage_bas = False
             try:
                 prix = basic.latest_price(kraken,"XRPEUR")
-                time.sleep(1)
-                #Cas nominal
-                passage_haut = basic.order_status(kraken,vente[str(haut)],count_vente,MONTANT_ACHAT,basic.ecart)=='closed'
-                #Cas nominal
-                passage_bas = basic.order_status(kraken,achat[str(bas)],count_achat,MONTANT_ACHAT,basic.ecart)=='closed'
-                time.sleep(1)
+                time.sleep(2)
+                niveau = dico_orders[order_id]["niveau"]
+                montant = dico_orders[order_id]["montant"]
+                ecart = dico_orders[order_id]["ecart"]
+
+
+                dico_orders = {vente[str(haut)]:{"niveau":count_vente,"montant":MONTANT_ACHAT,"ecart":basic.ecart}}
+                dico_orders = {achat[str(bas)]:{"niveau":count_vente,"montant":MONTANT_ACHAT,"ecart":basic.ecart}}
+
+                return_status = basic.orders_status(kraken,dico_orders)
+                passage_haut = return_status[vente[str(haut)]] == 'closed'
+                passage_bas = return_status[achat[str(bas)]] == 'closed'
+
+
             except KeyboardInterrupt:
                 print("ctrl + C")
                 break
@@ -122,7 +123,6 @@ class tr_bot():
                 cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI dans le while vente: "+str(vente)+";"+"achat"+str(achat)+";prix"+str(prix)+";bas"+str(bas)+";haut"+str(haut)+"' >> LOG/ERROR.error"
                 os.system(cmd)
 
-#            prix_cour = float(prix['result']['XXRPZEUR']['b'][0])
             try:
                 if passage_bas:
                     print(str(time.strftime('%Y#%m#%d;%H:%M:%S')))
@@ -171,8 +171,6 @@ class tr_bot():
                     vente[str(haut)]=str(buy)
                 
 
-                    print("ACHAT "+str(bas)+" /// "+str(haut) + " b : "+str(prix)+"  //echelon  "+str(basic.ecart))
-
                     #Enregistrement du niveau achat_vente pour revenir au meme etat en cas de redemarrage
                     basic.ecriture_niveaux(count_achat , count_vente)
                     #Enregistrement des ordres d achat et vente qui viennent d etre passe
@@ -219,17 +217,14 @@ class tr_bot():
                     buy = basic.new_order(kraken,"XRPEUR","buy","limit",str(bas),str(MONTANT_ACHAT ))
                     #print(str(buy))
                     achat[str(bas)]=str(buy)
+
+
+
+
                     ######        Attention la vente existe peut etre deja
                     if not str(haut) in vente.keys():
                         buy = basic.new_order(kraken,"XRPEUR","sell","limit",str(haut),str(MONTANT_VENTE + delta_vente_niveau ))
-                        #try:
-                            #print(str(buy))
-                        #except:
-                            #print(str(buy))
                         vente[str(haut)]=str(buy)
-                    else:
-                        print("La vente est deja dans le dictionnaire")
-                    print("VENTE "+str(bas)+" /// "+str(haut)+" b : "+str(prix)+"  //echelon  "+str(basic.ecart) )
 
 
                     #Enregistrement du niveau achat_vente pour revenir au meme etat en cas de redemarrage
@@ -327,7 +322,7 @@ class basics():
         return ID
 
 
-    #############################################
+    #############################################################################################################################
     #
     # DESCRIPTION:
     #  recupère l'ID d'un ordre et retourne son status (open ou closed)
@@ -338,16 +333,15 @@ class basics():
     #   -niveau (fibo) pour écrire dans les log si l'ordre est à closed
     #   -montant du bet
     #   -ecart = delta entre deux ordres
-    #   -fibo = donnée du pseudo fibo (à effecer)
     # OUT:
     #   -status de l'ordre ("open"/"closed")
     #
     #   -reprot de l'ordre dans les logs si l'ordre est clos
     #
-    #############################################
+    #############################################################################################################################
 
 
-    def order_status(self,kraken, order_id,niveau,montant,ecart,fibo=""):
+    def order_status(self, kraken, order_id, niveau, montant, ecart):
         result = kraken.query_private('QueryOrders', {'txid': order_id})
         ret = result['result'][order_id]['status']
 
@@ -360,11 +354,6 @@ class basics():
             soldes = self.get_found(kraken)
             euros = str(soldes['ZEUR'])
             xrp = str(soldes['XXRP'])
-            # Marge de sécurite si il n y a plus de cash ou plus de crypto, on multiplie l ecart par deux
-            if float(euros) < 300 or float(xrp)<500:
-                self.ecart = 2 * ECART
-            else:
-                self.ecart = ECART
 
 
             cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";"+ret+";"+type_B_S+";"+prix+";"+ volume +";"+frais+";"+ order_id +";"+str(result['error'])+";"+str(montant)+";;"+str(niveau)+";"+str(ecart)+";"+ euros +";"+xrp+";"+"' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
@@ -375,7 +364,8 @@ class basics():
 
     #############################################
     #
-    # DESCRIPTION:
+    # DESCRIPTION: meme comportement que order_status prenant en entrée une liste d'ID
+    # Objectif : limiter les appels API
     #
     # IN:
     #   -
@@ -383,6 +373,52 @@ class basics():
     #   -
     #
     #############################################
+
+
+    def orders_status(self,kraken, dico_orders):
+        #order_id,niveau,montant,ecart):
+        list_id_orders = list(dico_orders.keys())
+        result = kraken.query_private('QueryOrders', {'txid': list_id_orders})
+        return_value = {}
+        for order_id in list_id_orders:
+            ret = result['result'][order_id]['status']
+            return_value[order_id] = ret
+            if ret == 'closed':
+                volume = result['result'][order_id]['vol_exec']
+                prix = result['result'][order_id]['price']
+                frais = result['result'][order_id]['fee']
+                type_B_S = result['result'][order_id]['descr']['type']
+
+                soldes = self.get_found(kraken)
+                euros = str(soldes['ZEUR'])
+                xrp = str(soldes['XXRP'])
+
+                niveau = dico_orders[order_id]["niveau"]
+                montant = dico_orders[order_id]["montant"]
+                ecart = dico_orders[order_id]["ecart"]
+
+                cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";"+ret+";"+type_B_S+";"+prix+";"+ volume +";"+frais+";"+ order_id +";"+str(result['error'])+";"+str(montant)+";;"+str(niveau)+";"+str(ecart)+";"+ euros +";"+xrp+";"+"' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
+                os.system(cmd)
+        return return_value
+
+
+    #####################################################################################################################################
+    #
+    # DESCRIPTION:
+    #   Ferme un ordre donne en se basant sur l ID.
+    #   Pour un ordre non exécuté:
+    #           indique dans les logs que l ordre est annule
+    #   Pour un ordre execute partiellement:
+    #           ouvre un ordre market avec le meme volume que l ordre partiel le contrebalancer et garder les memes points de bascule.
+    #           
+    # IN:
+    #   -Acces KRAKEN
+    #   -ID de l ordre
+    # OUT:
+    #   -Retour de la requete revoyé par l API
+    #   -(enregistrement des donnees dans les log)
+    #
+    #####################################################################################################################################
 
     def order_close(self,kraken, order_id):
         result = kraken.query_private('CancelOrder', {'txid': order_id})
@@ -402,7 +438,7 @@ class basics():
 
             #Envoi un message sur telegram en cas d ordre partiellement clos
             bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
-            bot.send_message(BOT_CHAT_ID, 'ORDRE PARTIEL')
+            bot.send_message(BOT_CHAT_ID, 'ORDRE PARTIEL VOLUME : ' + str(volume) + ' PRIX : ' + str(prix))
 
             #ouvre un ordre au prix du marche pour contrebalancer l ordre partiellement clos, cela permet de conserver le prix d equilibre
             ID_partial = ""
@@ -413,13 +449,10 @@ class basics():
 
 
             time.sleep(2)
-            #Appel de la fonction pour effectuer le log de l ordre
-            self.order_status(kraken, ID_partial,"NA",volume,"","")
-
-
-
-
+            #Appel de la fonction pour effectuer le log de l ordre, l ordre est obligatoirement clos car c est un ordre market qui doit etre execute immediatement
+            self.order_status(kraken, ID_partial,"NA",volume,"")
         return result
+
 
     #############################################
     #
