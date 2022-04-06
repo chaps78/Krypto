@@ -291,7 +291,12 @@ class basics():
         os.system(cmd)
 
         #TEST DE VERIF DE LA FONTION A RETIRER
-        self.get_bet(price)
+        try:
+            self.get_bet(price)
+        except as inst:
+            cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";error get_bet; "+str(inst).replace("'","")+"' >> LOG/ERROR.error"
+            os.system(cmd)
+
 
         return ID
 
