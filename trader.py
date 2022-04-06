@@ -10,6 +10,8 @@ ECART = parameters.ECART
 MONTANT_ACHAT = parameters.MONTANT_ACHAT
 MONTANT_VENTE = parameters.MONTANT_VENTE
 FIBO          = MONTANT_VENTE
+DICO_BET       = parameters.DICO_BET
+
 
 #Token pour le bot telegram
 TELEG_TOKEN = parameters.TELEGRAM_TOKEN
@@ -61,20 +63,13 @@ class tr_bot():
         delta_vente_niveau=0
 
 
-        try:
-            prix = basic.latest_price(kraken,"XRPEUR")
-        except:
-            print("On relance la machine 1 "+time.strftime(' %H:%M:%S'))
-
+        prix = basic.latest_price(kraken,"XRPEUR")
        
         ordres_ouverts = kraken.query_private('OpenOrders',{'trades': 'true','start':'1514790000'})
         try:
-            print(str(ordres_ouverts['result']['open'].keys()))
- 
             #verification de la synchro entre kraken et les listes
             verif_OK = basic.verif(achat,vente,ordres_ouverts)
         except KeyError:
-            print("ERROR key")
             verif_OK = False
         if verif_OK == False or (achat == {} and vente == {}):
             #supprime l'ensemble des ordres et cree 2 nouveaux ordres pour partir sur de nouvelles bases
@@ -88,8 +83,6 @@ class tr_bot():
 
         bas = float(max(achat.keys()))
         haut = float(min(vente.keys()))
-        print("BAS  : "+ str(bas))
-        print("HAUT : "+ str(haut))
 
         time.sleep(self.TIME_SLEEP)
 
@@ -122,8 +115,6 @@ class tr_bot():
 
             try:
                 if passage_bas:
-                    bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
-                    bot.send_message(BOT_CHAT_ID, 'ORDRE PASSE')
                     del achat[str(bas)]
                     if count_achat == 0:
                         bas=round(bas-basic.ecart,4)
@@ -157,12 +148,8 @@ class tr_bot():
                     ####attention l'achat existe peut etre deja ####################
                     if not str(bas) in achat.keys():
                         buy = basic.new_order(kraken,"XRPEUR","buy","limit",str(bas),str(MONTANT_ACHAT+delta_achat_niveau))
-                        #print(str(buy))
                         achat[str(bas)]=str(buy)
-                    else:
-                        print("l'achat est deja dans le dictionnaire")
                     buy = basic.new_order(kraken,"XRPEUR","sell","limit",str(haut),str(MONTANT_VENTE ))
-                    #print(str(buy))
                     vente[str(haut)]=str(buy)
                 
 
@@ -174,8 +161,6 @@ class tr_bot():
 
 
                 if passage_haut:
-                    bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
-                    bot.send_message(BOT_CHAT_ID, 'ORDRE PASSE')
                     del vente[str(haut)]
                     if count_vente == 0:
                         haut=round(haut+basic.ecart,4)
@@ -240,6 +225,7 @@ class basics():
     def __init__(self):
         #Declaration d'une variable interne pour l ecart
         self.ecart=ECART
+        self.bet = 42
 
     #############################################
     #
@@ -303,6 +289,10 @@ class basics():
             os.system(cmd)
         cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";;"+type_B_S+";"+str(price) +";"+ str(volume)+";;"+ str(ID) +";"+str(response['error'])+"' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
         os.system(cmd)
+
+        #TEST DE VERIF DE LA FONTION A RETIRER
+        self.get_bet(price)
+
         return ID
 
 
@@ -379,6 +369,7 @@ class basics():
                 os.system(cmd)
                 cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";error dans lecture du retour; KEY"+str(list_id_orders).replace("'","")+"' >> LOG/ERROR.error"
                 os.system(cmd)
+                time.sleep(2)
             return_value[order_id] = ret
             if ret == 'closed':
                 volume = result['result'][order_id]['vol_exec']
@@ -466,7 +457,31 @@ class basics():
 
         prix = kraken.query_public('Ticker', {'pair': pair})
         prix_cour = float(prix['result']['XXRPZEUR']['b'][0])
+
         return prix_cour
+
+
+    #############################################
+    #
+    # DESCRIPTION:
+    #
+    # IN:
+    #   - XRP Price
+    # OUT:
+    #   - Montant du bet
+    #
+    #############################################
+    def get_bet(self,price):
+        keys = list(DICO_BET.keys()) 
+        ret_key = 0.0
+        for key in keys:
+            if key < price and key > ret_key:
+                ret_key = key
+    self.bet = DICO_BET[ret_key]
+    #Envoi un message sur telegram en cas d ordre partiellement clos
+    bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+    bot.send_message(BOT_CHAT_ID, 'PRIX DU BET PROCHAIN BET : ' + str(self.bet) )
+
 
     #############################################
     #
