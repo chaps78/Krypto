@@ -482,10 +482,10 @@ class basics():
         for key in keys:
             if key < price and key > ret_key:
                 ret_key = key
-    self.bet = DICO_BET[ret_key]
-    #Envoi un message sur telegram en cas d ordre partiellement clos
-    bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
-    bot.send_message(BOT_CHAT_ID, 'PRIX DU BET PROCHAIN BET : ' + str(self.bet) )
+        self.bet = DICO_BET[ret_key]
+        #Envoi un message sur telegram en cas d ordre partiellement clos
+        bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+        bot.send_message(BOT_CHAT_ID, 'PRIX DU BET PROCHAIN BET : ' + str(self.bet) )
 
 
     #############################################
