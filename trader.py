@@ -293,7 +293,7 @@ class basics():
         #TEST DE VERIF DE LA FONTION A RETIRER
         try:
             self.get_bet(price)
-        except as inst:
+        except Exception as inst:
             cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";error get_bet; "+str(inst).replace("'","")+"' >> LOG/ERROR.error"
             os.system(cmd)
 
