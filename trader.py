@@ -20,7 +20,7 @@ BOT_CHAT_ID = parameters.TELEGRAM_CHAT_ID
 
 
 
-VERSION="1.7"
+VERSION="1.8"
 
 def main():
     cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";START APPLI;VERSION "+VERSION+"' >> LOG/ERROR.error"
@@ -412,7 +412,7 @@ class basics():
                 #montant = dico_orders[order_id]["montant"]
                 ecart = dico_orders[order_id]["ecart"]
 
-                cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";"+ret+";"+type_B_S+";"+prix+";"+ volume +";"+frais+";"+ order_id +";"+str(result['error'])+";"+str(int(volume))+";;"+str(niveau)+";"+str(ecart)+";"+ euros +";"+xrp+";"+"' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
+                cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";"+ret+";"+type_B_S+";"+prix+";"+ volume +";"+frais+";"+ order_id +";"+str(result['error'])+";"+str(volume)+";;"+str(niveau)+";"+str(ecart)+";"+ euros +";"+xrp+";"+"' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
                 os.system(cmd)
         return return_value
 
@@ -438,6 +438,7 @@ class basics():
     def order_close(self,kraken, order_id):
         result = kraken.query_private('CancelOrder', {'txid': order_id})
 
+        
         #verifie que l'ordre clos a ete execute partiellement et si il a ete partiellement execute, il integre dans les logs le volume execute
         partial_execute = kraken.query_private('QueryOrders', {'txid': order_id})
         if float(partial_execute['result'][order_id]['vol_exec']) == 0:
@@ -505,9 +506,9 @@ class basics():
             if key < float(price) and key > ret_key:
                 ret_key = key
         self.bet = DICO_BET[ret_key]
-        #Envoi un message sur telegram en cas d ordre partiellement clos
-        bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
-        bot.send_message(BOT_CHAT_ID, 'PRIX DU BET PROCHAIN BET : ' + str(self.bet) )
+        #Envoi un message sur telegram en cas d ordre  clos
+        #bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+        #bot.send_message(BOT_CHAT_ID, 'PRIX DU BET PROCHAIN BET : ' + str(self.bet) )
 
 
     #############################################
@@ -589,6 +590,9 @@ class basics():
         ordres_ouverts = kraken_key.query_private('OpenOrders',{'trades': 'true','start':'1514790000'})
         for el in ordres_ouverts['result']['open'].keys():
             self.order_close(kraken_key,el)
+        #Envoi un message sur telegram en cas d ordre  clos
+        bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+        bot.send_message(BOT_CHAT_ID, 'Cloture ordres : ' + str(ordres_ouverts['result']['open']) )
 
 
     #############################################
