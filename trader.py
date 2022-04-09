@@ -100,6 +100,15 @@ class tr_bot():
                 passage_haut = return_status[vente[str(haut)]] == 'closed'
                 passage_bas = return_status[achat[str(bas)]] == 'closed'
 
+                if passage_bas: 
+                    #Envoi un message sur telegram en cas d ordre  clos
+                    bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+                    bot.send_message(BOT_CHAT_ID, 'Achat : ' + str(prix)) )
+
+                if passage_haut: 
+                    #Envoi un message sur telegram en cas d ordre  clos
+                    bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+                    bot.send_message(BOT_CHAT_ID, 'Vente: ' + str(prix)) )
 
             except KeyboardInterrupt:
                 print("ctrl + C")
@@ -163,7 +172,6 @@ class tr_bot():
                     basic.get_bet(haut)
                     buy = basic.new_order(kraken,"XRPEUR","sell","limit",str(haut),str(basic.bet))
                     vente[str(haut)]=str(buy)
-                
 
                     #Enregistrement du niveau achat_vente pour revenir au meme etat en cas de redemarrage
                     basic.ecriture_niveaux(count_achat , count_vente)
@@ -453,8 +461,8 @@ class basics():
             os.system(cmd)
 
             #Envoi un message sur telegram en cas d ordre partiellement clos
-            bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
-            bot.send_message(BOT_CHAT_ID, 'ORDRE PARTIEL VOLUME : ' + str(volume) + ' PRIX : ' + str(prix))
+            #bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+            #bot.send_message(BOT_CHAT_ID, 'ORDRE PARTIEL VOLUME : ' + str(volume) + ' PRIX : ' + str(prix))
 
             #ouvre un ordre au prix du marche pour contrebalancer l ordre partiellement clos, cela permet de conserver le prix d equilibre
             ID_partial = ""
@@ -590,9 +598,6 @@ class basics():
         ordres_ouverts = kraken_key.query_private('OpenOrders',{'trades': 'true','start':'1514790000'})
         for el in ordres_ouverts['result']['open'].keys():
             self.order_close(kraken_key,el)
-        #Envoi un message sur telegram en cas d ordre  clos
-        bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
-        bot.send_message(BOT_CHAT_ID, 'Cloture ordres : ' + str(ordres_ouverts['result']['open']) )
 
 
     #############################################
