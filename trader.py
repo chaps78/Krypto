@@ -103,12 +103,12 @@ class tr_bot():
                 if passage_bas: 
                     #Envoi un message sur telegram en cas d ordre  clos
                     bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
-                    bot.send_message(BOT_CHAT_ID, 'Achat : ' + str(prix)) )
+                    bot.send_message(BOT_CHAT_ID, 'Achat : ' + str(prix)) 
 
                 if passage_haut: 
                     #Envoi un message sur telegram en cas d ordre  clos
                     bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
-                    bot.send_message(BOT_CHAT_ID, 'Vente: ' + str(prix)) )
+                    bot.send_message(BOT_CHAT_ID, 'Vente: ' + str(prix)) 
 
             except KeyboardInterrupt:
                 print("ctrl + C")
