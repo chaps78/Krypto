@@ -139,7 +139,7 @@ class tr_bot():
                         count_achat +=1
                         count_vente=0
                         haut=round(bas+3*basic.ecart,4)
-                        basic.get_bet(bas+basic.ecart)
+                        basic.get_bet(bas-basic.ecart)
                         delta_achat_niveau = basic.bet
                         ################## TO REMOVE #####################
                         #delta_achat_niveau=FIBO
@@ -153,9 +153,9 @@ class tr_bot():
                         count_achat +=1
                         count_vente=0
                         haut=round(bas+4*basic.ecart,4)
-                        basic.get_bet(bas+basic.ecart)
+                        basic.get_bet(bas-basic.ecart)
                         delta_achat_niveau = basic.bet
-                        basic.get_bet(bas+2*basic.ecart)
+                        basic.get_bet(bas-2*basic.ecart)
                         delta_achat_niveau += basic.bet
 
                         ################## TO REMOVE #####################
@@ -197,12 +197,12 @@ class tr_bot():
                         count_achat=0
                         count_vente+=1
                         delta_achat_niveau=0
-                        basic.get_bet(haut - basic.ecart)
+                        basic.get_bet(haut + basic.ecart)
                         delta_achat_niveau = basic.bet
                         ################## TO REMOVE #####################
                         #delta_vente_niveau=FIBO
                         ##################################################
-                        achat={}
+                        achat={}=
                         vente={}
                         basic.flush_zero(kraken)
                     else:
@@ -211,9 +211,9 @@ class tr_bot():
                         count_achat=0
                         count_vente+=1
                         delta_achat_niveau=0
-                        basic.get_bet(haut - basic.ecart)
+                        basic.get_bet(haut + basic.ecart)
                         delta_achat_niveau = basic.bet
-                        basic.get_bet(haut - 2*basic.ecart)
+                        basic.get_bet(haut + 2*basic.ecart)
                         delta_achat_niveau += basic.bet
 
                         ################## TO REMOVE #####################
