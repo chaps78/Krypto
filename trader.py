@@ -188,7 +188,6 @@ class tr_bot():
                         count_achat=0
                         count_vente+=1
                         delta_achat_niveau=0
-                        delta_vente_niveau=0
                         achat={}
                         vente={}
                         basic.flush_zero(kraken)
@@ -230,7 +229,7 @@ class tr_bot():
                     ######        Attention la vente existe peut etre deja
                     if not str(haut) in vente.keys():
                         basic.get_bet(haut)
-                        buy = basic.new_order(kraken,"XRPEUR","sell","limit",str(haut),str(basic.bet + delta_vente_niveau ))
+                        buy = basic.new_order(kraken,"XRPEUR","sell","limit",str(haut),str(basic.bet + delta_achat_niveau ))
                         vente[str(haut)]=str(buy)
 
 
