@@ -4,7 +4,7 @@ import os
 import parameters
 import json
 import telebot
-
+import datetime
 
 ECART = parameters.ECART
 MONTANT_ACHAT = parameters.MONTANT_ACHAT
@@ -78,16 +78,27 @@ class tr_bot():
 
         
 
-
+        previous_day = datetime.datetime.today().day
 
         bas = float(max(achat.keys()))
         haut = float(min(vente.keys()))
+        resume={"a":0,"v":0}
 
         time.sleep(self.TIME_SLEEP)
 
         while 1:
             passage_haut = False
             passage_bas = False
+            #Envoi d informations quotidienne
+            if previous_day != datetime.datetime.today().day:
+                previous_day = datetime.datetime.today().day
+                bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+                bot.send_message(BOT_CHAT_ID, 'NBR Achat : ' + str(resume["a"]) + '\nNBR Vente : ' + str(resume["a"]))
+
+                resume={"a":0,"v":0}
+                
+                
+
             try:
                 prix = basic.latest_price(kraken,"XRPEUR")
                 time.sleep(2)
@@ -102,13 +113,15 @@ class tr_bot():
 
                 if passage_bas: 
                     #Envoi un message sur telegram en cas d ordre  clos
-                    bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
-                    bot.send_message(BOT_CHAT_ID, 'Achat : ' + str(prix)) 
+                    #bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+                    #bot.send_message(BOT_CHAT_ID, 'Achat : ' + str(prix)) 
+                    resume["a"] += 1
 
                 if passage_haut: 
                     #Envoi un message sur telegram en cas d ordre  clos
-                    bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
-                    bot.send_message(BOT_CHAT_ID, 'Vente: ' + str(prix)) 
+                    #bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+                    #bot.send_message(BOT_CHAT_ID, 'Vente: ' + str(prix)) 
+                    resume["v"] += 1
 
             except KeyboardInterrupt:
                 print("ctrl + C")
