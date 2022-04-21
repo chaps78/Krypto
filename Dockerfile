@@ -12,7 +12,6 @@ RUN   apt-get update \
 ADD . /app/
 
 
-RUN python3 app/toto.py
 
     
 

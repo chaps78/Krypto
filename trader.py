@@ -4,12 +4,14 @@ import os
 import parameters
 import json
 import telebot
-
+import datetime
 
 ECART = parameters.ECART
 MONTANT_ACHAT = parameters.MONTANT_ACHAT
-MONTANT_VENTE = parameters.MONTANT_VENTE
-FIBO          = MONTANT_VENTE
+#MONTANT_VENTE = parameters.MONTANT_VENTE
+#FIBO          = MONTANT_VENTE
+DICO_BET       = parameters.DICO_BET
+
 
 #Token pour le bot telegram
 TELEG_TOKEN = parameters.TELEGRAM_TOKEN
@@ -18,7 +20,7 @@ BOT_CHAT_ID = parameters.TELEGRAM_CHAT_ID
 
 
 
-VERSION="1.7"
+VERSION="1.8"
 
 def main():
     cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";START APPLI;VERSION "+VERSION+"' >> LOG/ERROR.error"
@@ -41,7 +43,6 @@ class tr_bot():
         self.TIME_SLEEP=2
 
     def run(self):
-        print("entree dans le thread")
         kraken = krakenex.API()
         kraken.load_key('kraken.key')
         basic = basics()
@@ -61,20 +62,13 @@ class tr_bot():
         delta_vente_niveau=0
 
 
-        try:
-            prix = basic.latest_price(kraken,"XRPEUR")
-        except:
-            print("On relance la machine 1 "+time.strftime(' %H:%M:%S'))
-
+        prix = basic.latest_price(kraken,"XRPEUR")
        
         ordres_ouverts = kraken.query_private('OpenOrders',{'trades': 'true','start':'1514790000'})
         try:
-            print(str(ordres_ouverts['result']['open'].keys()))
- 
             #verification de la synchro entre kraken et les listes
             verif_OK = basic.verif(achat,vente,ordres_ouverts)
         except KeyError:
-            print("ERROR key")
             verif_OK = False
         if verif_OK == False or (achat == {} and vente == {}):
             #supprime l'ensemble des ordres et cree 2 nouveaux ordres pour partir sur de nouvelles bases
@@ -84,30 +78,50 @@ class tr_bot():
 
         
 
-
+        previous_day = datetime.datetime.today().day
 
         bas = float(max(achat.keys()))
         haut = float(min(vente.keys()))
-        print("BAS  : "+ str(bas))
-        print("HAUT : "+ str(haut))
+        resume={"a":0,"v":0}
 
         time.sleep(self.TIME_SLEEP)
 
         while 1:
             passage_haut = False
             passage_bas = False
+            #Envoi d informations quotidienne
+            if previous_day != datetime.datetime.today().day:
+                previous_day = datetime.datetime.today().day
+                bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+                bot.send_message(BOT_CHAT_ID, 'NBR Achat : ' + str(resume["a"]) + '\nNBR Vente : ' + str(resume["a"]))
+
+                resume={"a":0,"v":0}
+                
+                
+
             try:
                 prix = basic.latest_price(kraken,"XRPEUR")
                 time.sleep(2)
 
                 dico_orders={}
-                dico_orders[vente[str(haut)]] = {"niveau":count_vente,"montant":MONTANT_ACHAT,"ecart":basic.ecart}
-                dico_orders[achat[str(bas)]] = {"niveau":count_vente,"montant":MONTANT_ACHAT,"ecart":basic.ecart}
+                dico_orders[vente[str(haut)]] = {"niveau":count_vente,"ecart":basic.ecart}
+                dico_orders[achat[str(bas)]] = {"niveau":count_vente,"ecart":basic.ecart}
 
                 return_status = basic.orders_status(kraken,dico_orders)
                 passage_haut = return_status[vente[str(haut)]] == 'closed'
                 passage_bas = return_status[achat[str(bas)]] == 'closed'
 
+                if passage_bas: 
+                    #Envoi un message sur telegram en cas d ordre  clos
+                    #bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+                    #bot.send_message(BOT_CHAT_ID, 'Achat : ' + str(prix)) 
+                    resume["a"] += 1
+
+                if passage_haut: 
+                    #Envoi un message sur telegram en cas d ordre  clos
+                    #bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+                    #bot.send_message(BOT_CHAT_ID, 'Vente: ' + str(prix)) 
+                    resume["v"] += 1
 
             except KeyboardInterrupt:
                 print("ctrl + C")
@@ -122,8 +136,6 @@ class tr_bot():
 
             try:
                 if passage_bas:
-                    bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
-                    bot.send_message(BOT_CHAT_ID, 'ORDRE PASSE')
                     del achat[str(bas)]
                     if count_achat == 0:
                         bas=round(bas-basic.ecart,4)
@@ -140,7 +152,11 @@ class tr_bot():
                         count_achat +=1
                         count_vente=0
                         haut=round(bas+3*basic.ecart,4)
-                        delta_achat_niveau=FIBO
+                        basic.get_bet_achat(bas-basic.ecart)
+                        delta_achat_niveau = basic.bet
+                        ################## TO REMOVE #####################
+                        #delta_achat_niveau=FIBO
+                        ##################################################
                         delta_vente_niveau=0
                         achat={}
                         vente={}
@@ -149,22 +165,27 @@ class tr_bot():
                         bas=round(bas-3*basic.ecart,4)
                         count_achat +=1
                         count_vente=0
+                        delta_vente_niveau=0
                         haut=round(bas+4*basic.ecart,4)
-                        delta_achat_niveau=2*FIBO
+                        basic.get_bet_achat(bas-basic.ecart)
+                        delta_achat_niveau = basic.bet
+                        basic.get_bet_achat(bas-2*basic.ecart)
+                        delta_achat_niveau += basic.bet
+
+                        ################## TO REMOVE #####################
+                        #delta_achat_niveau=2*FIBO
+                        ##################################################
                         achat={}
                         vente={}
                         basic.flush_zero(kraken)
                     ####attention l'achat existe peut etre deja ####################
                     if not str(bas) in achat.keys():
-                        buy = basic.new_order(kraken,"XRPEUR","buy","limit",str(bas),str(MONTANT_ACHAT+delta_achat_niveau))
-                        #print(str(buy))
+                        basic.get_bet_achat(bas)
+                        buy = basic.new_order(kraken,"XRPEUR","buy","limit",str(bas),str(basic.bet+delta_achat_niveau))
                         achat[str(bas)]=str(buy)
-                    else:
-                        print("l'achat est deja dans le dictionnaire")
-                    buy = basic.new_order(kraken,"XRPEUR","sell","limit",str(haut),str(MONTANT_VENTE ))
-                    #print(str(buy))
+                    basic.get_bet_vente(haut)
+                    buy = basic.new_order(kraken,"XRPEUR","sell","limit",str(haut),str(basic.bet))
                     vente[str(haut)]=str(buy)
-                
 
                     #Enregistrement du niveau achat_vente pour revenir au meme etat en cas de redemarrage
                     basic.ecriture_niveaux(count_achat , count_vente)
@@ -174,8 +195,6 @@ class tr_bot():
 
 
                 if passage_haut:
-                    bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
-                    bot.send_message(BOT_CHAT_ID, 'ORDRE PASSE')
                     del vente[str(haut)]
                     if count_vente == 0:
                         haut=round(haut+basic.ecart,4)
@@ -188,34 +207,44 @@ class tr_bot():
                         vente={}
                         basic.flush_zero(kraken)
                     elif count_vente == 1:
+                        delta_achat_niveau=0
                         haut=round(haut+2*basic.ecart,4)
                         bas=round(haut-3*basic.ecart,4)
                         count_achat=0
                         count_vente+=1
-                        delta_achat_niveau=0
-                        delta_vente_niveau=FIBO
+                        basic.get_bet_vente(haut + basic.ecart)
+                        delta_vente_niveau = basic.bet
+                        ################## TO REMOVE #####################
+                        #delta_vente_niveau=FIBO
+                        ##################################################
                         achat={}
                         vente={}
                         basic.flush_zero(kraken)
                     else:
+                        delta_achat_niveau=0
                         haut=round(haut+3*basic.ecart,4)
                         bas=round(haut-4*basic.ecart,4)
                         count_achat=0
                         count_vente+=1
-                        delta_achat_niveau=0
-                        delta_vente_niveau=2*FIBO
+                        basic.get_bet_vente(haut + basic.ecart)
+                        delta_vente_niveau = basic.bet
+                        basic.get_bet_vente(haut + 2*basic.ecart)
+                        delta_vente_niveau += basic.bet
+
+                        ################## TO REMOVE #####################
+                        #delta_vente_niveau=2*FIBO
+                        ##################################################
                         achat={}
                         vente={}
                         basic.flush_zero(kraken)
-                    buy = basic.new_order(kraken,"XRPEUR","buy","limit",str(bas),str(MONTANT_ACHAT ))
+
+                    basic.get_bet_achat(bas)
+                    buy = basic.new_order(kraken,"XRPEUR","buy","limit",str(bas),str(basic.bet))
                     achat[str(bas)]=str(buy)
-
-
-
-
                     ######        Attention la vente existe peut etre deja
                     if not str(haut) in vente.keys():
-                        buy = basic.new_order(kraken,"XRPEUR","sell","limit",str(haut),str(MONTANT_VENTE + delta_vente_niveau ))
+                        basic.get_bet_vente(haut)
+                        buy = basic.new_order(kraken,"XRPEUR","sell","limit",str(haut),str(basic.bet + delta_vente_niveau ))
                         vente[str(haut)]=str(buy)
 
 
@@ -240,6 +269,9 @@ class basics():
     def __init__(self):
         #Declaration d'une variable interne pour l ecart
         self.ecart=ECART
+        self.bet = 42
+        self.flag_bet_changement = 42
+
 
     #############################################
     #
@@ -303,6 +335,9 @@ class basics():
             os.system(cmd)
         cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";;"+type_B_S+";"+str(price) +";"+ str(volume)+";;"+ str(ID) +";"+str(response['error'])+"' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
         os.system(cmd)
+
+
+
         return ID
 
 
@@ -379,6 +414,7 @@ class basics():
                 os.system(cmd)
                 cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";error dans lecture du retour; KEY"+str(list_id_orders).replace("'","")+"' >> LOG/ERROR.error"
                 os.system(cmd)
+                time.sleep(2)
             return_value[order_id] = ret
             if ret == 'closed':
                 volume = result['result'][order_id]['vol_exec']
@@ -391,10 +427,10 @@ class basics():
                 xrp = str(soldes['XXRP'])
 
                 niveau = dico_orders[order_id]["niveau"]
-                montant = dico_orders[order_id]["montant"]
+                #montant = dico_orders[order_id]["montant"]
                 ecart = dico_orders[order_id]["ecart"]
 
-                cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";"+ret+";"+type_B_S+";"+prix+";"+ volume +";"+frais+";"+ order_id +";"+str(result['error'])+";"+str(montant)+";;"+str(niveau)+";"+str(ecart)+";"+ euros +";"+xrp+";"+"' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
+                cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";"+ret+";"+type_B_S+";"+prix+";"+ volume +";"+frais+";"+ order_id +";"+str(result['error'])+";"+str(self.bet)+";;"+str(niveau)+";"+str(ecart)+";"+ euros +";"+xrp+";"+"' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
                 os.system(cmd)
         return return_value
 
@@ -420,6 +456,7 @@ class basics():
     def order_close(self,kraken, order_id):
         result = kraken.query_private('CancelOrder', {'txid': order_id})
 
+        
         #verifie que l'ordre clos a ete execute partiellement et si il a ete partiellement execute, il integre dans les logs le volume execute
         partial_execute = kraken.query_private('QueryOrders', {'txid': order_id})
         if float(partial_execute['result'][order_id]['vol_exec']) == 0:
@@ -434,8 +471,8 @@ class basics():
             os.system(cmd)
 
             #Envoi un message sur telegram en cas d ordre partiellement clos
-            bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
-            bot.send_message(BOT_CHAT_ID, 'ORDRE PARTIEL VOLUME : ' + str(volume) + ' PRIX : ' + str(prix))
+            #bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+            #bot.send_message(BOT_CHAT_ID, 'ORDRE PARTIEL VOLUME : ' + str(volume) + ' PRIX : ' + str(prix))
 
             #ouvre un ordre au prix du marche pour contrebalancer l ordre partiellement clos, cela permet de conserver le prix d equilibre
             ID_partial = ""
@@ -466,7 +503,41 @@ class basics():
 
         prix = kraken.query_public('Ticker', {'pair': pair})
         prix_cour = float(prix['result']['XXRPZEUR']['b'][0])
+
         return prix_cour
+
+
+    #############################################
+    #
+    # DESCRIPTION:
+    #
+    # IN:
+    #   - XRP Price
+    # OUT:
+    #   - Montant du bet
+    #
+    #############################################
+    def get_bet_base(self,price):
+        keys = list(DICO_BET.keys()) 
+        ret_key = 0.0
+        for key in keys:
+            if key < float(price) and key > ret_key:
+                ret_key = key
+        self.bet = DICO_BET[ret_key]
+        #Envoi un message sur telegram en cas d ordre  clos
+        #bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+        #bot.send_message(BOT_CHAT_ID, 'PRIX DU BET PROCHAIN BET : ' + str(self.bet) )
+
+    def get_bet_achat(self,price):
+        self.get_bet_base(float(price)+ECART)
+
+    def get_bet_vente(self,price):
+        self.get_bet_base(float(price))
+        if self.flag_bet_changement != self.bet:
+            #Envoi un message sur telegram pour changement de montant du bet
+            bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+            bot.send_message(BOT_CHAT_ID, 'CHANGEMENT du bet : ' + str(self.flag_bet_changement) + " vers "+str(self.bet) )
+            self.flag_bet_changement = self.bet
 
     #############################################
     #
@@ -486,22 +557,16 @@ class basics():
         li_verif=achat.keys()
         for key in li_verif:
             if not achat[key] in response['result']['open'].keys():
-                print("Probleme de synchro : " + achat[key])
                 verif_OK=False
 
         li_verif=vente.keys()
         for key in li_verif:
             if not vente[key] in response['result']['open'].keys():
-                print("Probleme de synchro : " + vente[key])
                 verif_OK=False
 
         if not (len(achat.keys())+len(vente.keys())) == len(response['result']['open'].keys()):
             verif_OK=False
 
-        if verif_OK:
-            print("Bonne synchro entre KRAKEN et mes listes")
-        else:
-            print("!!!!!MAUVAISE SYNCHRO KRAKEN ET PYTHON!!!!!")
         return verif_OK
 
 
@@ -524,13 +589,13 @@ class basics():
         prix_cour = float(prix)
         bas=round(prix_cour - prix_cour%self.ecart,3)
         haut=round(bas + self.ecart,3)
-        buy = self.new_order(kraken_key,"XRPEUR","buy","limit",str(bas),MONTANT_ACHAT)
-        print(str(buy))
+        self.get_bet_achat(bas)
+        buy = self.new_order(kraken_key,"XRPEUR","buy","limit",str(bas),str(self.bet))
         
         achat[str(bas)]=str(buy)
 
-        sell = self.new_order(kraken_key,"XRPEUR","sell","limit",str(haut),MONTANT_VENTE)
-        print(str(sell))
+        self.get_bet_vente(haut)
+        sell = self.new_order(kraken_key,"XRPEUR","sell","limit",str(haut),str(self.bet))
         vente[str(haut)]=str(sell)
         self.ecriture_achat_vente(achat,vente)
 
@@ -574,7 +639,6 @@ class basics():
         except:
             pass
         achat=achat_tmp
-        print("LOG/achat.txt : \n"+str(achat))
         return achat
 
     #############################################
@@ -597,7 +661,6 @@ class basics():
         except:
             pass
         vente=vente_tmp
-        print("LOG/vente.txt : \n"+str(vente))
         return vente
 
 
