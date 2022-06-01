@@ -5,12 +5,11 @@ import parameters
 import json
 import telebot
 import datetime
+import importlib
 
-ECART = parameters.ECART
+ECART         = parameters.ECART
 MONTANT_ACHAT = parameters.MONTANT_ACHAT
-#MONTANT_VENTE = parameters.MONTANT_VENTE
-#FIBO          = MONTANT_VENTE
-DICO_BET       = parameters.DICO_BET
+DICO_BET      = parameters.DICO_BET
 
 
 #Token pour le bot telegram
@@ -93,11 +92,11 @@ class tr_bot():
             if previous_day != datetime.datetime.today().day:
                 previous_day = datetime.datetime.today().day
                 bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
-                bot.send_message(BOT_CHAT_ID, 'NBR Achat : ' + str(resume["a"]) + '\nNBR Vente : ' + str(resume["a"]))
+                bot.send_message(BOT_CHAT_ID, 'NBR Achat : ' + str(resume["a"]) + '\nNBR Vente : ' + str(resume["v"]))
 
                 resume={"a":0,"v":0}
-                
-                
+                importlib.reload(parameters)
+                DICO_BET      = parameters.DICO_BET
 
             try:
                 prix = basic.latest_price(kraken,"XRPEUR")
@@ -112,15 +111,9 @@ class tr_bot():
                 passage_bas = return_status[achat[str(bas)]] == 'closed'
 
                 if passage_bas: 
-                    #Envoi un message sur telegram en cas d ordre  clos
-                    #bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
-                    #bot.send_message(BOT_CHAT_ID, 'Achat : ' + str(prix)) 
                     resume["a"] += 1
 
                 if passage_haut: 
-                    #Envoi un message sur telegram en cas d ordre  clos
-                    #bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
-                    #bot.send_message(BOT_CHAT_ID, 'Vente: ' + str(prix)) 
                     resume["v"] += 1
 
             except KeyboardInterrupt:
@@ -152,11 +145,8 @@ class tr_bot():
                         count_achat +=1
                         count_vente=0
                         haut=round(bas+3*basic.ecart,4)
-                        basic.get_bet_achat(bas-basic.ecart)
+                        basic.get_bet_achat(bas+basic.ecart)
                         delta_achat_niveau = basic.bet
-                        ################## TO REMOVE #####################
-                        #delta_achat_niveau=FIBO
-                        ##################################################
                         delta_vente_niveau=0
                         achat={}
                         vente={}
@@ -167,14 +157,10 @@ class tr_bot():
                         count_vente=0
                         delta_vente_niveau=0
                         haut=round(bas+4*basic.ecart,4)
-                        basic.get_bet_achat(bas-basic.ecart)
+                        basic.get_bet_achat(bas+basic.ecart)
                         delta_achat_niveau = basic.bet
-                        basic.get_bet_achat(bas-2*basic.ecart)
+                        basic.get_bet_achat(bas+2*basic.ecart)
                         delta_achat_niveau += basic.bet
-
-                        ################## TO REMOVE #####################
-                        #delta_achat_niveau=2*FIBO
-                        ##################################################
                         achat={}
                         vente={}
                         basic.flush_zero(kraken)
@@ -212,11 +198,8 @@ class tr_bot():
                         bas=round(haut-3*basic.ecart,4)
                         count_achat=0
                         count_vente+=1
-                        basic.get_bet_vente(haut + basic.ecart)
+                        basic.get_bet_vente(haut - basic.ecart)
                         delta_vente_niveau = basic.bet
-                        ################## TO REMOVE #####################
-                        #delta_vente_niveau=FIBO
-                        ##################################################
                         achat={}
                         vente={}
                         basic.flush_zero(kraken)
@@ -226,14 +209,10 @@ class tr_bot():
                         bas=round(haut-4*basic.ecart,4)
                         count_achat=0
                         count_vente+=1
-                        basic.get_bet_vente(haut + basic.ecart)
+                        basic.get_bet_vente(haut - basic.ecart)
                         delta_vente_niveau = basic.bet
-                        basic.get_bet_vente(haut + 2*basic.ecart)
+                        basic.get_bet_vente(haut - 2*basic.ecart)
                         delta_vente_niveau += basic.bet
-
-                        ################## TO REMOVE #####################
-                        #delta_vente_niveau=2*FIBO
-                        ##################################################
                         achat={}
                         vente={}
                         basic.flush_zero(kraken)
