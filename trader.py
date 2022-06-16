@@ -100,7 +100,7 @@ class tr_bot():
 
             try:
                 prix = basic.latest_price(kraken,"XRPEUR")
-                time.sleep(2)
+                time.sleep(30)
 
                 dico_orders={}
                 dico_orders[vente[str(haut)]] = {"niveau":count_vente,"ecart":basic.ecart}
@@ -131,28 +131,34 @@ class tr_bot():
                 if passage_bas:
                     del achat[str(bas)]
                     i=0
+                    bas_verif=0
+                    haut_verif=0
                     while bas <= ecart.ECART[i]:
                         i += 1
                     if count_achat == 0:
 
-                        #bas=round(bas-basic.ecart,4)
-                        bas=ecart.ECART[i-2]
+                        #Verification
+                        bas=round(bas-basic.ecart,4)
+                        bas_verif=ecart.ECART[i-2]
                         count_achat +=1
                         count_vente=0
-                        #haut=round(bas+2*basic.ecart,4)
-                        haut=ecart.ECART[i]
+                        #Verification
+                        haut=round(bas+2*basic.ecart,4)
+                        haut_verif=ecart.ECART[i]
                         delta_achat_niveau=0
                         delta_vente_niveau=0
                         achat={}
                         vente={}
                         basic.flush_zero(kraken)
                     elif count_achat == 1:
-                        #bas=round(bas-2*basic.ecart,4)
-                        bas=ecart.ECART[i-2]
+                        #Verification
+                        bas=round(bas-2*basic.ecart,4)
+                        bas_verif=ecart.ECART[i-2]
                         count_achat +=1
                         count_vente=0
-                        #haut=round(bas+3*basic.ecart,4)
-                        haut=ecart.ECART[i+1]
+                        #Verification
+                        haut=round(bas+3*basic.ecart,4)
+                        haut_verif=ecart.ECART[i+1]
                         basic.get_bet_achat(bas+basic.ecart)
                         delta_achat_niveau = basic.bet
                         delta_vente_niveau=0
@@ -160,13 +166,15 @@ class tr_bot():
                         vente={}
                         basic.flush_zero(kraken)
                     else:
-                        #bas=round(bas-3*basic.ecart,4)
-                        bas=ecart.ECART[i-2]
+                        #Verification
+                        bas=round(bas-3*basic.ecart,4)
+                        bas_verif=ecart.ECART[i-2]
                         count_achat +=1
                         count_vente=0
                         delta_vente_niveau=0
-                        #haut=round(bas+4*basic.ecart,4)
-                        haut=ecart.ECART[i+2]
+                        #Verification
+                        haut=round(bas+4*basic.ecart,4)
+                        haut_verif=ecart.ECART[i+2]
                         basic.get_bet_achat(bas+basic.ecart)
                         delta_achat_niveau = basic.bet
                         basic.get_bet_achat(bas+2*basic.ecart)
@@ -183,6 +191,7 @@ class tr_bot():
                     buy = basic.new_order(kraken,"XRPEUR","sell","limit",str(haut),str(basic.bet))
                     vente[str(haut)]=str(buy)
 
+                    bot.send_message(BOT_CHAT_ID, 'HAUT:\n'+str(haut)+'\n'+str(haut_verif)+'\nBAS:\n'+str(bas)+'\n'+str(bas_verif))
                     #Enregistrement du niveau achat_vente pour revenir au meme etat en cas de redemarrage
                     basic.ecriture_niveaux(count_achat , count_vente)
                     #Enregistrement des ordres d achat et vente qui viennent d etre passe
@@ -196,10 +205,12 @@ class tr_bot():
                         i += 1
                     del vente[str(haut)]
                     if count_vente == 0:
-                        #haut=round(haut+basic.ecart,4)
-                        haut=ecart.ECART[i]
-                        #bas=round(haut-2*basic.ecart,4)
-                        bas=ecart.ECART[i-2]
+                        #Verification
+                        haut=round(haut+basic.ecart,4)
+                        haut_verif=ecart.ECART[i]
+                        #Verification
+                        bas=round(haut-2*basic.ecart,4)
+                        bas_verif=ecart.ECART[i-2]
                         count_achat=0
                         count_vente+=1
                         delta_achat_niveau=0
@@ -209,10 +220,12 @@ class tr_bot():
                         basic.flush_zero(kraken)
                     elif count_vente == 1:
                         delta_achat_niveau=0
-                        #haut=round(haut+2*basic.ecart,4)
-                        haut=ecart.ECART[i]
-                        #bas=round(haut-3*basic.ecart,4)
-                        bas=ecart.ECART[i-3]
+                        #Verification
+                        haut=round(haut+2*basic.ecart,4)
+                        haut_verif=ecart.ECART[i]
+                        #Verification
+                        bas=round(haut-3*basic.ecart,4)
+                        bas_verif=ecart.ECART[i-3]
                         count_achat=0
                         count_vente+=1
                         basic.get_bet_vente(haut - basic.ecart)
@@ -222,10 +235,12 @@ class tr_bot():
                         basic.flush_zero(kraken)
                     else:
                         delta_achat_niveau=0
-                        #haut=round(haut+3*basic.ecart,4)
-                        haut=ecart.ECART[i]
-                        #bas=round(haut-4*basic.ecart,4)
-                        bas=ecart.ECART[i-4]
+                        #Verification
+                        haut=round(haut+3*basic.ecart,4)
+                        haut_verif=ecart.ECART[i]
+                        #Verification
+                        bas=round(haut-4*basic.ecart,4)
+                        bas_verif=ecart.ECART[i-4]
                         count_achat=0
                         count_vente+=1
                         basic.get_bet_vente(haut - basic.ecart)
@@ -246,6 +261,7 @@ class tr_bot():
                         vente[str(haut)]=str(buy)
 
 
+                    bot.send_message(BOT_CHAT_ID, 'HAUT:\n'+str(haut)+'\n'+str(haut_verif)+'\nBAS:\n'+str(bas)+'\n'+str(bas_verif))
                     #Enregistrement du niveau achat_vente pour revenir au meme etat en cas de redemarrage
                     basic.ecriture_niveaux(count_achat , count_vente)
                     #Enregistrement des ordres d achat et vente qui viennent d etre passe
