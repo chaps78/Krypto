@@ -6,7 +6,6 @@ import json
 import telebot
 import datetime
 import importlib
-import ecart
 
 ECART         = parameters.ECART
 MONTANT_ACHAT = parameters.MONTANT_ACHAT
@@ -18,7 +17,10 @@ TELEG_TOKEN = parameters.TELEGRAM_TOKEN
 #Id du chat pour le BOT telegram
 BOT_CHAT_ID = parameters.TELEGRAM_CHAT_ID
 
+bot1 = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+bot1.send_message(BOT_CHAT_ID, 'AVANT IMPORT')
 
+import ecart
 
 VERSION="1.9"
 
