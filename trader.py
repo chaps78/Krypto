@@ -103,7 +103,7 @@ class tr_bot():
 
             try:
                 prix = basic.latest_price(kraken,"XRPEUR")
-                time.sleep(30)
+                time.sleep(10)
 
                 dico_orders={}
                 dico_orders[vente[str(haut)]] = {"niveau":count_vente,"ecart":basic.ecart}
@@ -193,7 +193,7 @@ class tr_bot():
                     basic.get_bet_vente(haut)
                     buy = basic.new_order(kraken,"XRPEUR","sell","limit",str(haut),str(basic.bet))
                     vente[str(haut)]=str(buy)
-
+                    bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
                     bot.send_message(BOT_CHAT_ID, 'HAUT:\n'+str(haut)+'\n'+str(haut_verif)+'\nBAS:\n'+str(bas)+'\n'+str(bas_verif))
                     #Enregistrement du niveau achat_vente pour revenir au meme etat en cas de redemarrage
                     basic.ecriture_niveaux(count_achat , count_vente)
@@ -265,7 +265,7 @@ class tr_bot():
                         buy = basic.new_order(kraken,"XRPEUR","sell","limit",str(haut),str(basic.bet + delta_vente_niveau ))
                         vente[str(haut)]=str(buy)
 
-
+                    bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
                     bot.send_message(BOT_CHAT_ID, 'HAUT:\n'+str(haut)+'\n'+str(haut_verif)+'\nBAS:\n'+str(bas)+'\n'+str(bas_verif))
                     #Enregistrement du niveau achat_vente pour revenir au meme etat en cas de redemarrage
                     basic.ecriture_niveaux(count_achat , count_vente)
