@@ -136,7 +136,7 @@ class tr_bot():
                     i=0
                     bas_verif=0
                     haut_verif=0
-                    while bas <= ecart.ECART[i]:
+                    while bas > ecart.ECART[i]:
                         i += 1
                     if count_achat == 0:
 
@@ -206,7 +206,7 @@ class tr_bot():
                     i=0
                     haut_verif=0
                     bas_verif=0
-                    while haut <= ecart.ECART[i]:
+                    while haut > ecart.ECART[i]:
                         i += 1
                     del vente[str(haut)]
                     if count_vente == 0:
