@@ -204,6 +204,8 @@ class tr_bot():
 
                 if passage_haut:
                     i=0
+                    haut_verif=0
+                    bas_verif=0
                     while haut <= ecart.ECART[i]:
                         i += 1
                     del vente[str(haut)]
