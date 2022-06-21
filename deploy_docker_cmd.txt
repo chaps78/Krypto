@@ -1,0 +1,2 @@
+docker pull chaps78/mon-premier-docker
+docker run -p 2368:2368 -d -v ${PWD}/kraken.key:/app/kraken.key -v ${PWD}/parameters.py:/app/parameters.py -v ${PWD}/ecart.py:/app/ecart.py -v ${PWD}/LOG:/app/LOG chaps78/mon-premier-docker
