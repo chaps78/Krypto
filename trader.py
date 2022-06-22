@@ -156,12 +156,12 @@ class tr_bot():
                     elif count_achat == 1:
                         #Verification
                         bas=round(bas-2*basic.ecart,4)
-                        bas_verif=ecart.ECART[i-1]
+                        bas_verif=ecart.ECART[i-2]
                         count_achat +=1
                         count_vente=0
                         #Verification
                         haut=round(bas+3*basic.ecart,4)
-                        haut_verif=ecart.ECART[i+2]
+                        haut_verif=ecart.ECART[i+1]
                         basic.get_bet_achat(bas+basic.ecart)
                         delta_achat_niveau = basic.bet
                         delta_vente_niveau=0
@@ -171,13 +171,13 @@ class tr_bot():
                     else:
                         #Verification
                         bas=round(bas-3*basic.ecart,4)
-                        bas_verif=ecart.ECART[i-1]
+                        bas_verif=ecart.ECART[i-3]
                         count_achat +=1
                         count_vente=0
                         delta_vente_niveau=0
                         #Verification
                         haut=round(bas+4*basic.ecart,4)
-                        haut_verif=ecart.ECART[i+3]
+                        haut_verif=ecart.ECART[i+1]
                         basic.get_bet_achat(bas+basic.ecart)
                         delta_achat_niveau = basic.bet
                         basic.get_bet_achat(bas+2*basic.ecart)
@@ -227,10 +227,10 @@ class tr_bot():
                         delta_achat_niveau=0
                         #Verification
                         haut=round(haut+2*basic.ecart,4)
-                        haut_verif=ecart.ECART[i+1]
+                        haut_verif=ecart.ECART[i+2]
                         #Verification
                         bas=round(haut-3*basic.ecart,4)
-                        bas_verif=ecart.ECART[i-2]
+                        bas_verif=ecart.ECART[i-1]
                         count_achat=0
                         count_vente+=1
                         basic.get_bet_vente(haut - basic.ecart)
@@ -242,10 +242,10 @@ class tr_bot():
                         delta_achat_niveau=0
                         #Verification
                         haut=round(haut+3*basic.ecart,4)
-                        haut_verif=ecart.ECART[i+1]
+                        haut_verif=ecart.ECART[i+3]
                         #Verification
                         bas=round(haut-4*basic.ecart,4)
-                        bas_verif=ecart.ECART[i-3]
+                        bas_verif=ecart.ECART[i-1]
                         count_achat=0
                         count_vente+=1
                         basic.get_bet_vente(haut - basic.ecart)
