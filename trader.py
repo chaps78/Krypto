@@ -17,9 +17,12 @@ TELEG_TOKEN = parameters.TELEGRAM_TOKEN
 #Id du chat pour le BOT telegram
 BOT_CHAT_ID = parameters.TELEGRAM_CHAT_ID
 
+bot1 = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+bot1.send_message(BOT_CHAT_ID, 'AVANT IMPORT')
 
+import ecart
 
-VERSION="1.8"
+VERSION="1.9"
 
 def main():
     cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";START APPLI;VERSION "+VERSION+"' >> LOG/ERROR.error"
@@ -130,21 +133,25 @@ class tr_bot():
             try:
                 if passage_bas:
                     del achat[str(bas)]
+                    i=0
+                    while bas > ecart.ECART[i]:
+                        i += 1
                     if count_achat == 0:
-                        bas=round(bas-basic.ecart,4)
+
+                        bas=ecart.ECART[i-1]
                         count_achat +=1
                         count_vente=0
-                        haut=round(bas+2*basic.ecart,4)
+                        haut=ecart.ECART[i+1]
                         delta_achat_niveau=0
                         delta_vente_niveau=0
                         achat={}
                         vente={}
                         basic.flush_zero(kraken)
                     elif count_achat == 1:
-                        bas=round(bas-2*basic.ecart,4)
+                        bas=ecart.ECART[i-2]
                         count_achat +=1
                         count_vente=0
-                        haut=round(bas+3*basic.ecart,4)
+                        haut=ecart.ECART[i+1]
                         basic.get_bet_achat(bas+basic.ecart)
                         delta_achat_niveau = basic.bet
                         delta_vente_niveau=0
@@ -152,11 +159,11 @@ class tr_bot():
                         vente={}
                         basic.flush_zero(kraken)
                     else:
-                        bas=round(bas-3*basic.ecart,4)
+                        bas=ecart.ECART[i-3]
                         count_achat +=1
                         count_vente=0
                         delta_vente_niveau=0
-                        haut=round(bas+4*basic.ecart,4)
+                        haut=ecart.ECART[i+1]
                         basic.get_bet_achat(bas+basic.ecart)
                         delta_achat_niveau = basic.bet
                         basic.get_bet_achat(bas+2*basic.ecart)
@@ -172,7 +179,6 @@ class tr_bot():
                     basic.get_bet_vente(haut)
                     buy = basic.new_order(kraken,"XRPEUR","sell","limit",str(haut),str(basic.bet))
                     vente[str(haut)]=str(buy)
-
                     #Enregistrement du niveau achat_vente pour revenir au meme etat en cas de redemarrage
                     basic.ecriture_niveaux(count_achat , count_vente)
                     #Enregistrement des ordres d achat et vente qui viennent d etre passe
@@ -181,10 +187,13 @@ class tr_bot():
 
 
                 if passage_haut:
+                    i=0
+                    while haut > ecart.ECART[i]:
+                        i += 1
                     del vente[str(haut)]
                     if count_vente == 0:
-                        haut=round(haut+basic.ecart,4)
-                        bas=round(haut-2*basic.ecart,4)
+                        haut=ecart.ECART[i+1]
+                        bas=ecart.ECART[i-1]
                         count_achat=0
                         count_vente+=1
                         delta_achat_niveau=0
@@ -194,8 +203,8 @@ class tr_bot():
                         basic.flush_zero(kraken)
                     elif count_vente == 1:
                         delta_achat_niveau=0
-                        haut=round(haut+2*basic.ecart,4)
-                        bas=round(haut-3*basic.ecart,4)
+                        haut=ecart.ECART[i+2]
+                        bas=ecart.ECART[i-1]
                         count_achat=0
                         count_vente+=1
                         basic.get_bet_vente(haut - basic.ecart)
@@ -205,8 +214,8 @@ class tr_bot():
                         basic.flush_zero(kraken)
                     else:
                         delta_achat_niveau=0
-                        haut=round(haut+3*basic.ecart,4)
-                        bas=round(haut-4*basic.ecart,4)
+                        haut=ecart.ECART[i+3]
+                        bas=ecart.ECART[i-1]
                         count_achat=0
                         count_vente+=1
                         basic.get_bet_vente(haut - basic.ecart)
@@ -225,7 +234,6 @@ class tr_bot():
                         basic.get_bet_vente(haut)
                         buy = basic.new_order(kraken,"XRPEUR","sell","limit",str(haut),str(basic.bet + delta_vente_niveau ))
                         vente[str(haut)]=str(buy)
-
 
                     #Enregistrement du niveau achat_vente pour revenir au meme etat en cas de redemarrage
                     basic.ecriture_niveaux(count_achat , count_vente)
@@ -566,8 +574,13 @@ class basics():
         for el in ordres_ouverts['result']['open'].keys():
             self.order_close(kraken_key,el)
         prix_cour = float(prix)
-        bas=round(prix_cour - prix_cour%self.ecart,3)
-        haut=round(bas + self.ecart,3)
+        i=0
+        while ecart.ECART[i]<prix:
+            i += 1
+        #bas=round(prix_cour - prix_cour%self.ecart,3)
+        #haut=round(bas + self.ecart,3)
+        haut = ecart.ECART[i]
+        bas = ecart.ECART[i-1]
         self.get_bet_achat(bas)
         buy = self.new_order(kraken_key,"XRPEUR","buy","limit",str(bas),str(self.bet))
         
