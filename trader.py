@@ -58,8 +58,10 @@ class tr_bot():
 
         #Recuperation des niveaux de vente et d achat
         dico_niv = basic.lecture_niveaux()
-        count_vente = dico_niv["vente"]
-        count_achat = dico_niv["achat"]
+        #count_vente = dico_niv["vente"]
+        #count_achat = dico_niv["achat"]
+        count_vente = 0
+        count_achat = 0
         delta_achat_niveau=0
         delta_vente_niveau=0
 
