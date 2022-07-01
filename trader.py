@@ -574,13 +574,25 @@ class basics():
         for el in ordres_ouverts['result']['open'].keys():
             self.order_close(kraken_key,el)
         prix_cour = float(prix)
-        i=0
-        while ecart.ECART[i]<prix:
-            i += 1
-        #bas=round(prix_cour - prix_cour%self.ecart,3)
-        #haut=round(bas + self.ecart,3)
-        haut = ecart.ECART[i]
-        bas = ecart.ECART[i-1]
+        #TODO
+        #Recuperer le prix du dernier ordre closed
+        last_close = float(os.popen("cat LOG/*log|grep closed|tail -n 1").readlines()[0].split(";")[4])
+        last_close_equi_tab = 0
+        #pour ouvrir des ordres autour du dernier ordre clos
+        for el in ecart.ECART:
+            if abs(last_close-el) < abs(last_close - last_close_equi_tab):
+                last_close_equi_tab = el
+        key = ecart.ECART.index(last_close_equi_tab)
+        #Recuperation de la valeur ecart la plus proche du dernier closed
+        if prix < ecart.ECART[key + 1] and prix > ecart.ECART[key - 1]:
+            haut = ecart.ECART[key + 1]
+            bas = ecart.ECART[key - 1]
+        else:
+            i=0
+            while ecart.ECART[i]<prix:
+                i += 1
+            haut = ecart.ECART[i]
+            bas = ecart.ECART[i-1]
         self.get_bet_achat(bas)
         buy = self.new_order(kraken_key,"XRPEUR","buy","limit",str(bas),str(self.bet))
         
