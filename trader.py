@@ -99,7 +99,7 @@ class tr_bot():
 
                 resume={"a":0,"v":0}
                 importlib.reload(parameters)
-                DICO_BET      = parameters.DICO_BET
+                DICO_BET = parameters.DICO_BET
 
             try:
                 prix = basic.latest_price(kraken,"XRPEUR")
@@ -301,6 +301,8 @@ class basics():
                                              'price': price,
                                              'volume': volume})
         except:
+            cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + "PEUT ETRE L ERREUR EST ICI -- si il n'y a pas le log suivant le probleme vient de response" +str(pair)+";"+ str(type_B_S)+";"+str(ordertype)+";"+str(price)+";"+str(volume) + "ouverture ordre 1' >> LOG/ERROR.error"
+            os.system(cmd)
             cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + str(response) + "ouverture ordre 1' >> LOG/ERROR.error"
             os.system(cmd)
         try:
