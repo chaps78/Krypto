@@ -20,7 +20,7 @@ TELEG_TOKEN = parameters.TELEGRAM_TOKEN
 BOT_CHAT_ID = parameters.TELEGRAM_CHAT_ID
 
 
-VERSION="1.10"
+VERSION="1.11"
 
 def main():
     cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";START APPLI;VERSION "+VERSION+"' >> LOG/ERROR.error"
@@ -241,6 +241,10 @@ class tr_bot():
                     basic.ecriture_achat_vente(achat,vente)
 
             except:
+                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI WOOOOOOOOOOOOOOOOOO C ICI: ' >> LOG/ERROR.error"
+                os.system(cmd)
+                bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+                bot.send_message(BOT_CHAT_ID, 'check tes logs, t as une piste (dans le gros IF)')
                 cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + str(response) + "Probleme dans les IF"+str(passage_bas)+";"+str(passage_haut)+";"+str(prix)+"' >> LOG/ERROR.error"
 
             time.sleep(self.TIME_SLEEP)
@@ -301,6 +305,8 @@ class basics():
                                              'price': price,
                                              'volume': volume})
         except:
+            bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+            bot.send_message(BOT_CHAT_ID, 'check tes logs, t as une piste (a l ouverture d un ordre)')
             cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + "PEUT ETRE L ERREUR EST ICI -- si il n'y a pas le log suivant le probleme vient de response" +str(pair)+";"+ str(type_B_S)+";"+str(ordertype)+";"+str(price)+";"+str(volume) + "ouverture ordre 1' >> LOG/ERROR.error"
             os.system(cmd)
             cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + str(response) + "ouverture ordre 1' >> LOG/ERROR.error"
