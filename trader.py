@@ -20,7 +20,7 @@ TELEG_TOKEN = parameters.TELEGRAM_TOKEN
 BOT_CHAT_ID = parameters.TELEGRAM_CHAT_ID
 
 
-VERSION="1.11"
+VERSION="1.12"
 
 def main():
     cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";START APPLI;VERSION "+VERSION+"' >> LOG/ERROR.error"
@@ -240,11 +240,11 @@ class tr_bot():
                     #Enregistrement des ordres d achat et vente qui viennent d etre passe
                     basic.ecriture_achat_vente(achat,vente)
 
-            except:
+            except Exception as inst:
                 cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI WOOOOOOOOOOOOOOOOOO C ICI: ' >> LOG/ERROR.error"
                 os.system(cmd)
                 bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
-                bot.send_message(BOT_CHAT_ID, 'check tes logs, t as une piste (dans le gros IF)')
+                bot.send_message(BOT_CHAT_ID, 'check tes logs, t as une piste (dans le gros IF)' +str(inst).replace("'",""))
                 cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + str(response) + "Probleme dans les IF"+str(passage_bas)+";"+str(passage_haut)+";"+str(prix)+"' >> LOG/ERROR.error"
 
             time.sleep(self.TIME_SLEEP)
