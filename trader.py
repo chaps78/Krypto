@@ -20,7 +20,7 @@ TELEG_TOKEN = parameters.TELEGRAM_TOKEN
 BOT_CHAT_ID = parameters.TELEGRAM_CHAT_ID
 
 
-VERSION="1.12"
+VERSION="1.13"
 
 def main():
     cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";START APPLI;VERSION "+VERSION+"' >> LOG/ERROR.error"
@@ -245,7 +245,7 @@ class tr_bot():
                 os.system(cmd)
                 bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
                 bot.send_message(BOT_CHAT_ID, 'check tes logs, t as une piste (dans le gros IF)' +str(inst).replace("'",""))
-                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + str(response) + "Probleme dans les IF"+str(passage_bas)+";"+str(passage_haut)+";"+str(prix)+"' >> LOG/ERROR.error"
+                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+"; Probleme dans les IF"+str(passage_bas)+";"+str(passage_haut)+";"+str(prix)+"' >> LOG/ERROR.error"
 
             time.sleep(self.TIME_SLEEP)
     
