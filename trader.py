@@ -20,7 +20,7 @@ TELEG_TOKEN = parameters.TELEGRAM_TOKEN
 BOT_CHAT_ID = parameters.TELEGRAM_CHAT_ID
 
 
-VERSION="1.16"
+VERSION="1.17"
 
 def main():
     cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";START APPLI;VERSION "+VERSION+"' >> LOG/ERROR.error"
@@ -564,33 +564,39 @@ class basics():
 
         
         #verifie que l'ordre clos a ete execute partiellement et si il a ete partiellement execute, il integre dans les logs le volume execute
-        partial_execute = kraken.query_private('QueryOrders', {'txid': order_id})
-        if float(partial_execute['result'][order_id]['vol_exec']) == 0:
-            cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";cancel;;;;;"+ order_id +";;;;;;;;' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
-            os.system(cmd)
-        else:
-            volume = partial_execute['result'][order_id]['vol_exec']
-            prix = partial_execute['result'][order_id]['price']
-            frais = partial_execute['result'][order_id]['fee']
-            type_B_S = partial_execute['result'][order_id]['descr']['type']
-            cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";closed;"+type_B_S+";"+prix+";"+ volume +";"+frais+";"+ order_id +";"+str(partial_execute['error'])+"__partialy_closed;;;;;;;"+"' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
-            os.system(cmd)
-
-            #Envoi un message sur telegram en cas d ordre partiellement clos
-            #bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
-            #bot.send_message(BOT_CHAT_ID, 'ORDRE PARTIEL VOLUME : ' + str(volume) + ' PRIX : ' + str(prix))
-
-            #ouvre un ordre au prix du marche pour contrebalancer l ordre partiellement clos, cela permet de conserver le prix d equilibre
-            ID_partial = ""
-            if type_B_S == "buy":
-                ID_partial = self.new_order(kraken,"XRPEUR","sell","market",prix,volume)
+        try
+            close=0
+            partial_execute = kraken.query_private('QueryOrders', {'txid': order_id})
+            if float(partial_execute['result'][order_id]['vol_exec']) == 0:
+                cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";cancel;;;;;"+ order_id +";;;;;;;;' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
+                os.system(cmd)
+                close=1
             else:
-                ID_partial = self.new_order(kraken,"XRPEUR","buy","market",prix,volume)
+                volume = partial_execute['result'][order_id]['vol_exec']
+                prix = partial_execute['result'][order_id]['price']
+                frais = partial_execute['result'][order_id]['fee']
+                type_B_S = partial_execute['result'][order_id]['descr']['type']
+                cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";closed;"+type_B_S+";"+prix+";"+ volume +";"+frais+";"+ order_id +";"+str(partial_execute['error'])+"__partialy_closed;;;;;;;"+"' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
+                os.system(cmd)
+                close=2
+                #Envoi un message sur telegram en cas d ordre partiellement clos
+                #bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+                #bot.send_message(BOT_CHAT_ID, 'ORDRE PARTIEL VOLUME : ' + str(volume) + ' PRIX : ' + str(prix))
 
+                #ouvre un ordre au prix du marche pour contrebalancer l ordre partiellement clos, cela permet de conserver le prix d equilibre
+                ID_partial = ""
+                if type_B_S == "buy":
+                    ID_partial = self.new_order(kraken,"XRPEUR","sell","market",prix,volume)
+                else:
+                    ID_partial = self.new_order(kraken,"XRPEUR","buy","market",prix,volume)
+                close=3
 
-            time.sleep(2)
-            #Appel de la fonction pour effectuer le log de l ordre, l ordre est obligatoirement clos car c est un ordre market qui doit etre execute immediatement
-            self.order_status(kraken, ID_partial,"NA",volume,"")
+                time.sleep(2)
+                #Appel de la fonction pour effectuer le log de l ordre, l ordre est obligatoirement clos car c est un ordre market qui doit etre execute immediatement
+                self.order_status(kraken, ID_partial,"NA",volume,"")
+        except:
+            bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+            bot.send_message(BOT_CHAT_ID, "erreur dans le close" + str(close)+" ; ID:"+str(order_id))
         return result
 
 
@@ -735,10 +741,14 @@ class basics():
     #############################################
     #ferme tout les ordres et initialise les fichiers achat et vente
     def flush_zero(self,kraken_key):
-        achat={}
-        vente={}
-        self.ecriture_achat_vente(achat,vente)
-        ordres_ouverts = kraken_key.query_private('OpenOrders',{'trades': 'true','start':'1514790000'})
+        try:
+            achat={}
+            vente={}
+            self.ecriture_achat_vente(achat,vente)
+            ordres_ouverts = kraken_key.query_private('OpenOrders',{'trades': 'true','start':'1514790000'})
+        except:
+            bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+            bot.send_message(BOT_CHAT_ID, 'erreur dansle flish')
         for el in ordres_ouverts['result']['open'].keys():
             self.order_close(kraken_key,el)
 
