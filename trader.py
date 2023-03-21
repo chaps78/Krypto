@@ -184,7 +184,10 @@ class tr_bot():
                     #Enregistrement des ordres d achat et vente qui viennent d etre passe
                     basic.ecriture_achat_vente(achat,vente)
 
-
+                except Exception as inst:
+                    bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+                    bot.send_message(BOT_CHAT_ID, 'check tes logs, t as une piste (dans le 1er IF)' +str(inst).replace("'",""))
+                try:
 
                 if passage_haut:
                     i=0
