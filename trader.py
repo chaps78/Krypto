@@ -20,7 +20,7 @@ TELEG_TOKEN = parameters.TELEGRAM_TOKEN
 BOT_CHAT_ID = parameters.TELEGRAM_CHAT_ID
 
 
-VERSION="1.14"
+VERSION="1.15"
 
 def main():
     cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";START APPLI;VERSION "+VERSION+"' >> LOG/ERROR.error"
@@ -317,18 +317,26 @@ class basics():
         try:
             print(str(response['result']))
         except:
+            bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+            bot.send_message(BOT_CHAT_ID, 'check tes logs, t as une piste (a l ouverture d un ordre 2eme)')
             cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + str(response) + "ouverture ordre 2' >> LOG/ERROR.error"
             os.system(cmd)
-        if(response['error']!=[]):
-            cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";l erreur d ouverture d ordre est la suivante;" + str(response['error']) + "ouverture ordre 4' >> LOG/ERROR.error"
-            os.system(cmd)
-        if(response['error']==['EOrder:Insufficient funds']):
-            return -1
+        try:
+            if(response['error']!=[]):
+                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";l erreur d ouverture d ordre est la suivante;" + str(response['error']) + "ouverture ordre 4' >> LOG/ERROR.error"
+                os.system(cmd)
+            if(response['error']==['EOrder:Insufficient funds']):
+                return -1
+        except:
+            bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+            bot.send_message(BOT_CHAT_ID, 'check tes logs, t as une piste (a l ouverture d un ordre 3eme)')
 
         ID=""
         try:
             ID=str(response['result']['txid'][0])
         except:
+            bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+            bot.send_message(BOT_CHAT_ID, 'check tes logs, t as une piste (a l ouverture d un ordre 4eme)')
             cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + str(response) + "ouverture ordre 3 resultat non present dans lordre' >> LOG/ERROR.error"
             os.system(cmd)
         cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";;"+type_B_S+";"+str(price) +";"+ str(volume)+";;"+ str(ID) +";"+str(response['error'])+"' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
