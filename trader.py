@@ -564,7 +564,7 @@ class basics():
 
         
         #verifie que l'ordre clos a ete execute partiellement et si il a ete partiellement execute, il integre dans les logs le volume execute
-        try
+        try:
             close=0
             partial_execute = kraken.query_private('QueryOrders', {'txid': order_id})
             if float(partial_execute['result'][order_id]['vol_exec']) == 0:
