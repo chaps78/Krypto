@@ -20,7 +20,7 @@ TELEG_TOKEN = parameters.TELEGRAM_TOKEN
 BOT_CHAT_ID = parameters.TELEGRAM_CHAT_ID
 
 
-VERSION="1.18"
+VERSION="1.19"
 
 def main():
     cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";START APPLI;VERSION "+VERSION+"' >> LOG/ERROR.error"
@@ -603,6 +603,7 @@ class basics():
         except:
             bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
             bot.send_message(BOT_CHAT_ID, 'order close ' +str(close))
+            bot.send_message(BOT_CHAT_ID,"result request fail : "+str(partial_execute))
         return result
 
 
