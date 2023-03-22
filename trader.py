@@ -20,7 +20,7 @@ TELEG_TOKEN = parameters.TELEGRAM_TOKEN
 BOT_CHAT_ID = parameters.TELEGRAM_CHAT_ID
 
 
-VERSION="1.16"
+VERSION="1.17"
 
 def main():
     cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";START APPLI;VERSION "+VERSION+"' >> LOG/ERROR.error"
@@ -50,8 +50,8 @@ class tr_bot():
         achat={}
         vente={}
 
-        achat = basic.lecture_achat(achat) 
-        vente = basic.lecture_vente(vente) 
+        achat = basic.lecture_achat(achat)
+        vente = basic.lecture_vente(vente)
 
 
         #Recuperation des niveaux de vente et d achat
@@ -65,7 +65,7 @@ class tr_bot():
 
 
         prix = basic.latest_price(kraken,"XRPEUR")
-       
+
         ordres_ouverts = kraken.query_private('OpenOrders',{'trades': 'true','start':'1514790000'})
         try:
             #verification de la synchro entre kraken et les listes
@@ -75,10 +75,10 @@ class tr_bot():
         if verif_OK == False or (achat == {} and vente == {}):
             #supprime l'ensemble des ordres et cree 2 nouveaux ordres pour partir sur de nouvelles bases
             basic.flush(ordres_ouverts,kraken,achat,vente,prix)
-            achat = basic.lecture_achat(achat) 
-            vente = basic.lecture_vente(vente) 
+            achat = basic.lecture_achat(achat)
+            vente = basic.lecture_vente(vente)
 
-        
+
 
         previous_day = datetime.datetime.today().day
 
@@ -113,10 +113,10 @@ class tr_bot():
                 passage_haut = return_status[vente[str(haut)]] == 'closed'
                 passage_bas = return_status[achat[str(bas)]] == 'closed'
 
-                if passage_bas: 
+                if passage_bas:
                     resume["a"] += 1
 
-                if passage_haut: 
+                if passage_haut:
                     resume["v"] += 1
 
             except KeyboardInterrupt:
@@ -351,7 +351,7 @@ class tr_bot():
                 cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+"; Probleme dans les IF"+str(passage_bas)+";"+str(passage_haut)+";"+str(prix)+"' >> LOG/ERROR.error"
 
             time.sleep(self.TIME_SLEEP)
-    
+
 ########################################################################################
 #                                                                                      #
 #                LIBRAIRIE DE FONCTIONS BASIQUE POUR LE TREAD                          #
@@ -480,10 +480,10 @@ class basics():
             euros = str(soldes['ZEUR'])
             xrp = str(soldes['XXRP'])
 
-            
+
             cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";"+ret+";"+type_B_S+";"+prix+";"+ volume +";"+frais+";"+ order_id +";"+str(result['error'])+";"+str(montant)+";;"+str(niveau)+";"+str(ecart)+";"+ euros +";"+xrp+";"+"' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
             os.system(cmd)
-        
+
         return ret
 
 
@@ -549,7 +549,7 @@ class basics():
     #           indique dans les logs que l ordre est annule
     #   Pour un ordre execute partiellement:
     #           ouvre un ordre market avec le meme volume que l ordre partiel le contrebalancer et garder les memes points de bascule.
-    #           
+    #
     # IN:
     #   -Acces KRAKEN
     #   -ID de l ordre
@@ -562,7 +562,7 @@ class basics():
     def order_close(self,kraken, order_id):
         result = kraken.query_private('CancelOrder', {'txid': order_id})
 
-        
+
         #verifie que l'ordre clos a ete execute partiellement et si il a ete partiellement execute, il integre dans les logs le volume execute
         partial_execute = kraken.query_private('QueryOrders', {'txid': order_id})
         if float(partial_execute['result'][order_id]['vol_exec']) == 0:
@@ -624,7 +624,7 @@ class basics():
     #
     #############################################
     def get_bet_base(self,price):
-        keys = list(DICO_BET.keys()) 
+        keys = list(DICO_BET.keys())
         ret_key = 0.0
         for key in keys:
             if key < float(price) and key > ret_key:
@@ -714,7 +714,7 @@ class basics():
             bas = ecart.ECART[i-1]
         self.get_bet_achat(bas)
         buy = self.new_order(kraken_key,"XRPEUR","buy","limit",str(bas),str(self.bet))
-        
+
         achat[str(bas)]=str(buy)
 
         self.get_bet_vente(haut)
@@ -735,10 +735,18 @@ class basics():
     #############################################
     #ferme tout les ordres et initialise les fichiers achat et vente
     def flush_zero(self,kraken_key):
-        achat={}
-        vente={}
-        self.ecriture_achat_vente(achat,vente)
-        ordres_ouverts = kraken_key.query_private('OpenOrders',{'trades': 'true','start':'1514790000'})
+        count=0
+        try:
+            count=1
+            achat={}
+            vente={}
+            self.ecriture_achat_vente(achat,vente)
+            count=2
+            ordres_ouverts = kraken_key.query_private('OpenOrders',{'trades': 'true','start':'1514790000'})
+            count=3
+        except:
+            bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+            bot.send_message(BOT_CHAT_ID, 'Problème dans le flunch count : ' +str(count))
         for el in ordres_ouverts['result']['open'].keys():
             self.order_close(kraken_key,el)
 
@@ -754,7 +762,7 @@ class basics():
     #
     #############################################
 
-    def lecture_achat(self,achat): 
+    def lecture_achat(self,achat):
         try:
             fichier_achat=open("LOG/achat.txt",'r')
             achat_tmp= json.load(fichier_achat)
@@ -776,7 +784,7 @@ class basics():
     #############################################
 
 
-    def lecture_vente(self,vente): 
+    def lecture_vente(self,vente):
         try:
             fichier_vente=open("LOG/vente.txt",'r')
             vente_tmp= json.load(fichier_vente)
@@ -816,7 +824,7 @@ class basics():
     #   -
     #
     #############################################
-   
+
 # sauvegarde le niveau achat et vente pour revenir au meme point en cas de reboot du script
     def ecriture_niveaux(self , niv_achat , niv_vente):
         fichier_niveaux = open("LOG/niveaux.txt",'w')
@@ -851,4 +859,3 @@ class basics():
 
 if __name__ == '__main__':
      main()
-
