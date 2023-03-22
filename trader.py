@@ -74,7 +74,626 @@ class tr_bot():
             verif_OK = False
         if verif_OK == False or (achat == {} and vente == {}):
             #supprime l'ensemble des ordres et cree 2 nouveaux ordres pour partir sur de nouvelles bases
-/bin/bash: N$ : commande introuvable
+            basic.flush(ordres_ouverts,kraken,achat,vente,prix)
+            achat = basic.lecture_achat(achat) 
+            vente = basic.lecture_vente(vente) 
+
+        
+
+        previous_day = datetime.datetime.today().day
+
+        bas = float(max(achat.keys()))
+        haut = float(min(vente.keys()))
+        resume={"a":0,"v":0}
+
+        time.sleep(self.TIME_SLEEP)
+
+        while 1:
+            passage_haut = False
+            passage_bas = False
+            #Envoi d informations quotidienne
+            if previous_day != datetime.datetime.today().day:
+                previous_day = datetime.datetime.today().day
+                bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+                bot.send_message(BOT_CHAT_ID, 'NBR Achat : ' + str(resume["a"]) + '\nNBR Vente : ' + str(resume["v"]))
+
+                resume={"a":0,"v":0}
+                importlib.reload(parameters)
+                DICO_BET = parameters.DICO_BET
+
+            try:
+                prix = basic.latest_price(kraken,"XRPEUR")
+                time.sleep(2)
+
+                dico_orders={}
+                dico_orders[vente[str(haut)]] = {"niveau":count_vente,"ecart":basic.ecart}
+                dico_orders[achat[str(bas)]] = {"niveau":count_vente,"ecart":basic.ecart}
+
+                return_status = basic.orders_status(kraken,dico_orders)
+                passage_haut = return_status[vente[str(haut)]] == 'closed'
+                passage_bas = return_status[achat[str(bas)]] == 'closed'
+
+                if passage_bas: 
+                    resume["a"] += 1
+
+                if passage_haut: 
+                    resume["v"] += 1
+
+            except KeyboardInterrupt:
+                print("ctrl + C")
+                break
+            except Exception as inst:
+                passage_bas=False
+                passage_haut=False
+                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI dans le while vente: "+str(vente)+";"+"achat"+str(achat)+";prix"+str(prix)+";bas"+str(bas)+";haut"+str(haut)+"' >> LOG/ERROR.error"
+                os.system(cmd)
+                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";retour error; "+str(inst).replace("'","")+"' >> LOG/ERROR.error"
+                os.system(cmd)
+
+            try:
+                plantage=0
+                if passage_bas:
+                    plantage=1
+                    del achat[str(bas)]
+                    plantage=2
+                    i=0
+                    plantage=3
+                    while bas > ecart.ECART[i]:
+                        plantage=4
+                        i += 1
+                        plantage=5
+                    if count_achat == 0:
+                        plantage=6
+                        bas=ecart.ECART[i-1]
+                        plantage=7
+                        count_achat +=1
+                        plantage=8
+                        count_vente=0
+                        plantage=9
+                        haut=ecart.ECART[i+1]
+                        plantage=10
+                        delta_achat_niveau=0
+                        plantage=11
+                        delta_vente_niveau=0
+                        plantage=12
+                        achat={}
+                        plantage=13
+                        vente={}
+                        plantage=14
+                        basic.flush_zero(kraken)
+                        plantage=15
+                    elif count_achat == 1:
+                        plantage=16
+                        bas=ecart.ECART[i-2]
+                        plantage=17
+                        count_achat +=1
+                        plantage=18
+                        count_vente=0
+                        plantage=19
+                        haut=ecart.ECART[i+1]
+                        plantage=20
+                        basic.get_bet_achat(bas+basic.ecart)
+                        plantage=21
+                        delta_achat_niveau = basic.bet
+                        plantage=22
+                        delta_vente_niveau=0
+                        plantage=23
+                        achat={}
+                        plantage=24
+                        vente={}
+                        plantage=25
+                        basic.flush_zero(kraken)
+                        plantage=26
+                    else:
+                        plantage=27
+                        bas=ecart.ECART[i-3]
+                        plantage=28
+                        count_achat +=1
+                        plantage=29
+                        count_vente=0
+                        plantage=30
+                        delta_vente_niveau=0
+                        plantage=31
+                        haut=ecart.ECART[i+1]
+                        plantage=32
+                        basic.get_bet_achat(bas+basic.ecart)
+                        plantage=33
+                        delta_achat_niveau = basic.bet
+                        plantage=34
+                        basic.get_bet_achat(bas+2*basic.ecart)
+                        plantage=35
+                        delta_achat_niveau += basic.bet
+                        plantage=36
+                        achat={}
+                        plantage=37
+                        vente={}
+                        plantage=38
+                        basic.flush_zero(kraken)
+                        plantage=39
+                    ####attention l'achat existe peut etre deja ####################
+                    if not str(bas) in achat.keys():
+                        plantage=40
+                        basic.get_bet_achat(bas)
+                        plantage=41
+                        buy = basic.new_order(kraken,"XRPEUR","buy","limit",str(bas),str(basic.bet+delta_achat_niveau))
+                        plantage=42
+                        achat[str(bas)]=str(buy)
+                        plantage=43
+                    plantage=43.5
+                    basic.get_bet_vente(haut)
+                    plantage=44
+                    buy = basic.new_order(kraken,"XRPEUR","sell","limit",str(haut),str(basic.bet))
+                    plantage=45
+                    vente[str(haut)]=str(buy)
+                    plantage=46
+                    #Enregistrement du niveau achat_vente pour revenir au meme etat en cas de redemarrage
+                    basic.ecriture_niveaux(count_achat , count_vente)
+                    plantage=47
+                    #Enregistrement des ordres d achat et vente qui viennent d etre passe
+                    basic.ecriture_achat_vente(achat,vente)
+                    plantage=48
+
+            except Exception as inst:
+                bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+                bot.send_message(BOT_CHAT_ID, 'check tes logs, t as une piste (dans le 1er IF)' +str(inst).replace("'",""))
+                bot.send_message(BOT_CHAT_ID, 'trouvons la ligne de plantage' +str(plantage))
+            try:
+                plantage=0
+                if passage_haut:
+                    plantage=1
+                    i=0
+                    plantage=2
+                    while haut > ecart.ECART[i]:
+                        plantage=3
+                        i += 1
+                        plantage=4
+                    del vente[str(haut)]
+                    plantage=5
+                    if count_vente == 0:
+                        plantage=6
+                        haut=ecart.ECART[i+1]
+                        plantage=7
+                        bas=ecart.ECART[i-1]
+                        plantage=8
+                        count_achat=0
+                        plantage=9
+                        count_vente+=1
+                        plantage=10
+                        delta_achat_niveau=0
+                        plantage=11
+                        delta_vente_niveau=0
+                        plantage=12
+                        achat={}
+                        plantage=13
+                        vente={}
+                        plantage=14
+                        basic.flush_zero(kraken)
+                        plantage=15
+                    elif count_vente == 1:
+                        plantage=16
+                        delta_achat_niveau=0
+                        plantage=17
+                        haut=ecart.ECART[i+2]
+                        plantage=18
+                        bas=ecart.ECART[i-1]
+                        plantage=19
+                        count_achat=0
+                        plantage=20
+                        count_vente+=1
+                        plantage=21
+                        basic.get_bet_vente(haut - basic.ecart)
+                        plantage=22
+                        delta_vente_niveau = basic.bet
+                        plantage=23
+                        achat={}
+                        plantage=24
+                        vente={}
+                        plantage=25
+                        basic.flush_zero(kraken)
+                        plantage=26
+                    else:
+                        plantage=27
+                        delta_achat_niveau=0
+                        plantage=28
+                        haut=ecart.ECART[i+3]
+                        plantage=29
+                        bas=ecart.ECART[i-1]
+                        plantage=30
+                        count_achat=0
+                        plantage=31
+                        count_vente+=1
+                        plantage=32
+                        basic.get_bet_vente(haut - basic.ecart)
+                        plantage=33
+                        delta_vente_niveau = basic.bet
+                        plantage=34
+                        basic.get_bet_vente(haut - 2*basic.ecart)
+                        plantage=35
+                        delta_vente_niveau += basic.bet
+                        plantage=36
+                        achat={}
+                        plantage=37
+                        vente={}
+                        plantage=38
+                        basic.flush_zero(kraken)
+                        plantage=39
+                    plantage=39.5
+                    basic.get_bet_achat(bas)
+                    plantage=40
+                    buy = basic.new_order(kraken,"XRPEUR","buy","limit",str(bas),str(basic.bet))
+                    plantage=41
+                    achat[str(bas)]=str(buy)
+                    plantage=42
+                    ######        Attention la vente existe peut etre deja
+                    if not str(haut) in vente.keys():
+                        plantage=43
+                        basic.get_bet_vente(haut)
+                        plantage=44
+                        buy = basic.new_order(kraken,"XRPEUR","sell","limit",str(haut),str(basic.bet + delta_vente_niveau ))
+                        plantage=45
+                        vente[str(haut)]=str(buy)
+                        plantage=46
+
+                    #Enregistrement du niveau achat_vente pour revenir au meme etat en cas de redemarrage
+                    plantage=47
+                    basic.ecriture_niveaux(count_achat , count_vente)
+                    plantage=48
+                    #Enregistrement des ordres d achat et vente qui viennent d etre passe
+                    basic.ecriture_achat_vente(achat,vente)
+                    plantage=49
+
+            except Exception as inst:
+                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI WOOOOOOOOOOOOOOOOOO C ICI: ' >> LOG/ERROR.error"
+                os.system(cmd)
+                bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+                bot.send_message(BOT_CHAT_ID, 'check tes logs, t as une piste (dans le gros IF)' +str(inst).replace("'",""))
+                bot.send_message(BOT_CHAT_ID, 'trouvons la ligne de plantage' +str(plantage))
+                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+"; Probleme dans les IF"+str(passage_bas)+";"+str(passage_haut)+";"+str(prix)+"' >> LOG/ERROR.error"
+
+            time.sleep(self.TIME_SLEEP)
+    
+########################################################################################
+#                                                                                      #
+#                LIBRAIRIE DE FONCTIONS BASIQUE POUR LE TREAD                          #
+#                                                                                      #
+########################################################################################
+
+class basics():
+
+    def __init__(self):
+        #Declaration d'une variable interne pour l ecart
+        self.ecart=ECART
+        self.bet = 42
+        self.flag_bet_changement = 42
+
+
+    #############################################
+    #
+    # return le dictionnaire de crypto ou devise sur le compte avec le solde de la crypto (la devise est la key et le solde le contenu du dictionnaire
+    # IN:
+    #   -API kraken connetion objet
+    # OUT:
+    #   -dictionnaire DEVISE:SOLDE
+    #
+    #############################################
+
+    def get_found(selk,kraken):
+        try:
+            response = kraken.query_private('Balance')
+            retour = response['result']
+        except:
+            retour = ["ERROR"]
+        return retour
+
+
+
+    #############################################
+    #
+    # DESCRIPTION:
+    #
+    # IN:
+    #   -
+    #   -
+    # OUT:
+    #   -
+    #
+    #############################################
+
+    def new_order(self,kraken,pair,type_B_S,ordertype,price,volume):
+        try:
+            response = kraken.query_private('AddOrder',
+                                            {'pair': pair,
+                                             'type': type_B_S,
+                                             'ordertype': ordertype,
+                                             'price': price,
+                                             'volume': volume})
+        except:
+            bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+            bot.send_message(BOT_CHAT_ID, 'check tes logs, t as une piste (a l ouverture d un ordre)')
+            cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + "PEUT ETRE L ERREUR EST ICI -- si il n'y a pas le log suivant le probleme vient de response" +str(pair)+";"+ str(type_B_S)+";"+str(ordertype)+";"+str(price)+";"+str(volume) + "ouverture ordre 1' >> LOG/ERROR.error"
+            os.system(cmd)
+            cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + str(response) + "ouverture ordre 1' >> LOG/ERROR.error"
+            os.system(cmd)
+        try:
+            print(str(response['result']))
+        except:
+            bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+            bot.send_message(BOT_CHAT_ID, 'check tes logs, t as une piste (a l ouverture d un ordre 2eme)')
+            cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + str(response) + "ouverture ordre 2' >> LOG/ERROR.error"
+            os.system(cmd)
+        try:
+            if(response['error']!=[]):
+                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";l erreur d ouverture d ordre est la suivante;" + str(response['error']) + "ouverture ordre 4' >> LOG/ERROR.error"
+                os.system(cmd)
+            if(response['error']==['EOrder:Insufficient funds']):
+                return -1
+        except:
+            bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+            bot.send_message(BOT_CHAT_ID, 'check tes logs, t as une piste (a l ouverture d un ordre 3eme)')
+
+        ID=""
+        try:
+            ID=str(response['result']['txid'][0])
+        except:
+            bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+            bot.send_message(BOT_CHAT_ID, 'check tes logs, t as une piste (a l ouverture d un ordre 4eme)')
+            cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + str(response) + "ouverture ordre 3 resultat non present dans lordre' >> LOG/ERROR.error"
+            os.system(cmd)
+        cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";;"+type_B_S+";"+str(price) +";"+ str(volume)+";;"+ str(ID) +";"+str(response['error'])+"' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
+        os.system(cmd)
+
+
+
+        return ID
+
+
+    #############################################################################################################################
+    #
+    # DESCRIPTION:
+    #  recupère l'ID d'un ordre et retourne son status (open ou closed)
+    #  si le status est "closed" la fonction écrit dans les log le status de l'ordre avec des infos suplémentaire à l'instat T
+    # IN:
+    #   -API kraken connetion objet
+    #   -ID de l'ordre à vérifier
+    #   -niveau (fibo) pour écrire dans les log si l'ordre est à closed
+    #   -montant du bet
+    #   -ecart = delta entre deux ordres
+    # OUT:
+    #   -status de l'ordre ("open"/"closed")
+    #
+    #   -reprot de l'ordre dans les logs si l'ordre est clos
+    #
+    #############################################################################################################################
+
+
+    def order_status(self, kraken, order_id, niveau, montant, ecart):
+        result = kraken.query_private('QueryOrders', {'txid': order_id})
+        ret = result['result'][order_id]['status']
+
+        if ret == 'closed':
+            volume = result['result'][order_id]['vol_exec']
+            prix = result['result'][order_id]['price']
+            frais = result['result'][order_id]['fee']
+            type_B_S = result['result'][order_id]['descr']['type']
+
+            soldes = self.get_found(kraken)
+            euros = str(soldes['ZEUR'])
+            xrp = str(soldes['XXRP'])
+
+            
+            cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";"+ret+";"+type_B_S+";"+prix+";"+ volume +";"+frais+";"+ order_id +";"+str(result['error'])+";"+str(montant)+";;"+str(niveau)+";"+str(ecart)+";"+ euros +";"+xrp+";"+"' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
+            os.system(cmd)
+        
+        return ret
+
+
+    #############################################
+    #
+    # DESCRIPTION: meme comportement que order_status prenant en entrée une liste d'ID
+    # Objectif : limiter les appels API
+    #
+    # IN:
+    #   -
+    # OUT:
+    #   -
+    #
+    #############################################
+
+
+    def orders_status(self,kraken, dico_orders):
+        #order_id,niveau,montant,ecart):
+        list_id_orders = list(dico_orders.keys())
+        try:
+            ids_order_for_API = str(list_id_orders[0]) + "," + str(list_id_orders[1])
+            result = kraken.query_private('QueryOrders', {'txid': ids_order_for_API})
+        except Exception as inst:
+            cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";error dans call API; "+str(inst).replace("'","")+"' >> LOG/ERROR.error"
+            os.system(cmd)
+        return_value = {}
+        for order_id in list_id_orders:
+            try:
+                ret = result['result'][order_id]['status']
+            except Exception as inst:
+                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";error dans lecture du retour; ERROR: "+str(inst).replace("'","")+"' >> LOG/ERROR.error"
+                os.system(cmd)
+                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";error dans lecture du retour; RETOUR API"+str(result).replace("'","")+"' >> LOG/ERROR.error"
+                os.system(cmd)
+                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";error dans lecture du retour; KEY"+str(list_id_orders).replace("'","")+"' >> LOG/ERROR.error"
+                os.system(cmd)
+                time.sleep(2)
+            return_value[order_id] = ret
+            if ret == 'closed':
+                volume = result['result'][order_id]['vol_exec']
+                prix = result['result'][order_id]['price']
+                frais = result['result'][order_id]['fee']
+                type_B_S = result['result'][order_id]['descr']['type']
+
+                soldes = self.get_found(kraken)
+                euros = str(soldes['ZEUR'])
+                xrp = str(soldes['XXRP'])
+
+                niveau = dico_orders[order_id]["niveau"]
+                #montant = dico_orders[order_id]["montant"]
+                ecart = dico_orders[order_id]["ecart"]
+
+                cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";"+ret+";"+type_B_S+";"+prix+";"+ volume +";"+frais+";"+ order_id +";"+str(result['error'])+";"+str(self.bet)+";;"+str(niveau)+";"+str(ecart)+";"+ euros +";"+xrp+";"+"' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
+                os.system(cmd)
+        return return_value
+
+
+    #####################################################################################################################################
+    #
+    # DESCRIPTION:
+    #   Ferme un ordre donne en se basant sur l ID.
+    #   Pour un ordre non exécuté:
+    #           indique dans les logs que l ordre est annule
+    #   Pour un ordre execute partiellement:
+    #           ouvre un ordre market avec le meme volume que l ordre partiel le contrebalancer et garder les memes points de bascule.
+    #           
+    # IN:
+    #   -Acces KRAKEN
+    #   -ID de l ordre
+    # OUT:
+    #   -Retour de la requete revoyé par l API
+    #   -(enregistrement des donnees dans les log)
+    #
+    #####################################################################################################################################
+
+    def order_close(self,kraken, order_id):
+        result = kraken.query_private('CancelOrder', {'txid': order_id})
+
+        
+        #verifie que l'ordre clos a ete execute partiellement et si il a ete partiellement execute, il integre dans les logs le volume execute
+        try:
+            close=0
+            partial_execute = kraken.query_private('QueryOrders', {'txid': order_id})
+            if float(partial_execute['result'][order_id]['vol_exec']) == 0:
+                cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";cancel;;;;;"+ order_id +";;;;;;;;' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
+                os.system(cmd)
+                close=1
+            else:
+                volume = partial_execute['result'][order_id]['vol_exec']
+                prix = partial_execute['result'][order_id]['price']
+                frais = partial_execute['result'][order_id]['fee']
+                type_B_S = partial_execute['result'][order_id]['descr']['type']
+                cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";closed;"+type_B_S+";"+prix+";"+ volume +";"+frais+";"+ order_id +";"+str(partial_execute['error'])+"__partialy_closed;;;;;;;"+"' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
+                os.system(cmd)
+                close=2
+                #Envoi un message sur telegram en cas d ordre partiellement clos
+                #bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+                #bot.send_message(BOT_CHAT_ID, 'ORDRE PARTIEL VOLUME : ' + str(volume) + ' PRIX : ' + str(prix))
+
+                #ouvre un ordre au prix du marche pour contrebalancer l ordre partiellement clos, cela permet de conserver le prix d equilibre
+                ID_partial = ""
+                if type_B_S == "buy":
+                    ID_partial = self.new_order(kraken,"XRPEUR","sell","market",prix,volume)
+                else:
+                    ID_partial = self.new_order(kraken,"XRPEUR","buy","market",prix,volume)
+                close=3
+
+                time.sleep(2)
+                #Appel de la fonction pour effectuer le log de l ordre, l ordre est obligatoirement clos car c est un ordre market qui doit etre execute immediatement
+                self.order_status(kraken, ID_partial,"NA",volume,"")
+        except:
+            bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+            bot.send_message(BOT_CHAT_ID, "erreur dans le close" + str(close)+" ; ID:"+str(order_id))
+        return result
+
+
+    #############################################
+    #
+    # DESCRIPTION:
+    #
+    # IN:
+    #   -
+    # OUT:
+    #   -
+    #
+    #############################################
+
+    def latest_price(self,kraken,pair):
+
+        prix = kraken.query_public('Ticker', {'pair': pair})
+        prix_cour = float(prix['result']['XXRPZEUR']['b'][0])
+
+        return prix_cour
+
+
+    #############################################
+    #
+    # DESCRIPTION:
+    #
+    # IN:
+    #   - XRP Price
+    # OUT:
+    #   - Montant du bet
+    #
+    #############################################
+    def get_bet_base(self,price):
+        keys = list(DICO_BET.keys()) 
+        ret_key = 0.0
+        for key in keys:
+            if key < float(price) and key > ret_key:
+                ret_key = key
+        self.bet = DICO_BET[ret_key]
+        #Envoi un message sur telegram en cas d ordre  clos
+        #bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+        #bot.send_message(BOT_CHAT_ID, 'PRIX DU BET PROCHAIN BET : ' + str(self.bet) )
+
+    def get_bet_achat(self,price):
+        self.get_bet_base(float(price)+ECART)
+
+    def get_bet_vente(self,price):
+        self.get_bet_base(float(price))
+        if self.flag_bet_changement != self.bet:
+            #Envoi un message sur telegram pour changement de montant du bet
+            bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+            bot.send_message(BOT_CHAT_ID, 'CHANGEMENT du bet : ' + str(self.flag_bet_changement) + " vers "+str(self.bet) )
+            self.flag_bet_changement = self.bet
+
+    #############################################
+    #
+    # DESCRIPTION:
+    #
+    # IN:
+    #   -
+    # OUT:
+    #   -
+    #
+    #############################################
+
+    def verif(self,achat,vente,response):
+        #verification de la synchro entre kraken et les listes
+        verif_OK = True
+
+        li_verif=achat.keys()
+        for key in li_verif:
+            if not achat[key] in response['result']['open'].keys():
+                verif_OK=False
+
+        li_verif=vente.keys()
+        for key in li_verif:
+            if not vente[key] in response['result']['open'].keys():
+                verif_OK=False
+
+        if not (len(achat.keys())+len(vente.keys())) == len(response['result']['open'].keys()):
+            verif_OK=False
+
+        return verif_OK
+
+
+    #############################################
+    #
+    # DESCRIPTION:
+    #
+    # IN:
+    #   -
+    # OUT:
+    #   -
+    #
+    #############################################
+
+    def flush(self,ordres_ouverts,kraken_key,achat,vente,prix):
         achat={}
         vente={}
         for el in ordres_ouverts['result']['open'].keys():
@@ -122,10 +741,14 @@ class tr_bot():
     #############################################
     #ferme tout les ordres et initialise les fichiers achat et vente
     def flush_zero(self,kraken_key):
-        achat={}
-        vente={}
-        self.ecriture_achat_vente(achat,vente)
-        ordres_ouverts = kraken_key.query_private('OpenOrders',{'trades': 'true','start':'1514790000'})
+        try:
+            achat={}
+            vente={}
+            self.ecriture_achat_vente(achat,vente)
+            ordres_ouverts = kraken_key.query_private('OpenOrders',{'trades': 'true','start':'1514790000'})
+        except:
+            bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+            bot.send_message(BOT_CHAT_ID, 'erreur dansle flish')
         for el in ordres_ouverts['result']['open'].keys():
             self.order_close(kraken_key,el)
 
