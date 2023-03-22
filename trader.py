@@ -20,7 +20,7 @@ TELEG_TOKEN = parameters.TELEGRAM_TOKEN
 BOT_CHAT_ID = parameters.TELEGRAM_CHAT_ID
 
 
-VERSION="1.19"
+VERSION="1.20"
 
 def main():
     cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";START APPLI;VERSION "+VERSION+"' >> LOG/ERROR.error"
@@ -604,6 +604,9 @@ class basics():
             bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
             bot.send_message(BOT_CHAT_ID, 'order close ' +str(close))
             bot.send_message(BOT_CHAT_ID,"result request fail : "+str(partial_execute))
+            time.sleep(10)
+            ferme_ou_pas = kraken.query_private('QueryOrders', {'txid': order_id})
+            bot.send_message(BOT_CHAT_ID,"status de l ordre apres tentative de close : "+str(ferme_ou_pas))
         return result
 
 
