@@ -565,8 +565,19 @@ class basics():
             result = kraken.query_private('CancelOrder', {'txid': order_id})
             close=1
 
-            #verifie que l'ordre clos a ete execute partiellement et si il a ete partiellement execute, il integre dans les logs le volume execute
-            partial_execute = kraken.query_private('QueryOrders', {'txid': order_id})
+            #Bug régulièrement provoqué par un result vide
+            result={}
+            loop=0
+            while result=={} && loop <10:
+                #verifie que l'ordre clos a ete execute partiellement et si il a ete partiellement execute, il integre dans les logs le volume execute
+                partial_execute = kraken.query_private('QueryOrders', {'txid': order_id})
+                result=partial_execute['result']
+                if result=={}:
+                    bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+                    bot.send_message(BOT_CHAT_ID, 'Je n ai pas de report renvoye c est pas bon')
+                    bot.send_message(BOT_CHAT_ID, 'loop value: '+ str(loop))
+                    time.sleep(5)
+                    loop+=1
             close=2
             if float(partial_execute['result'][order_id]['vol_exec']) == 0:
                 close=3
