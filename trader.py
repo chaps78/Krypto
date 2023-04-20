@@ -569,7 +569,7 @@ class basics():
             #Bug régulièrement provoqué par un result vide
             result={}
             loop=0
-            while result=={} && loop <10:
+            while result=={} and loop <10:
                 #verifie que l'ordre clos a ete execute partiellement et si il a ete partiellement execute, il integre dans les logs le volume execute
                 partial_execute = kraken.query_private('QueryOrders', {'txid': order_id})
                 result=partial_execute['result']
