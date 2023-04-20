@@ -172,7 +172,7 @@ class tr_bot():
                         plantage=19
                         haut=ecart.ECART[i+1]
                         plantage=20
-                        basic.get_bet_achat(bas+basic.ecart)
+                        basic.get_bet_achat(ecart.ECART[i-1])
                         plantage=21
                         delta_achat_niveau = basic.bet
                         plantage=22
@@ -196,11 +196,11 @@ class tr_bot():
                         plantage=31
                         haut=ecart.ECART[i+1]
                         plantage=32
-                        basic.get_bet_achat(bas+basic.ecart)
+                        basic.get_bet_achat(ecart.ECART[i-1])
                         plantage=33
                         delta_achat_niveau = basic.bet
                         plantage=34
-                        basic.get_bet_achat(bas+2*basic.ecart)
+                        basic.get_bet_achat(ecart.ECART[i-2])
                         plantage=35
                         delta_achat_niveau += basic.bet
                         plantage=36
@@ -211,6 +211,7 @@ class tr_bot():
                         basic.flush_zero(kraken)
                         plantage=39
                     ####attention l'achat existe peut etre deja ####################
+                    #TODO Verifier si ce IF est bien necessaire
                     if not str(bas) in achat.keys():
                         plantage=40
                         basic.get_bet_achat(bas)
@@ -281,7 +282,7 @@ class tr_bot():
                         plantage=20
                         count_vente+=1
                         plantage=21
-                        basic.get_bet_vente(haut - basic.ecart)
+                        basic.get_bet_vente(ecart.ECART[i+1])
                         plantage=22
                         delta_vente_niveau = basic.bet
                         plantage=23
@@ -303,11 +304,11 @@ class tr_bot():
                         plantage=31
                         count_vente+=1
                         plantage=32
-                        basic.get_bet_vente(haut - basic.ecart)
+                        basic.get_bet_vente(ecart.ECART[i+1])
                         plantage=33
                         delta_vente_niveau = basic.bet
                         plantage=34
-                        basic.get_bet_vente(haut - 2*basic.ecart)
+                        basic.get_bet_vente(ecart.ECART[i+2])
                         plantage=35
                         delta_vente_niveau += basic.bet
                         plantage=36
@@ -662,7 +663,10 @@ class basics():
         #bot.send_message(BOT_CHAT_ID, 'PRIX DU BET PROCHAIN BET : ' + str(self.bet) )
 
     def get_bet_achat(self,price):
-        self.get_bet_base(float(price)+ECART)
+        key_ecart= ecart.ECART.index(price)
+        self.get_bet_base(ecart.ECART[key_ecart + 1])
+        if self.flag_bet_changement != self.bet:
+            self.flag_bet_changement = self.bet
 
     def get_bet_vente(self,price):
         self.get_bet_base(float(price))
