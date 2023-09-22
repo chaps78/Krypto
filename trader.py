@@ -20,7 +20,7 @@ TELEG_TOKEN = parameters.TELEGRAM_TOKEN
 BOT_CHAT_ID = parameters.TELEGRAM_CHAT_ID
 
 
-VERSION="1.21"
+VERSION="1.22"
 
 def main():
     cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";START APPLI;VERSION "+VERSION+"' >> LOG/ERROR.error"
@@ -778,6 +778,8 @@ class basics():
         except:
             bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
             bot.send_message(BOT_CHAT_ID, 'Problème dans le flunch count : ' +str(count))
+        bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+        bot.send_message(BOT_CHAT_ID, 'result of query : '+ str(ordres_ouverts['result']))
         for el in ordres_ouverts['result']['open'].keys():
             self.order_close(kraken_key,el)
 
