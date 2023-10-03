@@ -722,7 +722,8 @@ class basics():
         achat={}
         vente={}
         for el in ordres_ouverts['result']['open'].keys():
-            self.order_close(kraken_key,el)
+            if ordres_ouverts['result']['open'][el]['descr']['pair']=='XRPEUR':
+                self.order_close(kraken_key,el)
         prix_cour = float(prix)
         #TODO
         #Recuperer le prix du dernier ordre closed
@@ -781,7 +782,8 @@ class basics():
         bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
         bot.send_message(BOT_CHAT_ID, 'result of query : '+ str(ordres_ouverts['result']))
         for el in ordres_ouverts['result']['open'].keys():
-            self.order_close(kraken_key,el)
+            if ordres_ouverts['result']['open'][el]['descr']['pair']=='XRPEUR':
+                self.order_close(kraken_key,el)
 
 
     #############################################
