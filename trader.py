@@ -131,225 +131,193 @@ class tr_bot():
                 os.system(cmd)
 
             try:
-                plantage=0
-                if passage_bas:
-                    plantage=1
+                if passage_bas && !passage_haut:
                     del achat[str(bas)]
-                    plantage=2
                     i=0
-                    plantage=3
                     while bas > ecart.ECART[i]:
-                        plantage=4
                         i += 1
-                        plantage=5
                     if count_achat == 0:
-                        plantage=6
                         bas=ecart.ECART[i-1]
-                        plantage=7
                         count_achat +=1
-                        plantage=8
                         count_vente=0
-                        plantage=9
                         haut=ecart.ECART[i+1]
-                        plantage=10
                         delta_achat_niveau=0
-                        plantage=11
                         delta_vente_niveau=0
-                        plantage=12
                         achat={}
-                        plantage=13
                         vente={}
-                        plantage=14
                         basic.flush_zero(kraken)
-                        plantage=15
                     elif count_achat == 1:
-                        plantage=16
                         bas=ecart.ECART[i-2]
-                        plantage=17
                         count_achat +=1
-                        plantage=18
                         count_vente=0
-                        plantage=19
                         haut=ecart.ECART[i+1]
-                        plantage=20
                         basic.get_bet_achat(ecart.ECART[i-1])
-                        plantage=21
                         delta_achat_niveau = basic.bet
-                        plantage=22
                         delta_vente_niveau=0
-                        plantage=23
                         achat={}
-                        plantage=24
                         vente={}
-                        plantage=25
                         basic.flush_zero(kraken)
-                        plantage=26
                     else:
-                        plantage=27
                         bas=ecart.ECART[i-3]
-                        plantage=28
                         count_achat +=1
-                        plantage=29
                         count_vente=0
-                        plantage=30
                         delta_vente_niveau=0
-                        plantage=31
                         haut=ecart.ECART[i+1]
-                        plantage=32
                         basic.get_bet_achat(ecart.ECART[i-1])
-                        plantage=33
                         delta_achat_niveau = basic.bet
-                        plantage=34
                         basic.get_bet_achat(ecart.ECART[i-2])
-                        plantage=35
                         delta_achat_niveau += basic.bet
-                        plantage=36
                         achat={}
-                        plantage=37
                         vente={}
-                        plantage=38
                         basic.flush_zero(kraken)
-                        plantage=39
                     ####attention l'achat existe peut etre deja ####################
                     #TODO Verifier si ce IF est bien necessaire
                     if not str(bas) in achat.keys():
-                        plantage=40
                         basic.get_bet_achat(bas)
-                        plantage=41
                         buy = basic.new_order(kraken,"XRPEUR","buy","limit",str(bas),str(basic.bet+delta_achat_niveau))
-                        plantage=42
                         achat[str(bas)]=str(buy)
-                        plantage=43
-                    plantage=43.5
                     basic.get_bet_vente(haut)
-                    plantage=44
                     buy = basic.new_order(kraken,"XRPEUR","sell","limit",str(haut),str(basic.bet))
-                    plantage=45
                     vente[str(haut)]=str(buy)
-                    plantage=46
                     #Enregistrement du niveau achat_vente pour revenir au meme etat en cas de redemarrage
                     basic.ecriture_niveaux(count_achat , count_vente)
-                    plantage=47
                     #Enregistrement des ordres d achat et vente qui viennent d etre passe
                     basic.ecriture_achat_vente(achat,vente)
-                    plantage=48
 
             except Exception as inst:
                 bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
                 bot.send_message(BOT_CHAT_ID, 'check tes logs, t as une piste (dans le 1er IF)' +str(inst).replace("'",""))
-                bot.send_message(BOT_CHAT_ID, 'trouvons la ligne de plantage' +str(plantage))
             try:
-                plantage=0
-                if passage_haut:
-                    plantage=1
+                if passage_haut && !passage_bas:
                     i=0
-                    plantage=2
                     while haut > ecart.ECART[i]:
-                        plantage=3
                         i += 1
-                        plantage=4
                     del vente[str(haut)]
-                    plantage=5
                     if count_vente == 0:
-                        plantage=6
                         haut=ecart.ECART[i+1]
-                        plantage=7
                         bas=ecart.ECART[i-1]
-                        plantage=8
                         count_achat=0
-                        plantage=9
                         count_vente+=1
-                        plantage=10
                         delta_achat_niveau=0
-                        plantage=11
                         delta_vente_niveau=0
-                        plantage=12
                         achat={}
-                        plantage=13
                         vente={}
-                        plantage=14
                         basic.flush_zero(kraken)
-                        plantage=15
                     elif count_vente == 1:
-                        plantage=16
                         delta_achat_niveau=0
-                        plantage=17
                         haut=ecart.ECART[i+2]
-                        plantage=18
                         bas=ecart.ECART[i-1]
-                        plantage=19
                         count_achat=0
-                        plantage=20
                         count_vente+=1
-                        plantage=21
                         basic.get_bet_vente(ecart.ECART[i+1])
-                        plantage=22
                         delta_vente_niveau = basic.bet
-                        plantage=23
                         achat={}
-                        plantage=24
                         vente={}
-                        plantage=25
                         basic.flush_zero(kraken)
-                        plantage=26
                     else:
-                        plantage=27
                         delta_achat_niveau=0
-                        plantage=28
                         haut=ecart.ECART[i+3]
-                        plantage=29
                         bas=ecart.ECART[i-1]
-                        plantage=30
                         count_achat=0
-                        plantage=31
                         count_vente+=1
-                        plantage=32
                         basic.get_bet_vente(ecart.ECART[i+1])
-                        plantage=33
                         delta_vente_niveau = basic.bet
-                        plantage=34
                         basic.get_bet_vente(ecart.ECART[i+2])
-                        plantage=35
                         delta_vente_niveau += basic.bet
-                        plantage=36
                         achat={}
-                        plantage=37
                         vente={}
-                        plantage=38
                         basic.flush_zero(kraken)
-                        plantage=39
-                    plantage=39.5
                     basic.get_bet_achat(bas)
-                    plantage=40
                     buy = basic.new_order(kraken,"XRPEUR","buy","limit",str(bas),str(basic.bet))
-                    plantage=41
                     achat[str(bas)]=str(buy)
-                    plantage=42
                     ######        Attention la vente existe peut etre deja
                     if not str(haut) in vente.keys():
-                        plantage=43
                         basic.get_bet_vente(haut)
-                        plantage=44
                         buy = basic.new_order(kraken,"XRPEUR","sell","limit",str(haut),str(basic.bet + delta_vente_niveau ))
-                        plantage=45
                         vente[str(haut)]=str(buy)
-                        plantage=46
 
                     #Enregistrement du niveau achat_vente pour revenir au meme etat en cas de redemarrage
-                    plantage=47
                     basic.ecriture_niveaux(count_achat , count_vente)
-                    plantage=48
                     #Enregistrement des ordres d achat et vente qui viennent d etre passe
                     basic.ecriture_achat_vente(achat,vente)
-                    plantage=49
 
             except Exception as inst:
                 cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI WOOOOOOOOOOOOOOOOOO C ICI: ' >> LOG/ERROR.error"
                 os.system(cmd)
                 bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
                 bot.send_message(BOT_CHAT_ID, 'check tes logs, t as une piste (dans le gros IF)' +str(inst).replace("'",""))
-                bot.send_message(BOT_CHAT_ID, 'trouvons la ligne de plantage' +str(plantage))
                 cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+"; Probleme dans les IF"+str(passage_bas)+";"+str(passage_haut)+";"+str(prix)+"' >> LOG/ERROR.error"
+            try:
+                #Cas particulier: si une vente et achat sont clos en même temps
+                if passage_haut && passage_bas:
+                    bot.send_message(BOT_CHAT_ID, 'Achat et vente at the same time \nPOINT d attention particulier!!!')
+                    i_bas=0
+                    while bas > ecart.ECART[i_bas]:
+                        i_bas += 1
+                    i_haut=0
+                    while haut > ecart.ECART[i_haut]:
+                        i_haut += 1
+                    bas=ecart.ECART[i_bas-1]
+                    haut=ecart.ECART[i_haut+1]
+
+                    if count_vente<2 && count_achat <2:
+                        basic.get_bet_achat(ecart.ECART[i_bas+1])
+                        delta_achat_niveau=basic.bet
+                        basic.get_bet_vente(ecart.ECART[i_bas+1])
+                        delta_vente_niveau=basic.bet
+                    elif count_vente = 2 && count_achat < 2:
+                        #Achat
+                        basic.get_bet_achat(ecart.ECART[i_bas+1])
+                        delta_achat_niveau=basic.bet
+                        basic.get_bet_achat(ecart.ECART[i_bas+2])
+                        delta_achat_niveau+=basic.bet
+                        #Vente
+                        basic.get_bet_vente(ecart.ECART[i_bas+1])
+                        delta_vente_niveau=basic.bet
+                    elif count_vente > 2 && count_achat < 2:
+                        #Achat
+                        basic.get_bet_achat(ecart.ECART[i_bas+1])
+                        delta_achat_niveau=basic.bet
+                        basic.get_bet_achat(ecart.ECART[i_bas+2])
+                        delta_achat_niveau+=basic.bet
+                        basic.get_bet_achat(ecart.ECART[i_bas+3])
+                        delta_achat_niveau+=basic.bet
+                        #Vente
+                        basic.get_bet_vente(ecart.ECART[i_bas+1])
+                        delta_vente_niveau=basic.bet
+                    elif count_vente < 2 && count_achat = 2:
+                        #Achat
+                        basic.get_bet_achat(ecart.ECART[i_bas+1])
+                        delta_achat_niveau=basic.bet
+                        #Vente
+                        basic.get_bet_vente(ecart.ECART[i_bas+1])
+                        delta_vente_niveau=basic.bet
+                        basic.get_bet_vente(ecart.ECART[i_bas+2])
+                        delta_vente_niveau+=basic.bet
+                    elif count_vente < 2 && count_achat > 2:
+                        #Achat
+                        basic.get_bet_achat(ecart.ECART[i_bas+1])
+                        delta_achat_niveau=basic.bet
+                        #Vente
+                        basic.get_bet_vente(ecart.ECART[i_bas+1])
+                        delta_vente_niveau=basic.bet
+                        basic.get_bet_vente(ecart.ECART[i_bas+2])
+                        delta_vente_niveau+=basic.bet
+                        basic.get_bet_vente(ecart.ECART[i_bas+3])
+                        delta_vente_niveau+=basic.bet
+                    else:
+                        bot.send_message(BOT_CHAT_ID, 'On ne devrait pas arriver jusqu ici')
+
+                    count_vente = 0
+                    count_achat = 0
+
+                    buy = basic.new_order(kraken,"XRPEUR","buy","limit",str(bas),str(basic.bet+delta_achat_niveau))
+                    achat[str(bas)]=str(buy)
+                    sell = basic.new_order(kraken,"XRPEUR","sell","limit",str(haut),str(basic.bet+delta_vente_niveau ))
+                    vente[str(haut)]=str(sell)
+                    basic.ecriture_niveaux(count_achat=0 , count_vente=0)
+                    basic.ecriture_achat_vente(achat,vente)
+
 
             time.sleep(self.TIME_SLEEP)
 
