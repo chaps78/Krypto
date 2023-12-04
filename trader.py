@@ -131,7 +131,7 @@ class tr_bot():
                 os.system(cmd)
 
             try:
-                if passage_bas && !passage_haut:
+                if passage_bas and not passage_haut:
                     del achat[str(bas)]
                     i=0
                     while bas > ecart.ECART[i]:
@@ -188,7 +188,7 @@ class tr_bot():
                 bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
                 bot.send_message(BOT_CHAT_ID, 'check tes logs, t as une piste (dans le 1er IF)' +str(inst).replace("'",""))
             try:
-                if passage_haut && !passage_bas:
+                if passage_haut and not passage_bas:
                     i=0
                     while haut > ecart.ECART[i]:
                         i += 1
@@ -249,7 +249,7 @@ class tr_bot():
                 cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+"; Probleme dans les IF"+str(passage_bas)+";"+str(passage_haut)+";"+str(prix)+"' >> LOG/ERROR.error"
             try:
                 #Cas particulier: si une vente et achat sont clos en même temps
-                if passage_haut && passage_bas:
+                if passage_haut and passage_bas:
                     bot.send_message(BOT_CHAT_ID, 'Achat et vente at the same time \nPOINT d attention particulier!!!')
                     i_bas=0
                     while bas > ecart.ECART[i_bas]:
@@ -260,12 +260,12 @@ class tr_bot():
                     bas=ecart.ECART[i_bas-1]
                     haut=ecart.ECART[i_haut+1]
 
-                    if count_vente<2 && count_achat <2:
+                    if count_vente<2 and count_achat <2:
                         basic.get_bet_achat(ecart.ECART[i_bas+1])
                         delta_achat_niveau=basic.bet
                         basic.get_bet_vente(ecart.ECART[i_bas+1])
                         delta_vente_niveau=basic.bet
-                    elif count_vente = 2 && count_achat < 2:
+                    elif count_vente == 2 and count_achat < 2:
                         #Achat
                         basic.get_bet_achat(ecart.ECART[i_bas+1])
                         delta_achat_niveau=basic.bet
@@ -274,7 +274,7 @@ class tr_bot():
                         #Vente
                         basic.get_bet_vente(ecart.ECART[i_bas+1])
                         delta_vente_niveau=basic.bet
-                    elif count_vente > 2 && count_achat < 2:
+                    elif count_vente > 2 and count_achat < 2:
                         #Achat
                         basic.get_bet_achat(ecart.ECART[i_bas+1])
                         delta_achat_niveau=basic.bet
@@ -285,7 +285,7 @@ class tr_bot():
                         #Vente
                         basic.get_bet_vente(ecart.ECART[i_bas+1])
                         delta_vente_niveau=basic.bet
-                    elif count_vente < 2 && count_achat = 2:
+                    elif count_vente < 2 and count_achat == 2:
                         #Achat
                         basic.get_bet_achat(ecart.ECART[i_bas+1])
                         delta_achat_niveau=basic.bet
@@ -294,7 +294,7 @@ class tr_bot():
                         delta_vente_niveau=basic.bet
                         basic.get_bet_vente(ecart.ECART[i_bas+2])
                         delta_vente_niveau+=basic.bet
-                    elif count_vente < 2 && count_achat > 2:
+                    elif count_vente < 2 and count_achat > 2:
                         #Achat
                         basic.get_bet_achat(ecart.ECART[i_bas+1])
                         delta_achat_niveau=basic.bet
@@ -317,7 +317,11 @@ class tr_bot():
                     vente[str(haut)]=str(sell)
                     basic.ecriture_niveaux(count_achat=0 , count_vente=0)
                     basic.ecriture_achat_vente(achat,vente)
-
+            except Exception as inst:
+                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI WAAAAAAAAAAAAAAAAAAAAAA C ICI: ' >> LOG/ERROR.error"
+                os.system(cmd)
+                bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+                bot.send_message(BOT_CHAT_ID, 'check tes logs, t as une piste (dans le gros IF avec la double fermeture)')
 
             time.sleep(self.TIME_SLEEP)
 
