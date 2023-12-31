@@ -5,8 +5,6 @@ import json
 import telebot
 import datetime
 import importlib
-from oauth2client.service_account import ServiceAccountCredentials
-import gspread
 
 import bet
 import parameters
