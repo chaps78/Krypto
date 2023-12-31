@@ -5,14 +5,19 @@ import json
 import telebot
 import datetime
 import importlib
+from oauth2client.service_account import ServiceAccountCredentials
+import gspread
 
+import bet
 import parameters
 import ecart
 
 ECART         = parameters.ECART
 MONTANT_ACHAT = parameters.MONTANT_ACHAT
+#TO REMOVE
 DICO_BET      = parameters.DICO_BET
-
+#################
+BET_TAB = bet.BET
 
 #Token pour le bot telegram
 TELEG_TOKEN = parameters.TELEGRAM_TOKEN
@@ -20,7 +25,7 @@ TELEG_TOKEN = parameters.TELEGRAM_TOKEN
 BOT_CHAT_ID = parameters.TELEGRAM_CHAT_ID
 
 
-VERSION="1.23"
+VERSION="2.0"
 
 def main():
     cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";START APPLI;VERSION "+VERSION+"' >> LOG/ERROR.error"
@@ -636,12 +641,15 @@ class basics():
 
     def get_bet_achat(self,price):
         key_ecart= ecart.ECART.index(price)
-        self.get_bet_base(ecart.ECART[key_ecart + 1])
+        #self.get_bet_base(ecart.ECART[key_ecart + 1])
+        self.bet = DICO_BET[key_ecart + 1]
         if self.flag_bet_changement != self.bet:
             self.flag_bet_changement = self.bet
 
     def get_bet_vente(self,price):
-        self.get_bet_base(float(price))
+        key_ecart= ecart.ECART.index(price)
+        #self.get_bet_base(float(price))
+        self.bet = DICO_BET[key_ecart]
         if self.flag_bet_changement != self.bet:
             #Envoi un message sur telegram pour changement de montant du bet
             bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
@@ -751,8 +759,8 @@ class basics():
         except:
             bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
             bot.send_message(BOT_CHAT_ID, 'Problème dans le flunch count : ' +str(count))
-        bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
-        bot.send_message(BOT_CHAT_ID, 'result of query : '+ str(ordres_ouverts['result']))
+        #bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+        #bot.send_message(BOT_CHAT_ID, 'result of query : '+ str(ordres_ouverts['result']))
         for el in ordres_ouverts['result']['open'].keys():
             if ordres_ouverts['result']['open'][el]['descr']['pair']=='XRPEUR':
                 self.order_close(kraken_key,el)
@@ -860,6 +868,9 @@ class basics():
         except:
             dico_niveaux = {"achat": 0 ,"vente": 0 }
         return dico_niveaux
+
+
+
 
 
 
