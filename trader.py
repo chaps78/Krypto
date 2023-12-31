@@ -642,14 +642,14 @@ class basics():
     def get_bet_achat(self,price):
         key_ecart= ecart.ECART.index(price)
         #self.get_bet_base(ecart.ECART[key_ecart + 1])
-        self.bet = DICO_BET[key_ecart + 1]
+        self.bet = BET_TAB[key_ecart + 1]
         if self.flag_bet_changement != self.bet:
             self.flag_bet_changement = self.bet
 
     def get_bet_vente(self,price):
         key_ecart= ecart.ECART.index(price)
         #self.get_bet_base(float(price))
-        self.bet = DICO_BET[key_ecart]
+        self.bet = BET_TAB[key_ecart]
         if self.flag_bet_changement != self.bet:
             #Envoi un message sur telegram pour changement de montant du bet
             bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
