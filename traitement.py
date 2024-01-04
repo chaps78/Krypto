@@ -1,185 +1,138 @@
 import os
-#import basics from ../quatre
 import datetime
-import math
+from oauth2client.service_account import ServiceAccountCredentials
+import gspread
+import sys
+import time
+
+sys.path.append('/home/chaps78/K')
+import ecart
+import parameters
+import bet
+
+DICO_BET = parameters.DICO_BET
 
 
-def recap(cripto_total,prix_total,date,euros,xrp,xrp_price):
-    BET = float(45)
-    DELTA = 0.004
-    try:
-        ##################################################################################################################
-        #                CALCUL DES PARAMETRES 
-        ##################################################################################################################
-        #print(xrp)
-        solde_global=float(xrp.strip('\n'))*float(xrp_price.strip('\n'))+float(euros)
-        #TODO
-        #Mettre en parametre le delta et le montant du bet
-        pt_equilibre     = cripto_total*DELTA/BET+float(xrp_price)
-        pt_equilibre_del = pt_equilibre/DELTA
-        gain_pt_equi     = BET*DELTA*pt_equilibre_del*(pt_equilibre_del+1)/2+prix_total-BET*float(xrp_price)*(float(xrp_price)/DELTA+1)/2
-        limite_haute     = pt_equilibre + (-float(cripto_total)+float(xrp)) * DELTA / BET
-        # alpha est une valeur intermediaire pour le calcul de la limite basse
-        alpha            = (float(xrp_price) / DELTA) * (( float(xrp_price) / DELTA + 1)/2) - float(euros) / (BET * DELTA)
-        limite_basse     = DELTA * (-1 + math.sqrt(1 + 8 * alpha))/(2)
-        #limite_basse = 1
+def get_last_benef_line():
+    last_traitement = os.popen("cat /home/chaps78/K/benef.log|grep trait|tail -n 1").readlines()[0].split(";")
+    return last_traitement
 
-        #Calcul des Points De Bascule
-        beta_PDB         = prix_total - BET * float(xrp_price.strip('\n')) * (float(xrp_price.strip('\n')) / DELTA + 1 )/2
-        alpha_PDB        = cripto_total + float(xrp_price.strip('\n')) * BET / DELTA
-        # DELTA de la premiere methode de calcul
-        #delta_PDB        = math.pow( alpha_PDB * DELTA - BET * DELTA / 2 ,2) - 4 * ( beta_PDB * BET * DELTA * (1 + 1 / 2))
-        # DELTA de la 2eme methode de calcul
-        delta_PDB        = math.pow((DELTA * alpha_PDB),2) + 4 * (( BET * DELTA / 2) * (DELTA * alpha_PDB / 2 + beta_PDB ))
+def lecture_last_log():
+    last_close = os.popen("cat /home/chaps78/K/LOG/*log|grep closed|tail -n 1").readlines()[0].split(";")
+    return last_close
 
-        #print("DELTA : " + str(delta_PDB))
-        #print("ALPHA : " + str(alpha_PDB))
+def convert_list_2_dico(liste):
+    dico = {}
+    dico['sens']=liste[3]
+    dico['euros'] = liste[13]
+    dico['XRP'] = liste[14]
+    dico['prix'] = liste[4]
+    return dico
 
-        PDB_bas          = DELTA *(alpha_PDB * DELTA  - math.sqrt(delta_PDB))/( BET * DELTA  )
-        PDB_haut         = DELTA *(alpha_PDB * DELTA  + math.sqrt(delta_PDB))/( BET * DELTA  )
+def get_key_list(ecarts,value):
+    i=0
+    for el in ecarts:
+        if el == value:
+            return i
+        i +=1
 
+def get_bet_base(price):
+    price_tab=0.0
+    flag_min=100.0
+    for i in ecart.ECART:
+        if flag_min > abs(price-i):
+            price_tab=i
+            flag_min  = abs(price-i)
 
-    except:
-        solde_global="NA"
-    if(cripto_total<1e-02 and cripto_total>-1e-02):
-        str_print=date+";équilibre;;;" +str(prix_total) +";€;"+euros.strip('\n')+";"+xrp.strip('\n')+";"+xrp_price+";"+str(solde_global)
-    elif(cripto_total<0):
-        try:
-            str_print=date+";vendu;"+str(cripto_total) +"\t;à;" + str(-prix_total/cripto_total) +";Equilibre"+"\t;delta : " + str(float(cripto_total)-float(xrp)) 
-        except:
-            str_print=date+";vendu;"+str(cripto_total) +"\t;à;" + str(-prix_total/cripto_total) +"\t;€\t;"+euros.strip('\n')+"\t;"+xrp.strip('\n')+";"+xrp_price+"\t;"+str(solde_global)
-    elif(cripto_total>0):
-        try:
-            #str_print=date+";acheté;"+str(round(cripto_total,3)) +"\t;à;" + str(round(-prix_total/cripto_total,5))+"\t;Prix;"+xrp_price+";\tEq;"+str(round(pt_equilibre,4))+";\t€ au pt equi;"+str(round(gain_pt_equi,4))+"\t;delta : " + str(round(float(cripto_total)-float(xrp),3)) + "\t;LH; "+ str(round(limite_haute,4)) + "\tLB " + str((round(limite_basse,4))) 
-            str_print=date+";acheté;"+str(round(cripto_total,3)) +"\t;à;" + str(round(-prix_total/cripto_total,5))+"\t;Prix;"+xrp_price+";\tEq;"+str(round(pt_equilibre,4))+";\t€ au pt equi;"+str(round(gain_pt_equi,4))+"\t;delta : " + str(round(float(cripto_total)-float(xrp),3)) + "\t;LH; "+ str(round(limite_haute,4)) + "\tLB " + str((round(limite_basse,4))) + "\tPDB BAS " + str(round(PDB_bas,4)) + "\tPDB HAUT "+ str(round(PDB_haut,4))
-        
-        except:
-            str_print=date+";acheté;"+str(cripto_total) +"\t;à;" + str(-prix_total/cripto_total) +"\t;€\t;"+euros.strip('\n')+"\t;"+xrp.strip('\n')+";"+xrp_price+"\t;"+str(solde_global)
-    print(str_print)
-    os.system("echo '"+str_print+"' >>Classeur.csv")
+    return bet.BET[ecart.ECART.index(price_tab)]
 
-def lecture_log(nom_fichier):
-    traitement_log=open("/home/chaps78/K/LOG/"+nom_fichier,'r')
+def get_bet_achat(price,ec):
+    return get_bet_base(float(price)+float(ec))
+
+def get_bet_vente(price):
+    return get_bet_base(float(price))
+
+def limite_basse(dico,indice_buy):
+    euros = float(dico['euros'])
+    xrp = float(dico['XRP'])
     tab_achat=[]
-    tab_vente=[]
-    achat=0
-    vente=0
-    montant_achat=0
-    montant_vente=0
-    fee=0
-    solde=""
-    dernier_prix=""
-    solde_xrp=""
+    while indice_buy > 0:
+        euros = euros - ecart.ECART[indice_buy]*get_bet_achat(ecart.ECART[indice_buy],ecart.ECART[indice_buy]-ecart.ECART[indice_buy-1])
+        xrp = xrp + get_bet_achat(ecart.ECART[indice_buy],ecart.ECART[indice_buy]-ecart.ECART[indice_buy-1])
+        tab_achat.append([float(euros) , float(xrp)])
+        indice_buy = indice_buy - 1
+    tab_achat.reverse()
+    for el in tab_achat:
+        print(el)
+    return tab_achat
+    #print(tab_achat.reverse())
 
-#Parcours du fichier de log
-    for ligne in traitement_log:
-        tab_tmp = ligne.split(";")
-        #Création d'un tableau qui récapitule les achats
-        if tab_tmp[2]=="closed" and tab_tmp[3]=="buy":
-            tab_achat.append(tab_tmp)
-            #Récupération du dernier solde en euro
-            try:
-                solde=tab_tmp[13]
-            except:
-                solde=""
-            try:
-                dernier_prix=tab_tmp[4]
-            except:
-                dernier_prix=""
-            try:
-                solde_xrp=tab_tmp[14]
-            except:
-                solde_xrp=""
-        
-        #Création d'un tableau qui récapitule les ventes
-        if tab_tmp[2]=="closed" and tab_tmp[3]=="sell":
-            tab_vente.append(tab_tmp)
-            #Récupération du dernier solde en euro
-            try:
-                solde=tab_tmp[13]
-            except:
-                solde=""
-            try:
-                solde_xrp=tab_tmp[14]
-            except:
-                solde_xrp=""
-            try:
-                dernier_prix=tab_tmp[4]
-            except:
-                dernier_prix=""
+    #print("BAS:\t" + str(euros).replace(".",",")+";"+str(xrp).replace(".",","))
 
-    for i in tab_achat:
-        montant_achat+=float(i[4])*float(i[5])
-        fee+=float(i[6])
-        achat+=float(i[5])
-    for i in tab_vente:
-        montant_vente+=float(i[4])*float(i[5])
-        fee+=float(i[6])
-        vente+=float(i[5])
-    montant_final=montant_vente-montant_achat-fee
-    crypto_final=achat - vente
-    if(crypto_final<0):
-        #print(tab_vente[0][0] + ";vente;"+str(-crypto_final)+";"+str(-montant_final/crypto_final))
-        os.system("echo '"+(tab_vente[0][0] + ";vente;"+str(-crypto_final)+";"+str(-montant_final/crypto_final))+";"+str(solde.strip('\n'))+";"+str(dernier_prix)+";"+str(solde_xrp.strip('\n'))+"' >> Resume_final.csv")
-    if(crypto_final>0):
-        #print(tab_achat[0][0] + ";achat;"+str(crypto_final)+";"+str(-montant_final/crypto_final))
-        os.system("echo '"+(tab_achat[0][0] + ";achat;"+str(crypto_final)+";"+str(-montant_final/crypto_final))+";"+str(solde.strip('\n'))+";"+str(dernier_prix)+";"+str(solde_xrp.strip('\n'))+"' >>Resume_final.csv")
-    #if(crypto_final==0):
-        #print(tab_achat[0][0] + ";EQUILIBRE;0;"+str(montant_final))
+def limite_haute(dico,indice_sell):
+    euros = float(dico['euros'])
+    xrp = float(dico['XRP'])
+    tab_vente = []
+    while indice_sell < 600:
+        euros = euros + ecart.ECART[indice_sell]*get_bet_vente(ecart.ECART[indice_sell])
+        #print(str(ecart.ECART[indice_buy]))
+        xrp = xrp - get_bet_vente(ecart.ECART[indice_sell])
+        tab_vente.append([float(euros) , float(xrp)])
+        indice_sell = indice_sell + 1
+    print("\n\n")
 
-    traitement_log.close
-
-liste_dir = os.listdir("/home/chaps78/K/LOG")
-liste_dir.sort()
-#print(str(liste_dir))
-os.system("> Resume_final.csv")
-for el in liste_dir:
-    if ("log" in el) and ("lock" not in el) :
-        #print(el)
-        lecture_log(el)
-
-total_achat=0.0
-total_vente=0.0
-cripto_achat=0.0
-cripto_vente=0.0
-traitement_final=open("Resume_final.csv",'r')
-
-os.system("echo >Classeur.csv")
-for ligne in traitement_final:
-    #print(ligne)
-    tab_tmp = ligne.split(";")
-    if tab_tmp[1]=="achat":
-        cripto_achat+=float(tab_tmp[2])
-        total_achat+=float(tab_tmp[2])*float(tab_tmp[3])
-    if tab_tmp[1]=="vente":
-        cripto_vente+=float(tab_tmp[2])
-        total_vente+=float(tab_tmp[2])*float(tab_tmp[3])
-    euros=0
-    xrp=0
-    xrp_price=0
-    try:
-        euros=tab_tmp[4]
-    except:
-        euros=0
-
-    try:
-        xrp_price=tab_tmp[5]
-    except:
-        xrp_price=0
-
-    try:
-        xrp=tab_tmp[6]
-    except:
-        xrp=0
-
-    recap((cripto_achat-cripto_vente),(total_vente-total_achat),tab_tmp[0],euros,xrp,xrp_price)
-
-cripto_total=cripto_achat-cripto_vente
-prix_total=total_vente-total_achat
+    for el in tab_vente:
+        print(el)
+    return tab_vente
+    #print("HAUT:\t" + str(euros).replace(".",",")+";"+str(xrp).replace(".",","))
 
 
-#os.system("echo '"+str_print+"' >>Resume_final.csv")
-#os.system("echo '"+ str(datetime.datetime.now()) + str_print + "' >> historique.txt")
 
-traitement_final.close
+last = lecture_last_log()
+dico = convert_list_2_dico(last)
+indice_prix = get_key_list(ecart.ECART,float(dico['prix']))
+#print(dico)
+try:
+    indice_buy = indice_prix - 1
+    indice_sell = indice_prix + 1
+except:
+    print("Indice ERROR: "+ str(indice_prix))
+
+
+KPI_tab = limite_basse(dico,indice_buy)
+KPI_tab.append([float(dico['euros']),""])
+tab_tmp = limite_haute(dico,indice_sell)
+for el in tab_tmp:
+    KPI_tab.append(el)
+
+
+scope = ['https://spreadsheets.google.com/feeds','https://www.googleapis.com/auth/drive']
+creds = ServiceAccountCredentials.from_json_keyfile_name('/home/chaps78/K/LOG/cred.json', scope)
+client = gspread.authorize(creds)
+
+sheet = client.open("calculs des bet variables")
+
+wsheet = sheet.worksheet('KPI')
+wsheet.update('H3', KPI_tab)
+
+
+
+
+print("euros: "+ str(type(KPI_tab[0][0])))
+
+
+#print(time.strftime('%Y#%m#%d;%H:%M:%S;')+str(KPI_tab[0][0]))
+last_trait = get_last_benef_line()
+KPI_tab[0][0]=10.0
+print("euros: "+ str(KPI_tab[0][0]))
+print(last_trait)
+#trait;DATE;time;benef;%local;%up_invest;%perso;somme_perso;somme_total;XRP_delte
+if KPI_tab[0][0]>0:
+    if KPI_tab[0][0]<=3:
+        cmd= "echo '"+time.strftime('trait;%Y#%m#%d;%H:%M:%S;')+str(KPI_tab[0][0])+";"+str(0.7*KPI_tab[0][0])+";"+str(0.2*KPI_tab[0][0])+";"+str(0.1*KPI_tab[0][0])+";;;' >> benef.log"
+    else:
+        cmd= "echo '"+time.strftime('trait;%Y#%m#%d;%H:%M:%S;')+str(KPI_tab[0][0])+";"+str(0.7*3)+";"+str(0.2*3+(KPI_tab[0][0]-3)*0.6)+";"+str(0.1*3+(KPI_tab[0][0]-3)*0.4)+";;;' >> benef.log"
+    os.system(cmd)
+
+
 

@@ -23,7 +23,7 @@ TELEG_TOKEN = parameters.TELEGRAM_TOKEN
 BOT_CHAT_ID = parameters.TELEGRAM_CHAT_ID
 
 
-VERSION="2.0"
+VERSION="2.3"
 
 def main():
     cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";START APPLI;VERSION "+VERSION+"' >> LOG/ERROR.error"
@@ -96,9 +96,13 @@ class tr_bot():
             passage_haut = False
             passage_bas = False
             #Envoi d informations quotidienne
-            if basic.benef_last_line_get_benef():
+            last_ben_line = basic.benef_last_line_get_benef()
+            if "trait" in last_ben_line:
+                local = float(last_ben_line[4])
+                up_invest = float(last_ben_line[5])
+                last_close = float(os.popen("cat LOG/*log|grep closed|tail -n 1").readlines()[0].split(";")[4])
                 Ack1=True
-                cmd = "echo 'ACK1' >> benef.log"
+                cmd = "echo 'ACK1 local "+str(local)+" up "+str(up_invest)+"last_close "+str(last_close)+"' >> benef.log"
                 os.system(cmd)
 
             if previous_day != datetime.datetime.today().day:
@@ -874,11 +878,8 @@ class basics():
         return dico_niveaux
 
     def benef_last_line_get_benef(self):
-        last_traitement = os.popen("cat benef.log|tail -n 1").readlines()[0].split(";")
-        if "trait" in last_traitement:
-            return True
-        else:
-            return False
+        return os.popen("cat benef.log|tail -n 1").readlines()[0].split(";")
+
 
 
 
