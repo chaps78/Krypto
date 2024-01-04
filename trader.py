@@ -90,11 +90,17 @@ class tr_bot():
         resume={"a":0,"v":0}
 
         time.sleep(self.TIME_SLEEP)
+        Ack1=False
 
         while 1:
             passage_haut = False
             passage_bas = False
             #Envoi d informations quotidienne
+            if basic.benef_last_line_get_benef():
+                Ack1=True
+                cmd = "echo 'ACK1' >> benef.log"
+                os.system(cmd)
+
             if previous_day != datetime.datetime.today().day:
                 previous_day = datetime.datetime.today().day
                 bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
@@ -867,6 +873,12 @@ class basics():
             dico_niveaux = {"achat": 0 ,"vente": 0 }
         return dico_niveaux
 
+    def benef_last_line_get_benef(self):
+        last_traitement = os.popen("cat benef.log|tail -n 1").readlines()[0].split(";")
+        if "trait" in last_traitement:
+            return True
+        else:
+            return False
 
 
 
