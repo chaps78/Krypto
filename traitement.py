@@ -123,7 +123,7 @@ print("euros: "+ str(type(KPI_tab[0][0])))
 
 #print(time.strftime('%Y#%m#%d;%H:%M:%S;')+str(KPI_tab[0][0]))
 last_trait = get_last_benef_line()
-KPI_tab[0][0]=10.0
+#KPI_tab[0][0]=10.0
 print("euros: "+ str(KPI_tab[0][0]))
 print(last_trait)
 #trait;DATE;time;benef;%local;%up_invest;%perso;somme_perso;somme_total;XRP_delte
@@ -133,6 +133,3 @@ if KPI_tab[0][0]>0:
     else:
         cmd= "echo '"+time.strftime('trait;%Y#%m#%d;%H:%M:%S;')+str(KPI_tab[0][0])+";"+str(0.7*3)+";"+str(0.2*3+(KPI_tab[0][0]-3)*0.6)+";"+str(0.1*3+(KPI_tab[0][0]-3)*0.4)+";;;' >> benef.log"
     os.system(cmd)
-
-
-

@@ -23,7 +23,7 @@ TELEG_TOKEN = parameters.TELEGRAM_TOKEN
 BOT_CHAT_ID = parameters.TELEGRAM_CHAT_ID
 
 
-VERSION="2.3"
+VERSION="2.8"
 
 def main():
     cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";START APPLI;VERSION "+VERSION+"' >> LOG/ERROR.error"
@@ -67,7 +67,7 @@ class tr_bot():
         delta_vente_niveau=0
 
 
-        prix = basic.latest_price(kraken,"XRPEUR")
+        prix = basic."latest_price"(kraken,"XRPEUR")
 
         ordres_ouverts = kraken.query_private('OpenOrders',{'trades': 'true','start':'1514790000'})
         try:
@@ -101,9 +101,37 @@ class tr_bot():
                 local = float(last_ben_line[4])
                 up_invest = float(last_ben_line[5])
                 last_close = float(os.popen("cat LOG/*log|grep closed|tail -n 1").readlines()[0].split(";")[4])
+            #    last_close = float(os.system("cat LOG/*log|grep closed|tail -n 1").readlines()[0].split(";")[4])
+                key_last_close= ecart.ECART.index(last_close)
                 Ack1=True
-                cmd = "echo 'ACK1 local "+str(local)+" up "+str(up_invest)+"last_close "+str(last_close)+"' >> benef.log"
+                cmd = "echo 'ACK1 local "+str(local)+" up "+str(up_invest)+" last_close "+str(last_close)+" indice "+str(key_last_close)+"' >> benef.log"
                 os.system(cmd)
+                ############################################
+                #Tableau temporaire avant de passer en PROD
+                ############################################
+                BET_TAB_TEMP = []
+                for el in BET_TAB:
+                    BET_TAB_TEMP.append(el)
+                BET_TAB_TEMP[key_last_close-2]=BET_TAB_TEMP[key_last_close-2]+(local/5)/last_close
+                BET_TAB_TEMP[key_last_close-1]=BET_TAB_TEMP[key_last_close-1]+(local/5)/last_close
+                BET_TAB_TEMP[key_last_close]=BET_TAB_TEMP[key_last_close]+(local/5)/last_close
+                BET_TAB_TEMP[key_last_close+1]=BET_TAB_TEMP[key_last_close+1]+(local/5)/last_close
+                BET_TAB_TEMP[key_last_close+2]=BET_TAB_TEMP[key_last_close+2]+(local/5)/last_close
+                for i in range(23):
+                    BET_TAB_TEMP[533+i]=BET_TAB_TEMP[533+i]+(up_invest/23)/last_close
+                cmd = "echo 'BET = "+str(BET_TAB_TEMP)+"' > bet.py"
+                os.system(cmd)
+                ## TODO: remonter les valeurs dans le excel
+
+                if False:
+                    basic.flush_zero()
+                    basic.get_bet_achat(ECART[key_last_close-1])
+                    basic.basic.new_order(kraken,"XRPEUR","buy","limit",str(ECART[key_last_close-1]),str(basic.bet + up_invest/last_close + 3*local/5))  #### TODO montant du bet a regler
+
+                    basic.get_bet_vente(ECART[key_last_close-1])
+                    basic.basic.new_order(kraken,"XRPEUR","sell","limit",str(ECART[key_last_close+1]),str(basic.bet - up_invest/last_close - local/5)) #### TODO montant du bet a regler
+
+
 
             if previous_day != datetime.datetime.today().day:
                 previous_day = datetime.datetime.today().day
@@ -144,6 +172,9 @@ class tr_bot():
                 os.system(cmd)
 
             try:
+                if (passage_bas or passage_haut) and Ack1:
+                    Ack1=False
+                    cmd = "echo 'ACK2' >> benef.log"
                 if passage_bas and not passage_haut:
                     del achat[str(bas)]
                     i=0
