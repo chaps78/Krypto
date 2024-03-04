@@ -4,6 +4,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 import gspread
 import sys
 import time
+import telebot
 
 sys.path.append('/home/chaps78/K')
 import ecart
@@ -11,6 +12,7 @@ import parameters
 import bet
 
 DICO_BET = parameters.DICO_BET
+BOT_CHAT_ID = parameters.TELEGRAM_CHAT_ID
 
 
 def get_last_benef_line():
@@ -32,7 +34,7 @@ def convert_list_2_dico(liste):
 def get_key_list(ecarts,value):
     i=0
     for el in ecarts:
-        if el == value:
+        if abs(float(el) - float(value)) < 0.0001:
             return i
         i +=1
 
@@ -91,7 +93,7 @@ def limite_haute(dico,indice_sell):
 last = lecture_last_log()
 dico = convert_list_2_dico(last)
 indice_prix = get_key_list(ecart.ECART,float(dico['prix']))
-#print(dico)
+print(dico)
 try:
     indice_buy = indice_prix - 1
     indice_sell = indice_prix + 1
@@ -119,17 +121,29 @@ wsheet.update('H3', KPI_tab)
 
 
 print("euros: "+ str(type(KPI_tab[0][0])))
+XRP_reste = KPI_tab[len(KPI_tab)-1][1]
 
 
 #print(time.strftime('%Y#%m#%d;%H:%M:%S;')+str(KPI_tab[0][0]))
 last_trait = get_last_benef_line()
 #KPI_tab[0][0]=10.0
 print("euros: "+ str(KPI_tab[0][0]))
+
 print(last_trait)
+#last_trait_tab = last_trait.split(";")
+print("benef perso : "+str(last_trait[7]))
+total_benef = float(last_trait[7])
+gain = KPI_tab[0][0] - float(last_trait[7])
+print("gain : " + str(gain))
+print("XRP reste : " + str(XRP_reste))
 #trait;DATE;time;benef;%local;%up_invest;%perso;somme_perso;somme_total;XRP_delte
-if KPI_tab[0][0]>0:
-    if KPI_tab[0][0]<=3:
-        cmd= "echo '"+time.strftime('trait;%Y#%m#%d;%H:%M:%S;')+str(KPI_tab[0][0])+";"+str(0.7*KPI_tab[0][0])+";"+str(0.2*KPI_tab[0][0])+";"+str(0.1*KPI_tab[0][0])+";;;' >> benef.log"
+bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+bot.send_message(BOT_CHAT_ID, 'Ecart XRP trop grand: ' + str(XRP_reste))
+if gain>0 and abs(XRP_reste) <= 10:
+    if gain<=3:
+        print("aa")
+        cmd= "echo '"+time.strftime('trait;%Y#%m#%d;%H:%M:%S;')+str(gain)+";"+str(0.7*gain)+";"+str(0.2*gain)+";"+str(0.1*gain)+";"+str(total_benef + 0.1*gain)+";;' >> benef.log"
     else:
-        cmd= "echo '"+time.strftime('trait;%Y#%m#%d;%H:%M:%S;')+str(KPI_tab[0][0])+";"+str(0.7*3)+";"+str(0.2*3+(KPI_tab[0][0]-3)*0.6)+";"+str(0.1*3+(KPI_tab[0][0]-3)*0.4)+";;;' >> benef.log"
-    os.system(cmd)
+        print("bb")
+        cmd= "echo '"+time.strftime('trait;%Y#%m#%d;%H:%M:%S;')+str(gain)+";"+str(0.7*3)+";"+str(0.2*3+(gain-3)*0.6)+";"+str(0.1*3+(gain-3)*0.4)+";"+str(total_benef+0.1*3+(gain-3)*0.4)+";;' >> benef.log"
+    #os.system(cmd)

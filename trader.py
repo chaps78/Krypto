@@ -23,7 +23,7 @@ TELEG_TOKEN = parameters.TELEGRAM_TOKEN
 BOT_CHAT_ID = parameters.TELEGRAM_CHAT_ID
 
 
-VERSION="2.8"
+VERSION="2.9"
 
 def main():
     cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";START APPLI;VERSION "+VERSION+"' >> LOG/ERROR.error"
@@ -67,7 +67,7 @@ class tr_bot():
         delta_vente_niveau=0
 
 
-        prix = basic."latest_price"(kraken,"XRPEUR")
+        prix = basic.latest_price(kraken,"XRPEUR")
 
         ordres_ouverts = kraken.query_private('OpenOrders',{'trades': 'true','start':'1514790000'})
         try:
@@ -102,35 +102,58 @@ class tr_bot():
                 up_invest = float(last_ben_line[5])
                 last_close = float(os.popen("cat LOG/*log|grep closed|tail -n 1").readlines()[0].split(";")[4])
             #    last_close = float(os.system("cat LOG/*log|grep closed|tail -n 1").readlines()[0].split(";")[4])
-                key_last_close= ecart.ECART.index(last_close)
+                prev_dif = abs(last_close-ecart.ECART[0])
+                for el in ecart.ECART:
+                    if abs(last_close - el) < prev_dif:
+                        prev_dif=abs(last_close - el)
+                        prev_el = el
+                key_last_close= ecart.ECART.index(prev_el)
                 Ack1=True
-                cmd = "echo 'ACK1 local "+str(local)+" up "+str(up_invest)+" last_close "+str(last_close)+" indice "+str(key_last_close)+"' >> benef.log"
+                cmd = "echo 'ACK1;local "+str(local)+" up "+str(up_invest)+" last_close "+str(last_close)+" indice "+str(key_last_close)+"' >> benef.log"
                 os.system(cmd)
                 ############################################
                 #Tableau temporaire avant de passer en PROD
                 ############################################
-                BET_TAB_TEMP = []
-                for el in BET_TAB:
-                    BET_TAB_TEMP.append(el)
-                BET_TAB_TEMP[key_last_close-2]=BET_TAB_TEMP[key_last_close-2]+(local/5)/last_close
-                BET_TAB_TEMP[key_last_close-1]=BET_TAB_TEMP[key_last_close-1]+(local/5)/last_close
-                BET_TAB_TEMP[key_last_close]=BET_TAB_TEMP[key_last_close]+(local/5)/last_close
-                BET_TAB_TEMP[key_last_close+1]=BET_TAB_TEMP[key_last_close+1]+(local/5)/last_close
-                BET_TAB_TEMP[key_last_close+2]=BET_TAB_TEMP[key_last_close+2]+(local/5)/last_close
+                bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+                bot.send_message(BOT_CHAT_ID, 'Last close : '+ str(last_close))
+                bot.send_message(BOT_CHAT_ID, 'Local : '+ str(local))
+                bot.send_message(BOT_CHAT_ID, 'UP : '+ str(up_invest))
+
+                BET_TAB[key_last_close-2]=BET_TAB[key_last_close-2]+(local/5)/last_close
+                BET_TAB[key_last_close-1]=BET_TAB[key_last_close-1]+(local/5)/last_close
+                BET_TAB[key_last_close]=BET_TAB[key_last_close]+(local/5)/last_close
+                BET_TAB[key_last_close+1]=BET_TAB[key_last_close+1]+(local/5)/last_close
+                BET_TAB[key_last_close+2]=BET_TAB[key_last_close+2]+(local/5)/last_close
+                bot.send_message(BOT_CHAT_ID, 'XRP add local:' + str((local/5)/last_close) + "\nold : " + str(BET_TAB[key_last_close+2]) +"\nnew : "+str(BET_TAB[key_last_close+2]+(local/5)/last_close))
+
                 for i in range(23):
-                    BET_TAB_TEMP[533+i]=BET_TAB_TEMP[533+i]+(up_invest/23)/last_close
-                cmd = "echo 'BET = "+str(BET_TAB_TEMP)+"' > bet.py"
+                    BET_TAB[533+i]=BET_TAB[533+i]+(up_invest/23)/last_close
+                cmd = "echo 'BET = "+str(BET_TAB)+"' > bet.py"
+                bot.send_message(BOT_CHAT_ID, 'XRP up by step : '+ str((up_invest/23)/last_close))
+
                 os.system(cmd)
                 ## TODO: remonter les valeurs dans le excel
+                if True:
+                    basic.flush_zero(kraken)
+                    achat={}
+                    vente={}
 
-                if False:
-                    basic.flush_zero()
-                    basic.get_bet_achat(ECART[key_last_close-1])
-                    basic.basic.new_order(kraken,"XRPEUR","buy","limit",str(ECART[key_last_close-1]),str(basic.bet + up_invest/last_close + 3*local/5))  #### TODO montant du bet a regler
 
-                    basic.get_bet_vente(ECART[key_last_close-1])
-                    basic.basic.new_order(kraken,"XRPEUR","sell","limit",str(ECART[key_last_close+1]),str(basic.bet - up_invest/last_close - local/5)) #### TODO montant du bet a regler
+                    basic.get_bet_achat(ecart.ECART[key_last_close-1])
+                    bot.send_message(BOT_CHAT_ID, 'ici ca passe:' + str(basic.bet + up_invest/last_close + 3*local/5))
 
+                    buy = basic.new_order(kraken,"XRPEUR","buy","limit",str(ecart.ECART[key_last_close-1]),str(basic.bet + up_invest/last_close + 3*local/5/last_close))  #### TODO montant du bet a regler
+                    achat[str(ecart.ECART[key_last_close-1])]=str(buy)
+                    bot.send_message(BOT_CHAT_ID, 'Ordre achat : '+ str(up_invest/last_close + 3*local/5/last_close))
+                    #basic.get_bet_achat(bas)
+                    #buy = basic.new_order(kraken,"XRPEUR","buy","limit",str(bas),str(basic.bet+delta_achat_niveau))
+
+                    basic.get_bet_vente(ecart.ECART[key_last_close+1])
+                    buy = basic.new_order(kraken,"XRPEUR","sell","limit",str(ecart.ECART[key_last_close+1]),str(basic.bet - up_invest/last_close - local/5/last_close)) #### TODO montant du bet a regler
+
+                    bot.send_message(BOT_CHAT_ID, 'Ordre vente : '+ str(- up_invest/last_close - local/5/last_close))
+                    vente[str(ecart.ECART[key_last_close+1])]=str(buy)
+                    basic.ecriture_achat_vente(achat,vente)
 
 
             if previous_day != datetime.datetime.today().day:
@@ -172,9 +195,16 @@ class tr_bot():
                 os.system(cmd)
 
             try:
-                if (passage_bas or passage_haut) and Ack1:
-                    Ack1=False
+                last_ben_line = basic.benef_last_line_get_benef()
+
+
+
+                if (passage_bas or passage_haut) and "ACK1" in last_ben_line:
+                    bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+                    bot.send_message(BOT_CHAT_ID, 'Last line benef for if : '+ str(last_ben_line))
+                    bot.send_message(BOT_CHAT_ID, 'If bool : '+ str("ACK1" in last_ben_line))
                     cmd = "echo 'ACK2' >> benef.log"
+                    os.system(cmd)
                 if passage_bas and not passage_haut:
                     del achat[str(bas)]
                     i=0
