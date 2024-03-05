@@ -141,12 +141,24 @@ bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
 bot.send_message(BOT_CHAT_ID, 'Ecart XRP : ' + str(XRP_reste) +'\ngain : ' + str(gain))
 arg = ""
 arg = sys.argv[1]
+#############################################
+#       Parametres d investissement         #
+#############################################
+limite=3
+# Somme doit faire 1
+local=0.7
+up = 0.2
+perso = 0.1
+# Somme doit faire 1
+up_limite = 0.6
+perso_limite = 0.4
+##############################################
 
 if gain>0 and abs(XRP_reste) <= 10:
-    if gain<=3:
-        cmd= "echo '"+time.strftime('trait;%Y#%m#%d;%H:%M:%S;')+str(gain)+";"+str(0.7*gain)+";"+str(0.2*gain)+";"+str(0.1*gain)+";"+str(total_benef + 0.1*gain)+";;' >> /home/chaps78/K/benef.log"
+    if gain<=limite:
+        cmd= "echo '"+time.strftime('trait;%Y#%m#%d;%H:%M:%S;')+str(gain)+";"+str(local*gain)+";"+str(up*gain)+";"+str(perso*gain)+";"+str(total_benef + perso*gain)+";;' >> /home/chaps78/K/benef.log"
     else:
-        cmd= "echo '"+time.strftime('trait;%Y#%m#%d;%H:%M:%S;')+str(gain)+";"+str(0.7*3)+";"+str(0.2*3+(gain-3)*0.6)+";"+str(0.1*3+(gain-3)*0.4)+";"+str(total_benef+0.1*3+(gain-3)*0.4)+";;' >> /home/chaps78/K/benef.log"
+        cmd= "echo '"+time.strftime('trait;%Y#%m#%d;%H:%M:%S;')+str(gain)+";"+str(local*limite)+";"+str(up*limite+(gain-limite)*up_limite)+";"+str(perso*limite+(gain-limite)*perso_limite)+";"+str(total_benef+perso*limite+(gain-limite)*perso_limite)+";;' >> /home/chaps78/K/benef.log"
     if arg == "no":
         print("pas d impression")
     else:
