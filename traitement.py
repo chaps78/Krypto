@@ -139,11 +139,15 @@ print("XRP reste : " + str(XRP_reste))
 #trait;DATE;time;benef;%local;%up_invest;%perso;somme_perso;somme_total;XRP_delte
 bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
 bot.send_message(BOT_CHAT_ID, 'Ecart XRP : ' + str(XRP_reste) +'\ngain : ' + str(gain))
+arg = ""
+arg = sys.argv[1]
+
 if gain>0 and abs(XRP_reste) <= 10:
     if gain<=3:
-        print("aa")
         cmd= "echo '"+time.strftime('trait;%Y#%m#%d;%H:%M:%S;')+str(gain)+";"+str(0.7*gain)+";"+str(0.2*gain)+";"+str(0.1*gain)+";"+str(total_benef + 0.1*gain)+";;' >> /home/chaps78/K/benef.log"
     else:
-        print("bb")
         cmd= "echo '"+time.strftime('trait;%Y#%m#%d;%H:%M:%S;')+str(gain)+";"+str(0.7*3)+";"+str(0.2*3+(gain-3)*0.6)+";"+str(0.1*3+(gain-3)*0.4)+";"+str(total_benef+0.1*3+(gain-3)*0.4)+";;' >> /home/chaps78/K/benef.log"
-    os.system(cmd)
+    if arg == "no":
+        print("pas d impression")
+    else:
+        os.system(cmd)
