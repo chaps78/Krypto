@@ -115,9 +115,7 @@ class tr_bot():
                 #Tableau temporaire avant de passer en PROD
                 ############################################
                 bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
-                bot.send_message(BOT_CHAT_ID, 'Last close : '+ str(last_close))
-                bot.send_message(BOT_CHAT_ID, 'Local : '+ str(local))
-                bot.send_message(BOT_CHAT_ID, 'UP : '+ str(up_invest))
+                bot.send_message(BOT_CHAT_ID, 'Last close : '+ str(last_close)+'\nLocal : '+ str(local) + '\nUP : '+ str(up_invest))
 
                 BET_TAB[key_last_close-2]=BET_TAB[key_last_close-2]+(local/5)/last_close
                 BET_TAB[key_last_close-1]=BET_TAB[key_last_close-1]+(local/5)/last_close
@@ -140,18 +138,15 @@ class tr_bot():
 
 
                     basic.get_bet_achat(ecart.ECART[key_last_close-1])
-                    bot.send_message(BOT_CHAT_ID, 'ici ca passe:' + str(basic.bet + up_invest/last_close + 3*local/5))
 
                     buy = basic.new_order(kraken,"XRPEUR","buy","limit",str(ecart.ECART[key_last_close-1]),str(basic.bet + up_invest/last_close + 3*local/5/last_close))  #### TODO montant du bet a regler
                     achat[str(ecart.ECART[key_last_close-1])]=str(buy)
-                    bot.send_message(BOT_CHAT_ID, 'Ordre achat : '+ str(up_invest/last_close + 3*local/5/last_close))
                     #basic.get_bet_achat(bas)
                     #buy = basic.new_order(kraken,"XRPEUR","buy","limit",str(bas),str(basic.bet+delta_achat_niveau))
 
                     basic.get_bet_vente(ecart.ECART[key_last_close+1])
                     buy = basic.new_order(kraken,"XRPEUR","sell","limit",str(ecart.ECART[key_last_close+1]),str(basic.bet - up_invest/last_close - local/5/last_close)) #### TODO montant du bet a regler
 
-                    bot.send_message(BOT_CHAT_ID, 'Ordre vente : '+ str(- up_invest/last_close - local/5/last_close))
                     vente[str(ecart.ECART[key_last_close+1])]=str(buy)
                     basic.ecriture_achat_vente(achat,vente)
 
@@ -203,9 +198,9 @@ class tr_bot():
                     bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
                     bot.send_message(BOT_CHAT_ID, 'Last line benef for if : '+ str(last_ben_line))
                     bot.send_message(BOT_CHAT_ID, 'If bool : '+ str("ACK1" in last_ben_line))
-                    cmd = "echo 'ACK2' >> benef.log"
+                    cmd = "echo 'ACK2;' >> benef.log"
                     os.system(cmd)
-                if passage_bas and not passage_haut:
+                if (passage_bas and not passage_haut) and "ACK2" in last_ben_line:
                     del achat[str(bas)]
                     i=0
                     while bas > ecart.ECART[i]:
@@ -262,7 +257,7 @@ class tr_bot():
                 bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
                 bot.send_message(BOT_CHAT_ID, 'check tes logs, t as une piste (dans le 1er IF)' +str(inst).replace("'",""))
             try:
-                if passage_haut and not passage_bas:
+                if (passage_haut and not passage_bas) and "ACK2" in last_ben_line:
                     i=0
                     while haut > ecart.ECART[i]:
                         i += 1
@@ -323,7 +318,7 @@ class tr_bot():
                 cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+"; Probleme dans les IF"+str(passage_bas)+";"+str(passage_haut)+";"+str(prix)+"' >> LOG/ERROR.error"
             try:
                 #Cas particulier: si une vente et achat sont clos en même temps
-                if passage_haut and passage_bas:
+                if (passage_haut and passage_bas) and "ACK2" in last_ben_line:
                     bot.send_message(BOT_CHAT_ID, 'Achat et vente at the same time \nPOINT d attention particulier!!!')
                     i_bas=0
                     while bas > ecart.ECART[i_bas]:
@@ -722,7 +717,7 @@ class basics():
         if self.flag_bet_changement != self.bet:
             #Envoi un message sur telegram pour changement de montant du bet
             bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
-            bot.send_message(BOT_CHAT_ID, 'CHANGEMENT du bet : ' + str(self.flag_bet_changement) + " vers "+str(self.bet) )
+            #bot.send_message(BOT_CHAT_ID, 'CHANGEMENT du bet : ' + str(self.flag_bet_changement) + " vers "+str(self.bet) )
             self.flag_bet_changement = self.bet
 
     #############################################
