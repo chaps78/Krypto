@@ -21,6 +21,8 @@ BET_TAB = bet.BET
 TELEG_TOKEN = parameters.TELEGRAM_TOKEN
 #Id du chat pour le BOT telegram
 BOT_CHAT_ID = parameters.TELEGRAM_CHAT_ID
+HAL_VENTE_TAB = [0.9,1.1,1.3,1.5,1.7,1.9,2.1,2.3,2.5,2.7,2.9]
+HAL_ACHAT_TAB = [0.6,0.8,1.0,1.2,1.4,1.6,1.8,2.0,2.2,2.4,2.6]
 
 
 VERSION="2.9"
