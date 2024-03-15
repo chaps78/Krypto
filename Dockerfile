@@ -13,9 +13,9 @@ ADD . /app/
 
 
 
-    
 
-WORKDIR /app 
+
+WORKDIR /app
 
 
 CMD python3 trader.py
