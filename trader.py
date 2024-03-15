@@ -122,12 +122,16 @@ class tr_bot():
                 BET_TAB[key_last_close]=BET_TAB[key_last_close]+(local/5)/last_close
                 BET_TAB[key_last_close+1]=BET_TAB[key_last_close+1]+(local/5)/last_close
                 BET_TAB[key_last_close+2]=BET_TAB[key_last_close+2]+(local/5)/last_close
-                bot.send_message(BOT_CHAT_ID, 'XRP add local:' + str((local/5)/last_close) + "\nold : " + str(BET_TAB[key_last_close+2]) +"\nnew : "+str(BET_TAB[key_last_close+2]+(local/5)/last_close))
 
-                for i in range(23):
-                    BET_TAB[533+i]=BET_TAB[533+i]+(up_invest/23)/last_close
+
+                prem_step = 224
+                largeur = 5
+                for i in range(largeur):
+                    BET_TAB[prem_step+i]=BET_TAB[prem_step+i]+(up_invest/largeur)/last_close
                 cmd = "echo 'BET = "+str(BET_TAB)+"' > bet.py"
-                bot.send_message(BOT_CHAT_ID, 'XRP up by step : '+ str((up_invest/23)/last_close))
+
+                count_achat = 0
+                count_vente = 0
 
                 os.system(cmd)
                 ## TODO: remonter les valeurs dans le excel
@@ -136,19 +140,21 @@ class tr_bot():
                     achat={}
                     vente={}
 
-
+                    haut=ecart.ECART[key_last_close+1]
+                    bas=ecart.ECART[key_last_close-1]
                     basic.get_bet_achat(ecart.ECART[key_last_close-1])
 
-                    buy = basic.new_order(kraken,"XRPEUR","buy","limit",str(ecart.ECART[key_last_close-1]),str(basic.bet + up_invest/last_close + 3*local/5/last_close))  #### TODO montant du bet a regler
+                    buy = basic.new_order(kraken,"XRPEUR","buy","limit",str(bas),str(basic.bet + up_invest/last_close + 2*local/5/last_close))  #### TODO montant du bet a regler
                     achat[str(ecart.ECART[key_last_close-1])]=str(buy)
                     #basic.get_bet_achat(bas)
                     #buy = basic.new_order(kraken,"XRPEUR","buy","limit",str(bas),str(basic.bet+delta_achat_niveau))
 
                     basic.get_bet_vente(ecart.ECART[key_last_close+1])
-                    buy = basic.new_order(kraken,"XRPEUR","sell","limit",str(ecart.ECART[key_last_close+1]),str(basic.bet - up_invest/last_close - local/5/last_close)) #### TODO montant du bet a regler
+                    buy = basic.new_order(kraken,"XRPEUR","sell","limit",str(haut),str(basic.bet - up_invest/last_close - 2*local/5/last_close)) #### TODO montant du bet a regler
 
                     vente[str(ecart.ECART[key_last_close+1])]=str(buy)
                     basic.ecriture_achat_vente(achat,vente)
+
 
 
             if previous_day != datetime.datetime.today().day:
@@ -193,11 +199,7 @@ class tr_bot():
                 last_ben_line = basic.benef_last_line_get_benef()
 
 
-
                 if (passage_bas or passage_haut) and "ACK1" in last_ben_line:
-                    bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
-                    bot.send_message(BOT_CHAT_ID, 'Last line benef for if : '+ str(last_ben_line))
-                    bot.send_message(BOT_CHAT_ID, 'If bool : '+ str("ACK1" in last_ben_line))
                     cmd = "echo 'ACK2;' >> benef.log"
                     os.system(cmd)
                 if (passage_bas and not passage_haut) and "ACK2" in last_ben_line:
