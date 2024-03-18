@@ -9,6 +9,7 @@ import importlib
 import bet
 import parameters
 import ecart
+import haleving
 
 ECART         = parameters.ECART
 MONTANT_ACHAT = parameters.MONTANT_ACHAT
@@ -21,8 +22,9 @@ BET_TAB = bet.BET
 TELEG_TOKEN = parameters.TELEGRAM_TOKEN
 #Id du chat pour le BOT telegram
 BOT_CHAT_ID = parameters.TELEGRAM_CHAT_ID
-HAL_VENTE_TAB = [0.9,1.1,1.3,1.5,1.7,1.9,2.1,2.3,2.5,2.7,2.9]
 HAL_ACHAT_TAB = [0.6,0.8,1.0,1.2,1.4,1.6,1.8,2.0,2.2,2.4,2.6]
+HAL_VENTE_TAB = [0.9,1.1,1.3,1.5,1.7,1.9,2.1,2.3,2.5,2.7,2.9]
+ORDRES_HAL_OPEN = haleving.H_ORDER
 
 
 VERSION="2.9"
@@ -94,11 +96,46 @@ class tr_bot():
         time.sleep(self.TIME_SLEEP)
         Ack1=False
 
+
+
+                #ouvrir un stop loss
+
+
         while 1:
             passage_haut = False
             passage_bas = False
             #Envoi d informations quotidienne
             last_ben_line = basic.benef_last_line_get_benef()
+
+            ##############################################################
+            #                      HALEVING gestion                      #
+            ##############################################################
+            montant_haleving_vente=172.5
+            if ORDRES_HAL_OPEN["ACHAT"] == [] and ORDRES_HAL_OPEN["ACHAT"] == []:
+                if ORDRES_HAL_OPEN["POSITION"] == 0:
+                    if prix > HAL_VENTE_TAB[0] + 0.05:
+                        #sell_SL = basic.new_order(kraken,"XRPEUR","sell","stop-loss",str(HAL_VENTE_TAB[0]),str(172.5))
+                        ORDRES_HAL_OPEN["POSITION"] = 1
+                        #Ecrire dans ficher haleving
+                elif ORDRES_HAL_OPEN["POSITION"] == 11:
+                    if prix < HAL_ACHAT_TAB[10] - 0.05:
+                        #buy_SL = basic.new_order(kraken,"XRPEUR","buy","stop-loss",str(HAL_ACHAT_TAB[10]),str(172.5))
+                        ORDRES_HAL_OPEN["POSITION"] = 10
+                        #Ecrire dans ficher haleving
+                elif prix > HAL_VENTE_TAB[ORDRES_HAL_OPEN["POSITION"]] + 0.05:
+                    ORDRES_HAL_OPEN["POSITION"] += 1
+                    sell_SL = basic.new_order(kraken,"XRPEUR","sell","stop-loss",str(HAL_VENTE_TAB[ORDRES_HAL_OPEN["POSITION"]]),str(172.5))
+
+                    #Ecrire dans ficher haleving
+                elif prix < HAL_ACHAT_TAB[ORDRES_HAL_OPEN["POSITION"]-1]
+                    #buy_SL = basic.new_order(kraken,"XRPEUR","buy","stop-loss",str(HAL_ACHAT_TAB[ORDRES_HAL_OPEN["POSITION"]-1]),str(172.5))
+                    ORDRES_HAL_OPEN["POSITION"] -= 1
+
+
+
+
+
+
             if "trait" in last_ben_line:
                 local = float(last_ben_line[4])
                 up_invest = float(last_ben_line[5])
@@ -113,9 +150,7 @@ class tr_bot():
                 Ack1=True
                 cmd = "echo 'ACK1;local "+str(local)+" up "+str(up_invest)+" last_close "+str(last_close)+" indice "+str(key_last_close)+"' >> benef.log"
                 os.system(cmd)
-                ############################################
-                #Tableau temporaire avant de passer en PROD
-                ############################################
+
                 bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
                 bot.send_message(BOT_CHAT_ID, 'Last close : '+ str(last_close)+'\nLocal : '+ str(local) + '\nUP : '+ str(up_invest))
 
@@ -940,7 +975,9 @@ class basics():
     def benef_last_line_get_benef(self):
         return os.popen("cat benef.log|tail -n 1").readlines()[0].split(";")
 
-
+    def ecriture_haleving_file(self, h_order):
+        cmd = "echo 'BET_TAB = "+str(h_order)+"' > haleving.py"
+        os.system(cmd)
 
 
 
