@@ -27,7 +27,7 @@ HAL_VENTE_TAB = [0.9,1.1,1.3,1.5,1.7,1.9,2.1,2.3,2.5,2.7,2.9]
 ORDRES_HAL_OPEN = haleving.H_ORDER
 
 
-VERSION="2.9"
+VERSION="3.0"
 
 def main():
     cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";START APPLI;VERSION "+VERSION+"' >> LOG/ERROR.error"
@@ -99,7 +99,7 @@ class tr_bot():
 
 
                 #ouvrir un stop loss
-
+        return_status={}
 
         while 1:
             passage_haut = False
@@ -111,25 +111,75 @@ class tr_bot():
             #                      HALEVING gestion                      #
             ##############################################################
             montant_haleving_vente=172.5
-            if ORDRES_HAL_OPEN["ACHAT"] == [] and ORDRES_HAL_OPEN["ACHAT"] == []:
+            if ORDRES_HAL_OPEN["ACHAT"] == [] and ORDRES_HAL_OPEN["VENTE"] == []:
                 if ORDRES_HAL_OPEN["POSITION"] == 0:
                     if prix > HAL_VENTE_TAB[0] + 0.05:
-                        #sell_SL = basic.new_order(kraken,"XRPEUR","sell","stop-loss",str(HAL_VENTE_TAB[0]),str(172.5))
+                        sell_SL = basic.new_order_haleving(kraken,"XRPEUR","sell","stop-loss",str(HAL_VENTE_TAB[0]),str(montant_haleving_vente))
+                        ORDRES_HAL_OPEN["VENTE"] = sell_SL
                         ORDRES_HAL_OPEN["POSITION"] = 1
-                        #Ecrire dans ficher haleving
+                        basic.ecriture_haleving_file(ORDRES_HAL_OPEN)
                 elif ORDRES_HAL_OPEN["POSITION"] == 11:
                     if prix < HAL_ACHAT_TAB[10] - 0.05:
-                        #buy_SL = basic.new_order(kraken,"XRPEUR","buy","stop-loss",str(HAL_ACHAT_TAB[10]),str(172.5))
+                        buy_SL = basic.new_order_haleving(kraken,"XRPEUR","buy","stop-loss",str(HAL_ACHAT_TAB[10]),str(172.5))
+                        ORDRES_HAL_OPEN["ACHAT"] = buy_SL
                         ORDRES_HAL_OPEN["POSITION"] = 10
-                        #Ecrire dans ficher haleving
+                        basic.ecriture_haleving_file(ORDRES_HAL_OPEN)
                 elif prix > HAL_VENTE_TAB[ORDRES_HAL_OPEN["POSITION"]] + 0.05:
                     ORDRES_HAL_OPEN["POSITION"] += 1
-                    sell_SL = basic.new_order(kraken,"XRPEUR","sell","stop-loss",str(HAL_VENTE_TAB[ORDRES_HAL_OPEN["POSITION"]]),str(172.5))
+                    sell_SL = basic.new_order_haleving(kraken,"XRPEUR","sell","stop-loss",str(HAL_VENTE_TAB[ORDRES_HAL_OPEN["POSITION"]]),str(172.5))
+                    ORDRES_HAL_OPEN["VENTE"] = sell_SL
 
-                    #Ecrire dans ficher haleving
-                elif prix < HAL_ACHAT_TAB[ORDRES_HAL_OPEN["POSITION"]-1]
-                    #buy_SL = basic.new_order(kraken,"XRPEUR","buy","stop-loss",str(HAL_ACHAT_TAB[ORDRES_HAL_OPEN["POSITION"]-1]),str(172.5))
+                    basic.ecriture_haleving_file(ORDRES_HAL_OPEN)
+                elif prix < HAL_ACHAT_TAB[ORDRES_HAL_OPEN["POSITION"]-1]:
+                    buy_SL = basic.new_order_haleving(kraken,"XRPEUR","buy","stop-loss",str(HAL_ACHAT_TAB[ORDRES_HAL_OPEN["POSITION"]-1]),str(172.5))
+                    ORDRES_HAL_OPEN["ACHAT"] = buy_SL
                     ORDRES_HAL_OPEN["POSITION"] -= 1
+                    basic.ecriture_haleving_file(ORDRES_HAL_OPEN)
+            if ORDRES_HAL_OPEN["VENTE"] != []:
+                try:
+                    if return_status[ORDRES_HAL_OPEN["VENTE"][0]] == "closed":
+                        basic.haleving_bet_modification("VENTE",ORDRES_HAL_OPEN["ACHAT"][1],ORDRES_HAL_OPEN["ACHAT"][2])
+                        ORDRES_HAL_OPEN["VENTE"]=[]
+                        basic.ecriture_haleving_file(ORDRES_HAL_OPEN)
+                except:
+                    bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+                    bot.send_message(BOT_CHAT_ID, 'probleme de recuperation du status VENTE')
+                if prix > HAL_OPEN["VENTE"][1] + 0.1 and prix > HAL_VENTE_TAB[ORDRES_HAL_OPEN["POSITION"]] + 0.05:
+                    kraken.query_private('CancelOrder', {'txid': HAL_OPEN["VENTE"][0]})
+                    sell_SL = basic.new_order_haleving(kraken,"XRPEUR","sell","stop-loss",str(HAL_VENTE_TAB[ORDRES_HAL_OPEN["POSITION"]]),str(172.5 + HAL_OPEN["VENTE"][2]))
+                    ORDRES_HAL_OPEN["POSITION"] += 1
+                    ORDRES_HAL_OPEN["VENTE"] = sell_SL
+                    basic.ecriture_haleving_file(ORDRES_HAL_OPEN)
+                if prix > HAL_OPEN["VENTE"][1] + 0.1:
+                    kraken.query_private('CancelOrder', {'txid': HAL_OPEN["VENTE"][0]})
+                    sell_SL = basic.new_order_haleving(kraken,"XRPEUR","sell","stop-loss",str(float(ORDRES_HAL_OPEN["VENTE"][1])+0.05),str(HAL_OPEN["VENTE"][2]))
+                    ORDRES_HAL_OPEN["VENTE"] = sell_SL
+                    basic.ecriture_haleving_file(ORDRES_HAL_OPEN)
+            if ORDRES_HAL_OPEN["ACHAT"] != []:
+                try:
+                    if return_status[ORDRES_HAL_OPEN["ACHAT"][0]] == "closed":
+                        basic.haleving_bet_modification("ACHAT",ORDRES_HAL_OPEN["ACHAT"][1],ORDRES_HAL_OPEN["ACHAT"][2])
+                        ORDRES_HAL_OPEN["ACHAT"]=[]
+                        basic.ecriture_haleving_file(ORDRES_HAL_OPEN)
+                except:
+                    bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+                    bot.send_message(BOT_CHAT_ID, 'probleme de recuperation du status ACHAT')
+                if prix < HAL_OPEN["ACHAT"][1] - 0.1 and prix < HAL_VENTE_TAB[ORDRES_HAL_OPEN["POSITION"]-1] - 0.05:
+                    kraken.query_private('CancelOrder', {'txid': HAL_OPEN["ACHAT"][0]})
+                    buy_SL = basic.new_order_haleving(kraken,"XRPEUR","buy","stop-loss",str(HAL_ACHAT_TAB[ORDRES_HAL_OPEN["POSITION"]-1]),str(172.5+ HAL_OPEN["ACHAT"][2]))
+                    ORDRES_HAL_OPEN["POSITION"] -= 1
+                    ORDRES_HAL_OPEN["ACHAT"] = buy_SL
+                    basic.ecriture_haleving_file(ORDRES_HAL_OPEN)
+                if prix < HAL_OPEN["ACHAT"][1] - 0.1:
+                    kraken.query_private('CancelOrder', {'txid': HAL_OPEN["ACHAT"][0]})
+                    buy_SL = basic.new_order_haleving(kraken,"XRPEUR","buy","stop-loss",str(float(ORDRES_HAL_OPEN["ACHAT"][1])-0.05),str(HAL_OPEN["VENTE"][2]))
+                    ORDRES_HAL_OPEN["ACHAT"] = buy_SL
+                    basic.ecriture_haleving_file(ORDRES_HAL_OPEN)
+
+
+
+
+
 
 
 
@@ -171,26 +221,24 @@ class tr_bot():
                 count_vente = 0
 
                 os.system(cmd)
-                ## TODO: remonter les valeurs dans le excel
-                if True:
-                    basic.flush_zero(kraken)
-                    achat={}
-                    vente={}
+                basic.flush_zero(kraken)
+                achat={}
+                vente={}
 
-                    haut=ecart.ECART[key_last_close+1]
-                    bas=ecart.ECART[key_last_close-1]
-                    basic.get_bet_achat(ecart.ECART[key_last_close-1])
+                haut=ecart.ECART[key_last_close+1]
+                bas=ecart.ECART[key_last_close-1]
+                basic.get_bet_achat(ecart.ECART[key_last_close-1])
 
-                    buy = basic.new_order(kraken,"XRPEUR","buy","limit",str(bas),str(basic.bet + up_invest/last_close + 2*local/5/last_close))  #### TODO montant du bet a regler
-                    achat[str(ecart.ECART[key_last_close-1])]=str(buy)
+                buy = basic.new_order(kraken,"XRPEUR","buy","limit",str(bas),str(basic.bet + up_invest/last_close + 2*local/5/last_close))  #### TODO montant du bet a regler
+                achat[str(ecart.ECART[key_last_close-1])]=str(buy)
                     #basic.get_bet_achat(bas)
                     #buy = basic.new_order(kraken,"XRPEUR","buy","limit",str(bas),str(basic.bet+delta_achat_niveau))
 
-                    basic.get_bet_vente(ecart.ECART[key_last_close+1])
-                    buy = basic.new_order(kraken,"XRPEUR","sell","limit",str(haut),str(basic.bet - up_invest/last_close - 2*local/5/last_close)) #### TODO montant du bet a regler
+                basic.get_bet_vente(ecart.ECART[key_last_close+1])
+                buy = basic.new_order(kraken,"XRPEUR","sell","limit",str(haut),str(basic.bet - up_invest/last_close - 2*local/5/last_close)) #### TODO montant du bet a regler
 
-                    vente[str(ecart.ECART[key_last_close+1])]=str(buy)
-                    basic.ecriture_achat_vente(achat,vente)
+                vente[str(ecart.ECART[key_last_close+1])]=str(buy)
+                basic.ecriture_achat_vente(achat,vente)
 
 
 
@@ -210,8 +258,13 @@ class tr_bot():
                 dico_orders={}
                 dico_orders[vente[str(haut)]] = {"niveau":count_vente,"ecart":basic.ecart}
                 dico_orders[achat[str(bas)]] = {"niveau":count_vente,"ecart":basic.ecart}
+                if HAL_OPEN["ACHAT"] == [] and HAL_OPEN["VENTE"] == []:
+                    return_status = basic.orders_status(kraken,dico_orders)
+                elif HAL_OPEN["ACHAT"] != []:
+                    return_status = basic.orders_status(kraken,dico_orders,HAL_OPEN["ACHAT"])
+                elif HAL_OPEN["VENTE"] != []:
+                    return_status = basic.orders_status(kraken,dico_orders,HAL_OPEN["VENTE"])
 
-                return_status = basic.orders_status(kraken,dico_orders)
                 passage_haut = return_status[vente[str(haut)]] == 'closed'
                 passage_bas = return_status[achat[str(bas)]] == 'closed'
 
@@ -528,6 +581,54 @@ class basics():
         return ID
 
 
+        def new_order_haleving(self,kraken,pair,type_B_S,ordertype,price,volume):
+            try:
+                response = kraken.query_private('AddOrder',
+                                                {'pair': pair,
+                                                 'type': type_B_S,
+                                                 'ordertype': ordertype,
+                                                 'price': price,
+                                                 'volume': volume})
+            except:
+                bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+                bot.send_message(BOT_CHAT_ID, 'check tes logs, t as une piste (a l ouverture d un ordre)')
+                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + "PEUT ETRE L ERREUR EST ICI -- si il n'y a pas le log suivant le probleme vient de response" +str(pair)+";"+ str(type_B_S)+";"+str(ordertype)+";"+str(price)+";"+str(volume) + "ouverture ordre 1' >> LOG/ERROR.error"
+                os.system(cmd)
+                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + str(response) + "ouverture ordre 1' >> LOG/ERROR.error"
+                os.system(cmd)
+            try:
+                print(str(response['result']))
+            except:
+                bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+                bot.send_message(BOT_CHAT_ID, 'check tes logs, t as une piste (a l ouverture d un ordre 2eme)')
+                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + str(response) + "ouverture ordre 2' >> LOG/ERROR.error"
+                os.system(cmd)
+            try:
+                if(response['error']!=[]):
+                    cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";l erreur d ouverture d ordre est la suivante;" + str(response['error']) + "ouverture ordre 4' >> LOG/ERROR.error"
+                    os.system(cmd)
+                if(response['error']==['EOrder:Insufficient funds']):
+                    return -1
+            except:
+                bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+                bot.send_message(BOT_CHAT_ID, 'check tes logs, t as une piste (a l ouverture d un ordre 3eme)')
+
+            ID=""
+            try:
+                ID=str(response['result']['txid'][0])
+            except:
+                bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+                bot.send_message(BOT_CHAT_ID, 'check tes logs, t as une piste (a l ouverture d un ordre 4eme)')
+                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + str(response) + "ouverture ordre 3 resultat non present dans lordre' >> LOG/ERROR.error"
+                os.system(cmd)
+            cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";;"+type_B_S+";"+str(price) +";"+ str(volume)+";;"+ str(ID) +";"+str(response['error'])+"' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
+            os.system(cmd)
+
+
+
+            return [ID,price,volume]
+
+
     #############################################################################################################################
     #
     # DESCRIPTION:
@@ -581,9 +682,11 @@ class basics():
     #############################################
 
 
-    def orders_status(self,kraken, dico_orders):
+    def orders_status(self,kraken, dico_orders,dico_haleving=[]):
         #order_id,niveau,montant,ecart):
         list_id_orders = list(dico_orders.keys())
+        if dico_haleving != []:
+            list_id_orders.append(dico_haleving[0])
         try:
             ids_order_for_API = str(list_id_orders[0]) + "," + str(list_id_orders[1])
             result = kraken.query_private('QueryOrders', {'txid': ids_order_for_API})
@@ -866,7 +969,8 @@ class basics():
         #bot.send_message(BOT_CHAT_ID, 'result of query : '+ str(ordres_ouverts['result']))
         for el in ordres_ouverts['result']['open'].keys():
             if ordres_ouverts['result']['open'][el]['descr']['pair']=='XRPEUR':
-                self.order_close(kraken_key,el)
+                if el !=  ORDRES_HAL_OPEN["ACHAT"][0] and el !=  ORDRES_HAL_OPEN["VENTE"][0]:
+                    self.order_close(kraken_key,el)
 
 
     #############################################
@@ -978,6 +1082,32 @@ class basics():
     def ecriture_haleving_file(self, h_order):
         cmd = "echo 'BET_TAB = "+str(h_order)+"' > haleving.py"
         os.system(cmd)
+
+
+    def ecriture_haleving_file(self,h_order):
+        cmd = 'echo "H_ORDER = '+str(h_order)+'" > haleving.py'
+        os.system(cmd)
+
+    def haleving_bet_modification(self,sens,prix,montant):
+        prem_step_reserve = 533
+        largeur_reserve = 23
+        largeur_euros_reserve = 40
+        montant_euro = float(prix) * float(montant)
+        somme_reserve_basse = 3.022
+        if sens == "VENTE":
+            for i in range(largeur_reserve):
+                BET_TAB[prem_step_reserve+i]=BET_TAB[prem_step_reserve+i]-(float(montant)/float(largeur_reserve))
+            for i in range(largeur_euros_reserve):
+                BET_TAB[i]=BET_TAB[i]+(montant_euro/somme_reserve_basse)
+        if sens == "ACHAT":
+            for i in range(largeur_reserve):
+                BET_TAB[prem_step_reserve+i]=BET_TAB[prem_step_reserve+i]+(float(montant)/float(largeur_reserve))
+            for i in range(largeur_euros_reserve):
+                BET_TAB[i]=BET_TAB[i]-(montant_euro/somme_reserve_basse)
+
+
+        cmd = "echo 'BET = "+str(BET_TAB)+"' > bet.py"
+
 
 
 
