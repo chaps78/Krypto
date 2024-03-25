@@ -211,7 +211,7 @@ class tr_bot():
                 BET_TAB[key_last_close+2]=BET_TAB[key_last_close+2]+(local/5)/last_close
 
 
-                prem_step = 224
+                prem_step = 259
                 largeur = 5
                 for i in range(largeur):
                     BET_TAB[prem_step+i]=BET_TAB[prem_step+i]+(up_invest/largeur)/last_close
@@ -969,8 +969,18 @@ class basics():
         #bot.send_message(BOT_CHAT_ID, 'result of query : '+ str(ordres_ouverts['result']))
         for el in ordres_ouverts['result']['open'].keys():
             if ordres_ouverts['result']['open'][el]['descr']['pair']=='XRPEUR':
-                if el !=  ORDRES_HAL_OPEN["ACHAT"][0] and el !=  ORDRES_HAL_OPEN["VENTE"][0]:
+                if ORDRES_HAL_OPEN["ACHAT"] != [] and ORDRES_HAL_OPEN["VENTE"] != []:
+                    if el !=  ORDRES_HAL_OPEN["ACHAT"][0] and el !=  ORDRES_HAL_OPEN["VENTE"][0]:
+                        self.order_close(kraken_key,el)
+                elif ORDRES_HAL_OPEN["ACHAT"] == [] and ORDRES_HAL_OPEN["VENTE"] != []:
+                    if el !=  ORDRES_HAL_OPEN["VENTE"][0]:
+                        self.order_close(kraken_key,el)
+                elif ORDRES_HAL_OPEN["ACHAT"] != [] and ORDRES_HAL_OPEN["VENTE"] == []:
+                    if el !=  ORDRES_HAL_OPEN["ACHAT"][0]:
+                        self.order_close(kraken_key,el)
+                elif ORDRES_HAL_OPEN["ACHAT"] == [] and ORDRES_HAL_OPEN["VENTE"] == []:
                     self.order_close(kraken_key,el)
+
 
 
     #############################################
