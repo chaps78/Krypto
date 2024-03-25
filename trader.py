@@ -221,7 +221,7 @@ class tr_bot():
                 count_vente = 0
 
                 os.system(cmd)
-                basic.flush_zero(kraken)
+                basic.flush_zero(kraken,ORDRES_HAL_OPEN)
                 achat={}
                 vente={}
 
@@ -306,7 +306,7 @@ class tr_bot():
                         delta_vente_niveau=0
                         achat={}
                         vente={}
-                        basic.flush_zero(kraken)
+                        basic.flush_zero(kraken,ORDRES_HAL_OPEN)
                     elif count_achat == 1:
                         bas=ecart.ECART[i-2]
                         count_achat +=1
@@ -317,7 +317,7 @@ class tr_bot():
                         delta_vente_niveau=0
                         achat={}
                         vente={}
-                        basic.flush_zero(kraken)
+                        basic.flush_zero(kraken,ORDRES_HAL_OPEN)
                     else:
                         bas=ecart.ECART[i-3]
                         count_achat +=1
@@ -330,7 +330,7 @@ class tr_bot():
                         delta_achat_niveau += basic.bet
                         achat={}
                         vente={}
-                        basic.flush_zero(kraken)
+                        basic.flush_zero(kraken,ORDRES_HAL_OPEN)
                     ####attention l'achat existe peut etre deja ####################
                     #TODO Verifier si ce IF est bien necessaire
                     if not str(bas) in achat.keys():
@@ -363,7 +363,7 @@ class tr_bot():
                         delta_vente_niveau=0
                         achat={}
                         vente={}
-                        basic.flush_zero(kraken)
+                        basic.flush_zero(kraken,ORDRES_HAL_OPEN)
                     elif count_vente == 1:
                         delta_achat_niveau=0
                         haut=ecart.ECART[i+2]
@@ -374,7 +374,7 @@ class tr_bot():
                         delta_vente_niveau = basic.bet
                         achat={}
                         vente={}
-                        basic.flush_zero(kraken)
+                        basic.flush_zero(kraken,ORDRES_HAL_OPEN)
                     else:
                         delta_achat_niveau=0
                         haut=ecart.ECART[i+3]
@@ -387,7 +387,7 @@ class tr_bot():
                         delta_vente_niveau += basic.bet
                         achat={}
                         vente={}
-                        basic.flush_zero(kraken)
+                        basic.flush_zero(kraken,ORDRES_HAL_OPEN)
                     basic.get_bet_achat(bas)
                     buy = basic.new_order(kraken,"XRPEUR","buy","limit",str(bas),str(basic.bet))
                     achat[str(bas)]=str(buy)
@@ -952,7 +952,7 @@ class basics():
     #
     #############################################
     #ferme tout les ordres et initialise les fichiers achat et vente
-    def flush_zero(self,kraken_key):
+    def flush_zero(self,kraken_key,haleving_tab):
         count=0
         try:
             count=1
@@ -969,16 +969,22 @@ class basics():
         #bot.send_message(BOT_CHAT_ID, 'result of query : '+ str(ordres_ouverts['result']))
         for el in ordres_ouverts['result']['open'].keys():
             if ordres_ouverts['result']['open'][el]['descr']['pair']=='XRPEUR':
-                if ORDRES_HAL_OPEN["ACHAT"] != [] and ORDRES_HAL_OPEN["VENTE"] != []:
-                    if el !=  ORDRES_HAL_OPEN["ACHAT"][0] and el !=  ORDRES_HAL_OPEN["VENTE"][0]:
+                bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+                bot.send_message(BOT_CHAT_ID, 'On entre dans le flush : ' +str(haleving_tab))
+                if haleving_tab["ACHAT"] != [] and haleving_tab["VENTE"] != []:
+                    bot.send_message(BOT_CHAT_ID, 'On ne passe pas ici')
+                    if el !=  haleving_tab["ACHAT"][0] and el !=  haleving_tab["VENTE"][0]:
                         self.order_close(kraken_key,el)
-                elif ORDRES_HAL_OPEN["ACHAT"] == [] and ORDRES_HAL_OPEN["VENTE"] != []:
-                    if el !=  ORDRES_HAL_OPEN["VENTE"][0]:
+                elif haleving_tab["ACHAT"] == [] and haleving_tab["VENTE"] != []:
+                    bot.send_message(BOT_CHAT_ID, 'On ne passe pas ici non plus')
+                    if el !=  haleving_tab["VENTE"][0]:
                         self.order_close(kraken_key,el)
-                elif ORDRES_HAL_OPEN["ACHAT"] != [] and ORDRES_HAL_OPEN["VENTE"] == []:
-                    if el !=  ORDRES_HAL_OPEN["ACHAT"][0]:
+                elif haleving_tab["ACHAT"] != [] and haleving_tab["VENTE"] == []:
+                    bot.send_message(BOT_CHAT_ID, 'La non plus')
+                    if el !=  haleving_tab["ACHAT"][0]:
                         self.order_close(kraken_key,el)
-                elif ORDRES_HAL_OPEN["ACHAT"] == [] and ORDRES_HAL_OPEN["VENTE"] == []:
+                elif haleving_tab["ACHAT"] == [] and haleving_tab["VENTE"] == []:
+                    bot.send_message(BOT_CHAT_ID, 'Par contre on devrait passer ici')
                     self.order_close(kraken_key,el)
 
 
