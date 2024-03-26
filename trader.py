@@ -144,15 +144,15 @@ class tr_bot():
                 except:
                     bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
                     bot.send_message(BOT_CHAT_ID, 'probleme de recuperation du status VENTE')
-                if prix > HAL_OPEN["VENTE"][1] + 0.1 and prix > HAL_VENTE_TAB[ORDRES_HAL_OPEN["POSITION"]] + 0.05:
-                    kraken.query_private('CancelOrder', {'txid': HAL_OPEN["VENTE"][0]})
-                    sell_SL = basic.new_order_haleving(kraken,"XRPEUR","sell","stop-loss",str(HAL_VENTE_TAB[ORDRES_HAL_OPEN["POSITION"]]),str(172.5 + HAL_OPEN["VENTE"][2]))
+                if prix > ORDRES_HAL_OPEN["VENTE"][1] + 0.1 and prix > HAL_VENTE_TAB[ORDRES_HAL_OPEN["POSITION"]] + 0.05:
+                    kraken.query_private('CancelOrder', {'txid': ORDRES_HAL_OPEN["VENTE"][0]})
+                    sell_SL = basic.new_order_haleving(kraken,"XRPEUR","sell","stop-loss",str(HAL_VENTE_TAB[ORDRES_HAL_OPEN["POSITION"]]),str(172.5 + ORDRES_HAL_OPEN["VENTE"][2]))
                     ORDRES_HAL_OPEN["POSITION"] += 1
                     ORDRES_HAL_OPEN["VENTE"] = sell_SL
                     basic.ecriture_haleving_file(ORDRES_HAL_OPEN)
-                if prix > HAL_OPEN["VENTE"][1] + 0.1:
-                    kraken.query_private('CancelOrder', {'txid': HAL_OPEN["VENTE"][0]})
-                    sell_SL = basic.new_order_haleving(kraken,"XRPEUR","sell","stop-loss",str(float(ORDRES_HAL_OPEN["VENTE"][1])+0.05),str(HAL_OPEN["VENTE"][2]))
+                if prix > ORDRES_HAL_OPEN["VENTE"][1] + 0.1:
+                    kraken.query_private('CancelOrder', {'txid': ORDRES_HAL_OPEN["VENTE"][0]})
+                    sell_SL = basic.new_order_haleving(kraken,"XRPEUR","sell","stop-loss",str(float(ORDRES_HAL_OPEN["VENTE"][1])+0.05),str(ORDRES_HAL_OPEN["VENTE"][2]))
                     ORDRES_HAL_OPEN["VENTE"] = sell_SL
                     basic.ecriture_haleving_file(ORDRES_HAL_OPEN)
             if ORDRES_HAL_OPEN["ACHAT"] != []:
@@ -164,14 +164,14 @@ class tr_bot():
                 except:
                     bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
                     bot.send_message(BOT_CHAT_ID, 'probleme de recuperation du status ACHAT')
-                if prix < HAL_OPEN["ACHAT"][1] - 0.1 and prix < HAL_VENTE_TAB[ORDRES_HAL_OPEN["POSITION"]-1] - 0.05:
-                    kraken.query_private('CancelOrder', {'txid': HAL_OPEN["ACHAT"][0]})
-                    buy_SL = basic.new_order_haleving(kraken,"XRPEUR","buy","stop-loss",str(HAL_ACHAT_TAB[ORDRES_HAL_OPEN["POSITION"]-1]),str(172.5+ HAL_OPEN["ACHAT"][2]))
+                if prix < ORDRES_HAL_OPEN["ACHAT"][1] - 0.1 and prix < HAL_VENTE_TAB[ORDRES_HAL_OPEN["POSITION"]-1] - 0.05:
+                    kraken.query_private('CancelOrder', {'txid': ORDRES_HAL_OPEN["ACHAT"][0]})
+                    buy_SL = basic.new_order_haleving(kraken,"XRPEUR","buy","stop-loss",str(HAL_ACHAT_TAB[ORDRES_HAL_OPEN["POSITION"]-1]),str(172.5+ ORDRES_HAL_OPEN["ACHAT"][2]))
                     ORDRES_HAL_OPEN["POSITION"] -= 1
                     ORDRES_HAL_OPEN["ACHAT"] = buy_SL
                     basic.ecriture_haleving_file(ORDRES_HAL_OPEN)
-                if prix < HAL_OPEN["ACHAT"][1] - 0.1:
-                    kraken.query_private('CancelOrder', {'txid': HAL_OPEN["ACHAT"][0]})
+                if prix < ORDRES_HAL_OPEN["ACHAT"][1] - 0.1:
+                    kraken.query_private('CancelOrder', {'txid': ORDRES_HAL_OPEN["ACHAT"][0]})
                     buy_SL = basic.new_order_haleving(kraken,"XRPEUR","buy","stop-loss",str(float(ORDRES_HAL_OPEN["ACHAT"][1])-0.05),str(HAL_OPEN["VENTE"][2]))
                     ORDRES_HAL_OPEN["ACHAT"] = buy_SL
                     basic.ecriture_haleving_file(ORDRES_HAL_OPEN)
@@ -258,12 +258,13 @@ class tr_bot():
                 dico_orders={}
                 dico_orders[vente[str(haut)]] = {"niveau":count_vente,"ecart":basic.ecart}
                 dico_orders[achat[str(bas)]] = {"niveau":count_vente,"ecart":basic.ecart}
-                if HAL_OPEN["ACHAT"] == [] and HAL_OPEN["VENTE"] == []:
+                if ORDRES_HAL_OPEN["ACHAT"] == [] and ORDRES_HAL_OPEN["VENTE"] == []:
                     return_status = basic.orders_status(kraken,dico_orders)
-                elif HAL_OPEN["ACHAT"] != []:
-                    return_status = basic.orders_status(kraken,dico_orders,HAL_OPEN["ACHAT"])
-                elif HAL_OPEN["VENTE"] != []:
-                    return_status = basic.orders_status(kraken,dico_orders,HAL_OPEN["VENTE"])
+                elif ORDRES_HAL_OPEN["ACHAT"] != []:
+                    return_status = basic.orders_status(kraken,dico_orders,ORDRES_HAL_OPEN["ACHAT"])
+                elif ORDRES_HAL_OPEN["VENTE"] != []:
+                    return_status = basic.orders_status(kraken,dico_orders,ORDRES_HAL_OPEN["VENTE"])
+
 
                 passage_haut = return_status[vente[str(haut)]] == 'closed'
                 passage_bas = return_status[achat[str(bas)]] == 'closed'
@@ -969,22 +970,16 @@ class basics():
         #bot.send_message(BOT_CHAT_ID, 'result of query : '+ str(ordres_ouverts['result']))
         for el in ordres_ouverts['result']['open'].keys():
             if ordres_ouverts['result']['open'][el]['descr']['pair']=='XRPEUR':
-                bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
-                bot.send_message(BOT_CHAT_ID, 'On entre dans le flush : ' +str(haleving_tab))
                 if haleving_tab["ACHAT"] != [] and haleving_tab["VENTE"] != []:
-                    bot.send_message(BOT_CHAT_ID, 'On ne passe pas ici')
                     if el !=  haleving_tab["ACHAT"][0] and el !=  haleving_tab["VENTE"][0]:
                         self.order_close(kraken_key,el)
                 elif haleving_tab["ACHAT"] == [] and haleving_tab["VENTE"] != []:
-                    bot.send_message(BOT_CHAT_ID, 'On ne passe pas ici non plus')
                     if el !=  haleving_tab["VENTE"][0]:
                         self.order_close(kraken_key,el)
                 elif haleving_tab["ACHAT"] != [] and haleving_tab["VENTE"] == []:
-                    bot.send_message(BOT_CHAT_ID, 'La non plus')
                     if el !=  haleving_tab["ACHAT"][0]:
                         self.order_close(kraken_key,el)
                 elif haleving_tab["ACHAT"] == [] and haleving_tab["VENTE"] == []:
-                    bot.send_message(BOT_CHAT_ID, 'Par contre on devrait passer ici')
                     self.order_close(kraken_key,el)
 
 
