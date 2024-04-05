@@ -68,13 +68,7 @@ def limite_basse(dico,indice_buy):
         tab_achat.append([float(euros) , float(xrp)])
         indice_buy = indice_buy - 1
     tab_achat.reverse()
-    #for el in tab_achat:
-    #    print(str(el)+" haaaaaa")
-    print(tab_achat[0])
     return tab_achat
-    #print(tab_achat.reverse())
-
-    #print("BAS:\t" + str(euros).replace(".",",")+";"+str(xrp).replace(".",","))
 
 def limite_haute(dico,indice_sell):
     euros = float(dico['euros'])
@@ -82,24 +76,17 @@ def limite_haute(dico,indice_sell):
     tab_vente = []
     while indice_sell < 600:
         euros = euros + ecart.ECART[indice_sell]*get_bet_vente(ecart.ECART[indice_sell])
-        #print(str(ecart.ECART[indice_buy]))
         xrp = xrp - get_bet_vente(ecart.ECART[indice_sell])
         tab_vente.append([float(euros) , float(xrp)])
         indice_sell = indice_sell + 1
-    print("\n\n")
 
-    #for el in tab_vente:
-    #    print(el)
-    print(tab_vente[len(tab_vente)-1])
     return tab_vente
-    #print("HAUT:\t" + str(euros).replace(".",",")+";"+str(xrp).replace(".",","))
 
 
 
 last = lecture_last_log()
 dico = convert_list_2_dico(last)
 indice_prix = get_key_list(ecart.ECART,float(dico['prix']))
-print(dico)
 try:
     indice_buy = indice_prix - 1
     indice_sell = indice_prix + 1
@@ -123,33 +110,27 @@ sheet = client.open("calculs des bet variables")
 wsheet = sheet.worksheet('KPI')
 wsheet.update('H3', KPI_tab)
 
-
-
-
-print("euros: "+ str(type(KPI_tab[0][0])))
 XRP_reste = KPI_tab[len(KPI_tab)-1][1]
-
-
-#print(time.strftime('%Y#%m#%d;%H:%M:%S;')+str(KPI_tab[0][0]))
 last_trait = get_last_benef_line()
-#KPI_tab[0][0]=10.0
-print("euros: "+ str(KPI_tab[0][0]))
 
-print(last_trait)
-#last_trait_tab = last_trait.split(";")
-print("benef perso : "+str(last_trait[7]))
 total_benef = float(last_trait[7])
 gain = KPI_tab[0][0] - float(last_trait[7])
-print("gain : " + str(gain))
-print("XRP reste : " + str(XRP_reste))
-#trait;DATE;time;benef;%local;%up_invest;%perso;somme_perso;somme_total;XRP_delte
-bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
-bot.send_message(BOT_CHAT_ID, 'Ecart XRP : ' + str(round(XRP_reste,2)) +'\ngain : ' + str(round(gain,2)))
+print("####################################################################")
+print("#   Epargne :         #   Gain :             #   XRP Reste :       #")
+print("####################################################################")
+print("#                     #                      #                     #")
+print("#   "+str(round(float(last_trait[7]),2))+"\t      #   "+str(round(gain,6))+"\t     #   "+str(round(XRP_reste,4))+"\t           #")
+print("#                     #                      #                     #")
+print("####################################################################")
+
 arg = ""
 try:
     arg = sys.argv[1]
 except:
     arg = ""
+if arg != "no":
+    bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+    bot.send_message(BOT_CHAT_ID, 'Ecart XRP : ' + str(round(XRP_reste,2)) +'\ngain : ' + str(round(gain,2)))
 #############################################
 #       Parametres d investissement         #
 #############################################
@@ -163,14 +144,15 @@ up_limite = 0.6
 perso_limite = 0.4
 ##############################################
 last_line = get_last_line()
-if "ACK2" in last_line:
-    print("ya ACK2")
-else:
-    print("ya PAS de ACK2 : " + str(last_line))
 
 if gain>0 and abs(XRP_reste) <= 15 and "ACK2" in last_line:
     if gain<=limite:
-        if gain < 3 and total_benef > 1:
+        if gain < 1.5 and total_benef > 2:
+            gain = gain + 2
+            total_benef = total_benef - 2
+
+            cmd= "echo '"+time.strftime('trait;%d#%m#%Y;%H:%M:%S;')+str(gain)+";"+str(local*gain)+";"+str(up*gain)+";"+str(perso*gain)+";"+str(total_benef + perso*gain)+";-2;' >> /home/chaps78/K/benef.log"
+        elif gain < 3 and total_benef > 1:
             gain = gain + 1
             total_benef = total_benef - 1
 
@@ -180,13 +162,17 @@ if gain>0 and abs(XRP_reste) <= 15 and "ACK2" in last_line:
     else:
         cmd= "echo '"+time.strftime('trait;%d#%m#%Y;%H:%M:%S;')+str(gain)+";"+str(local*limite)+";"+str(up*limite+(gain-limite)*up_limite)+";"+str(perso*limite+(gain-limite)*perso_limite)+";"+str(total_benef+perso*limite+(gain-limite)*perso_limite)+";;' >> /home/chaps78/K/benef.log"
     if arg == "no":
-        print("pas d impression")
+        print("#                        pas d impression                          #")
+        print("####################################################################")
     else:
         os.system(cmd)
 else:
     if gain <=0:
-        print("pas d impression car pas de gain")
+        print("#            pas d impression car pas de gain                      #")
+        print("####################################################################")
     if abs(XRP_reste) > 15:
-        print("pas d impression car ecart de XRP trop important > 15")
+        print("#     pas d impression car ecart de XRP trop important > 15        #")
+        print("####################################################################")
     if not "ACK2" in last_line:
-        print("pas d impression car pas de ACK2")
+        print("#             pas d impression car pas de ACK2                     #")
+        print("####################################################################")
