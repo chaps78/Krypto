@@ -3,25 +3,10 @@ import json
 
 
 
-with open('bin_key.json') as json_file:
-    config = json.load(json_file)
-client = Client(config["api"], config["secret"])
-info = client.get_account()
-for el in info["balances"]:
-    if el["asset"] == "EUR" or el["asset"] == "DOGE" or el["asset"] == "XRP":
-        print(el)
-#df = pd.DataFrame(info["balances"])
-#df["free"] = df["free"].astype(float).round(4)
-#df = df[df["free"] > 0]
-#print(df)
+
 
 class basics():
 
-    def __init__(self):
-        #Declaration d'une variable interne pour l ecart
-        self.ecart=ECART
-        self.bet = 42
-        self.flag_bet_changement = 42
 
 
     #############################################
@@ -34,7 +19,7 @@ class basics():
     #
     #############################################
 
-    def get_found(selk,client):
+    def get_found(self,client):
         try:
             info = client.get_account()
             retour = {}
@@ -42,10 +27,19 @@ class basics():
                 if el["asset"] == "EUR":
                     retour['ZEUR']=el["free"]
                 elif el["asset"] == "DOGE":
-                    retour['ZEUR']=el["free"]
+                    retour['DOGE']=el["free"]
                 elif el["asset"] == "XRP":
-                    retour['ZEUR']=el["free"]
+                    retour['XRP']=el["free"]
 
         except:
             retour = ["ERROR"]
         return retour
+
+
+basic = basics()
+
+
+with open('bin_key.json') as json_file:
+    config = json.load(json_file)
+client = Client(config["api"], config["secret"])
+print(basic.get_found(client))
