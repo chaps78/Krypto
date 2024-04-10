@@ -42,4 +42,7 @@ basic = basics()
 with open('bin_key.json') as json_file:
     config = json.load(json_file)
 client = Client(config["api"], config["secret"])
-print(basic.get_found(client))
+#print(basic.get_found(client))
+
+result = client.create_order(symbol="XRPEUR", side='BUY', type='LIMIT', quantity=40, price="0.2",timeInForce='GTC')
+print(result)
