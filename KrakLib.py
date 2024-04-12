@@ -94,52 +94,50 @@ class basics():
         return ID
 
 
-        def new_order_haleving(self,kraken,pair,type_B_S,ordertype,price,volume):
-            try:
-                response = kraken.query_private('AddOrder',
-                                                {'pair': pair,
-                                                 'type': type_B_S,
-                                                 'ordertype': ordertype,
-                                                 'price': price,
-                                                 'volume': volume})
-            except:
-                bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
-                bot.send_message(BOT_CHAT_ID, 'check tes logs, t as une piste (a l ouverture d un ordre)')
-                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + "PEUT ETRE L ERREUR EST ICI -- si il n'y a pas le log suivant le probleme vient de response" +str(pair)+";"+ str(type_B_S)+";"+str(ordertype)+";"+str(price)+";"+str(volume) + "ouverture ordre 1' >> LOG/ERROR.error"
-                os.system(cmd)
-                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + str(response) + "ouverture ordre 1' >> LOG/ERROR.error"
-                os.system(cmd)
-            try:
-                print(str(response['result']))
-            except:
-                bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
-                bot.send_message(BOT_CHAT_ID, 'check tes logs, t as une piste (a l ouverture d un ordre 2eme)')
-                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + str(response) + "ouverture ordre 2' >> LOG/ERROR.error"
-                os.system(cmd)
-            try:
-                if(response['error']!=[]):
-                    cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";l erreur d ouverture d ordre est la suivante;" + str(response['error']) + "ouverture ordre 4' >> LOG/ERROR.error"
-                    os.system(cmd)
-                if(response['error']==['EOrder:Insufficient funds']):
-                    return -1
-            except:
-                bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
-                bot.send_message(BOT_CHAT_ID, 'check tes logs, t as une piste (a l ouverture d un ordre 3eme)')
-
-            ID=""
-            try:
-                ID=str(response['result']['txid'][0])
-            except:
-                bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
-                bot.send_message(BOT_CHAT_ID, 'check tes logs, t as une piste (a l ouverture d un ordre 4eme)')
-                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + str(response) + "ouverture ordre 3 resultat non present dans lordre' >> LOG/ERROR.error"
-                os.system(cmd)
-            cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";;"+type_B_S+";"+str(price) +";"+ str(volume)+";;"+ str(ID) +";"+str(response['error'])+"' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
+    def new_order_haleving(self,kraken,pair,type_B_S,ordertype,price,volume):
+        try:
+            response = kraken.query_private('AddOrder',
+                                            {'pair': pair,
+                                            'type': type_B_S,
+                                            'ordertype': ordertype,
+                                            'price': price,
+                                            'volume': volume})
+        except:
+            bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+            bot.send_message(BOT_CHAT_ID, 'check tes logs, t as une piste (a l ouverture d un ordre)')
+            cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + "PEUT ETRE L ERREUR EST ICI -- si il n'y a pas le log suivant le probleme vient de response" +str(pair)+";"+ str(type_B_S)+";"+str(ordertype)+";"+str(price)+";"+str(volume) + "ouverture ordre 1' >> LOG/ERROR.error"
             os.system(cmd)
+            cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + str(response) + "ouverture ordre 1' >> LOG/ERROR.error"
+            os.system(cmd)
+        try:
+            print(str(response['result']))
+        except:
+            bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+            bot.send_message(BOT_CHAT_ID, 'check tes logs, t as une piste (a l ouverture d un ordre 2eme)')
+            cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + str(response) + "ouverture ordre 2' >> LOG/ERROR.error"
+            os.system(cmd)
+        try:
+            if(response['error']!=[]):
+                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";l erreur d ouverture d ordre est la suivante;" + str(response['error']) + "ouverture ordre 4' >> LOG/ERROR.error"
+                os.system(cmd)
+            if(response['error']==['EOrder:Insufficient funds']):
+                return -1
+        except:
+            bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+            bot.send_message(BOT_CHAT_ID, 'check tes logs, t as une piste (a l ouverture d un ordre 3eme)')
 
+        ID=""
+        try:
+            ID=str(response['result']['txid'][0])
+        except:
+            bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+            bot.send_message(BOT_CHAT_ID, 'check tes logs, t as une piste (a l ouverture d un ordre 4eme)')
+            cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";" + str(response) + "ouverture ordre 3 resultat non present dans lordre' >> LOG/ERROR.error"
+            os.system(cmd)
+        cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";;"+type_B_S+";"+str(price) +";"+ str(volume)+";;"+ str(ID) +";"+str(response['error'])+"' >> LOG/"+time.strftime('%Y#%m#%d')+".log"
+        os.system(cmd)
 
-
-            return [ID,price,volume]
+        return [ID,price,volume]
 
 
     #############################################################################################################################
