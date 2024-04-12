@@ -174,21 +174,27 @@ class basics():
         return ret
 
 
-    def orders_status(self,kraken, dico_orders,dico_haleving=[]):
+    def orders_status(self,client, dico_orders,dico_haleving=[]):
         #order_id,niveau,montant,ecart):
         list_id_orders = list(dico_orders.keys())
         if dico_haleving != []:
             list_id_orders.append(dico_haleving[0])
         try:
-            ids_order_for_API = str(list_id_orders[0]) + "," + str(list_id_orders[1])
-            result = kraken.query_private('QueryOrders', {'txid': ids_order_for_API})
+            all_orders = client.get_all_orders(symbol="XRPEUR")
+            result = {}
+            for el in all_orders:
+                if el["orderId"] in list_id_orders:
+                    result[el["orderId"]] = el
+            #ids_order_for_API = str(list_id_orders[0]) + "," + str(list_id_orders[1])
+            #result = kraken.query_private('QueryOrders', {'txid': ids_order_for_API})
+            print(result)
         except Exception as inst:
-            cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";error dans call API; "+str(inst).replace("'","")+"' >> LOG/BIN_ERROR.error"
+            cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";order_status recuperation ordres; "+str(inst).replace("'","")+"' >> LOG/BIN_ERROR.error"
             os.system(cmd)
         return_value = {}
         for order_id in list_id_orders:
             try:
-                ret = result['result'][order_id]['status']
+                ret = result[order_id]['status']
             except Exception as inst:
                 cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";error dans lecture du retour; ERROR: "+str(inst).replace("'","")+"' >> LOG/BIN_ERROR.error"
                 os.system(cmd)
@@ -198,19 +204,21 @@ class basics():
                 os.system(cmd)
                 time.sleep(2)
             return_value[order_id] = ret
-            if ret == 'closed':
-                volume = result['result'][order_id]['vol_exec']
-                prix = result['result'][order_id]['price']
-                frais = result['result'][order_id]['fee']
-                type_B_S = result['result'][order_id]['descr']['type']
+            if ret == 'FILLED':
+                volume = result[order_id]['executedQty']
+                prix = result[order_id]['price']
+                frais = "NA"
+                type_B_S = result[order_id]['side']
 
                 soldes = self.get_found(kraken)
-                euros = str(soldes['ZEUR'])
-                xrp = str(soldes['XXRP'])
-
-                niveau = dico_orders[order_id]["niveau"]
-                #montant = dico_orders[order_id]["montant"]
-                ecart = dico_orders[order_id]["ecart"]
+                euros = str(soldes['EUR'])
+                xrp = str(soldes['XRP'])
+                try:
+                    niveau = dico_orders[order_id]["niveau"]
+                    ecart = dico_orders[order_id]["ecart"]
+                except:
+                    niveau = "NA"
+                    ecart = "NA"
 
                 cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";"+ret+";"+type_B_S+";"+prix+";"+ volume +";"+frais+";"+ order_id +";"+str(result['error'])+";"+str(self.bet)+";;"+str(niveau)+";"+str(ecart)+";"+ euros +";"+xrp+";"+"' >> LOG/BIN_"+time.strftime('%Y#%m#%d')+".log"
                 os.system(cmd)
@@ -251,7 +259,10 @@ client = Client(config["api"], config["secret"])
 #print(result)
 #currentOrder = client.get_order(symbol="XRPEUR",orderId=result)
 #time.sleep(15)
-basic.order_status(client,"643981514",3,6969,"")
-all_orders = client.get_all_orders(symbol="XRPEUR",orderId=["642318773","642325502"])
+#basic.order_status(client,"643981514",3,6969,"")
+#all_orders = client.get_all_orders(symbol="XRPEUR")
+ordres_dic = {"642318773":"","642325502":""}
+ordres_hal = ["643898390"]
+retour = basic.orders_status(client,ordres_dic,ordres_hal)
 print(all_orders)
 
