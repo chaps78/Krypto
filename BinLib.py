@@ -173,6 +173,17 @@ class basics():
 
         return ret
 
+    #############################################
+    #
+    # DESCRIPTION: meme comportement que order_status prenant en entrée une liste d'ID
+    # Objectif : limiter les appels API
+    #
+    # IN:
+    #   -
+    # OUT:
+    #   -
+    #
+    #############################################
 
     def orders_status(self,client, dico_orders,dico_haleving=[]):
         #order_id,niveau,montant,ecart):
@@ -183,8 +194,9 @@ class basics():
             all_orders = client.get_all_orders(symbol="XRPEUR")
             result = {}
             for el in all_orders:
-                if el["orderId"] in list_id_orders:
-                    result[el["orderId"]] = el
+                if str(el["orderId"]) in list_id_orders:
+                    print("On rentre")
+                    result[str(el["orderId"])] = el
             #ids_order_for_API = str(list_id_orders[0]) + "," + str(list_id_orders[1])
             #result = kraken.query_private('QueryOrders', {'txid': ids_order_for_API})
             print(result)
@@ -210,7 +222,7 @@ class basics():
                 frais = "NA"
                 type_B_S = result[order_id]['side']
 
-                soldes = self.get_found(kraken)
+                soldes = self.get_found(client)
                 euros = str(soldes['EUR'])
                 xrp = str(soldes['XRP'])
                 try:
@@ -220,7 +232,7 @@ class basics():
                     niveau = "NA"
                     ecart = "NA"
 
-                cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";"+ret+";"+type_B_S+";"+prix+";"+ volume +";"+frais+";"+ order_id +";"+str(result['error'])+";"+str(self.bet)+";;"+str(niveau)+";"+str(ecart)+";"+ euros +";"+xrp+";"+"' >> LOG/BIN_"+time.strftime('%Y#%m#%d')+".log"
+                cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";"+ret+";"+type_B_S+";"+prix+";"+ volume +";"+frais+";"+ order_id +";NA;;;"+str(niveau)+";"+str(ecart)+";"+ euros +";"+xrp+";"+"' >> LOG/BIN_"+time.strftime('%Y#%m#%d')+".log"
                 os.system(cmd)
         return return_value
 
@@ -243,6 +255,71 @@ class basics():
     #
     #####################################################################################################################################
 
+    def order_close(self,client, order_id):
+        try:
+            close=0
+            #result = kraken.query_private('CancelOrder', {'txid': order_id})
+            result = client.cancel_order(symbol="XRPEUR",orderId=int(order_id))
+            close=1
+
+            #Bug régulièrement provoqué par un result vide
+            #result={}
+            #loop=0
+            #while result=={} and loop <10:
+                #verifie que l'ordre clos a ete execute partiellement et si il a ete partiellement execute, il integre dans les logs le volume execute
+            #    partial_execute = kraken.query_private('QueryOrders', {'txid': order_id})
+            #    result=partial_execute['result']
+            #    if result=={}:
+            #        bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+            #        bot.send_message(BOT_CHAT_ID, 'Je n ai pas de report renvoye c est pas bon')
+            #        bot.send_message(BOT_CHAT_ID, 'loop value: '+ str(loop))
+            #        time.sleep(5)
+            #        loop+=1
+            close=2
+            print("OUIII 1")
+            breakpoint()
+            if float(result['executedQty']) == 0.0:
+                print("OUIII 2")
+                close=3
+                cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";cancel;;;;;"+ str(order_id) +";;;;;;;;' >> LOG/BIN_"+time.strftime('%Y#%m#%d')+".log"
+                os.system(cmd)
+                close=4
+            else:
+                print("OUIII 3")
+                close=5
+                volume = result['executedQty']
+                prix = result['price']
+                frais = "NA"
+                type_B_S = result['side']
+                close=6
+                cmd="echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";closed;"+type_B_S+";"+prix+";"+ volume +";"+frais+";"+ order_id +";"+str(result['error'])+"__partialy_closed;;;;;;;"+"' >> LOG/BIN_"+time.strftime('%Y#%m#%d')+".log"
+                os.system(cmd)
+                close=7
+                print("OUIII 4")
+                #Envoi un message sur telegram en cas d ordre partiellement clos
+                #bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+                #bot.send_message(BOT_CHAT_ID, 'ORDRE PARTIEL VOLUME : ' + str(volume) + ' PRIX : ' + str(prix))
+
+                #ouvre un ordre au prix du marche pour contrebalancer l ordre partiellement clos, cela permet de conserver le prix d equilibre
+                ID_partial = ""
+                close=8
+                print("OUIII 5")
+                if type_B_S == "buy":
+                    ID_partial = self.new_order(client,"XRPEUR","SELL",client.ORDER_TYPE_MARKET,prix,volume)
+                else:
+                    ID_partial = self.new_order(client,"XRPEUR","BUY",client.ORDER_TYPE_MARKET,prix,volume)
+                close=9
+
+                time.sleep(2)
+                #Appel de la fonction pour effectuer le log de l ordre, l ordre est obligatoirement clos car c est un ordre market qui doit etre execute immediatement
+                self.order_status(client, str(ID_partial),"NA",volume,"")
+                close=10
+        except:
+            bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
+            bot.send_message(BOT_CHAT_ID, 'order close ' +str(close))
+            bot.send_message(BOT_CHAT_ID,"result request fail : "+str(result))
+            bot.send_message(BOT_CHAT_ID,"status de l ordre apres tentative de close : "+str("ferme_ou_pas"))
+        return result
 
 basic = basics()
 
@@ -252,7 +329,8 @@ with open('bin_key.json') as json_file:
 client = Client(config["api"], config["secret"])
 #print(basic.get_found(client))
 #breakpoint()
-#result = basic.new_order(client,"XRPEUR",'buy','limit',"0.2","10")
+result = basic.new_order(client,"XRPEUR",'buy','limit',"0.2","31")
+print(result)
 #result = basic.new_order(client,"XRPEUR",'buy',client.ORDER_TYPE_MARKET,"0.2","10")
 #result = basic.new_order(client,"XRPEUR",'buy',client.ORDER_TYPE_LIMIT,"0.2","30")
 #result = basic.new_order(client,"XRPEUR",'buy',client.ORDER_TYPE_LIMIT,"0.1","55")
@@ -261,8 +339,12 @@ client = Client(config["api"], config["secret"])
 #time.sleep(15)
 #basic.order_status(client,"643981514",3,6969,"")
 #all_orders = client.get_all_orders(symbol="XRPEUR")
-ordres_dic = {"642318773":"","642325502":""}
-ordres_hal = ["643898390"]
-retour = basic.orders_status(client,ordres_dic,ordres_hal)
-print(all_orders)
+#ordres_dic = {"642318773":"","642325502":""}
+#ordres_hal = ["643980570"]
+#retour = basic.orders_status(client,ordres_dic,ordres_hal)
+breakpoint()
+#print(type(result))
+#retour = client.cancel_order(symbol="XRPEUR",orderId=result)
+retour = basic.order_close(client,result)
+print(retour)
 
