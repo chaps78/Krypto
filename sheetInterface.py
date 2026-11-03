@@ -52,9 +52,6 @@ class sheetAcces():
 
 def main():    
     sheet = sheetAcces()
-    #sheet.update_values("XRPEUR")
-    #sheet.update_reste("XRPEUR")
-    #sheet.update_last_filled_ID("XRPEUR")
     sheet.update_all_info("DOGEBTC")
 
     

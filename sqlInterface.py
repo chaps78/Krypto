@@ -8,7 +8,6 @@ from telegramInterface import teleAcces
 class sqlAcces():
     def __init__(self):
         self.con = sqlite3.connect("/home/chaps/binance/bascule/DB.db")
-        #self.con = sqlite3.connect("DB.db")
         self.cur = self.con.cursor()
         self.tele = teleAcces()
 
@@ -19,16 +18,6 @@ class sqlAcces():
                              (ID,symbol,montant,limite,status,date_debut,date_fin,montant_exec,type,sens,ID_ecart,int(niveau),int(flag_ajout),benefice,ID_client))
         except sqlite3.IntegrityError as inst:
             self.new_log_error("new_order_SQL",str(inst),symbol)
-            return inst
-        retour = self.con.commit()
-        return retour
-
-
-    def delete_order(self,ID,symbol):
-        try:
-            self.cur.execute("DELETE FROM Ordres WHERE ID="+str(ID))
-        except sqlite3.IntegrityError as inst:
-            self.new_log_error("delete_order_SQL",str(inst),symbol)
             return inst
         retour = self.con.commit()
         return retour
@@ -229,35 +218,6 @@ class sqlAcces():
             return inst
         self.con.commit()
 
-    def calcul_delta_pour_ajout(self,symbol,last_filled,qtt_init):
-        qtt = qtt_init
-        FEE = 0.00075
-        ecart_dessous = self.get_ecart_bet_from_symbol_and_ID(symbol,last_filled["ID_ecart"]-1)
-        delta=float(last_filled["limite"])-float(ecart_dessous[2])
-        benef = delta*last_filled["montant"]-2*FEE*last_filled["montant"]*last_filled["limite"]
-        prix_reduce = (last_filled["limite"]-benef/qtt_init)*qtt_init/qtt
-        prix_reduce_haut = (last_filled["limite"]+benef/qtt_init)*qtt_init/qtt
-        if prix_reduce<0:
-            return "NA"
-        ecart_tab = self.get_ecart_bet_from_symbol(symbol)
-        keys = ecart_tab.keys()
-        ID_down = 0
-        ID_UP = 0
-        for key in keys:
-            if ecart_tab[key][0]>prix_reduce:
-                ID_down=key
-                break
-        for key in keys:
-            if ecart_tab[key][0]>prix_reduce_haut:
-                ID_UP=key
-                break
-        self.tele.send_message("down :"+str(ID_down)+"\nUP : "+str(ID_UP))
-        self.add_to_ajout(symbol,int(ID_down),-qtt)
-        self.update_bet_with_ID(symbol,ID_down,ecart_tab[ID_down][1]-qtt)
-        self.add_to_ajout(symbol,int(ID_UP),-qtt)
-        self.update_bet_with_ID(symbol,ID_UP,ecart_tab[ID_UP][1]-qtt)
-        return ID_down
-    
     def ajout_epargne_paire_devise(self,symbol,qtt,ID_client):
         epargne = self.get_devises_from_symbol(symbol,ID_client)["epargne"]
         try:
@@ -265,19 +225,6 @@ class sqlAcces():
                              (qtt+epargne,symbol))
         except sqlite3.IntegrityError as inst:
             self.new_log_error("ajout_benef_paire_devise",str(inst),symbol)
-            return inst
-        retour = self.con.commit()
-        return retour
-    
-    def ajout_up_bet(self,symbol,ID,qtt):
-        ecart_bet = self.get_ecart_bet_from_symbol_and_ID(symbol,ID)
-        UP_actuel = int(ecart_bet[4])
-        try:
-            self.cur.execute("UPDATE ecart_bet SET UP=? WHERE symbol=? AND ID=?",
-                             (int(qtt+UP_actuel),symbol,ID))
-        except sqlite3.IntegrityError as inst:
-            ordre = self.get_order_info_by_ID(ID)
-            self.new_log_error("ajout_up_bet",str(inst),ordre["symbol"])
             return inst
         retour = self.con.commit()
         return retour
@@ -293,17 +240,6 @@ class sqlAcces():
         retour = self.con.commit()
         return retour
     
-    def calcul_benef(self,symbol,last_filled):
-        benef = self.calcul_benef_with_ID(symbol,last_filled["ID_ecart"])
-        return benef
-    
-    def calcul_benef_unique_fee(self,symbol,last_filled):
-        FEE = 0.00075
-        ecart_dessous = self.get_ecart_bet_from_symbol_and_ID(symbol,last_filled["ID_ecart"]-1)
-        delta=float(last_filled["limite"])-float(ecart_dessous[2])
-        benef = delta*last_filled["montant"]-FEE*last_filled["montant"]*last_filled["limite"]
-        return benef
-    
     def calcul_benef_with_ID(self,symbol,ID,limite=0,montant=0):
         FEE = 0.00075
         limite = self.get_ecart_bet_from_symbol_and_ID(symbol,ID)
@@ -312,69 +248,7 @@ class sqlAcces():
         benef = delta*float(limite[3])-FEE*(float(limite[3])*float(limite[2])+float(limite[3])*float(ecart_dessus[2]))
         return benef
     
-    #def get_ID_down(self,symbol,ID):
         
-
-    def add_bet_after_sell(self,symbol,last_filled,ID_client):
-        if last_filled["sens"] == "SELL":
-            infos_devise = self.get_devises_from_symbol(symbol,ID_client)
-            ajout_qtt = infos_devise["local"]
-            UP = infos_devise["up"]
-            current_bet = self.get_ecart_bet_from_symbol_and_ID(symbol,float(last_filled["ID_ecart"])-1)[3]
-            if int(last_filled["niveau"]) == 1 or int(last_filled["niveau"]) == 2:
-                #self.tele.send_message("vente avec benef_ratio")
-                benef = self.calcul_benef(symbol,last_filled)
-                benef_ratio = benef/last_filled["limite"]
-                benef_unique_fee = self.calcul_benef_unique_fee(symbol,last_filled)
-                benef_ratiounique_fee = benef_unique_fee/last_filled["limite"]
-                self.tele.send_message("benef-ratio : "+str(benef_ratio)+"\nUP : "+str(UP))
-                if benef_ratio < ajout_qtt:
-                    #self.tele.send_message("vente avec benef_ratio < ajout_qtt " + str(benef_ratio))
-                    self.update_bet_with_ID(symbol,int(last_filled["ID_ecart"])-1,float(current_bet)+ajout_qtt*2)
-                    self.add_to_ajout(symbol,int(last_filled["ID_ecart"])-1,ajout_qtt*2)
-                    self.calcul_delta_pour_ajout(symbol,last_filled,ajout_qtt)
-                elif benef_ratio >= ajout_qtt and benef_ratio <= (ajout_qtt + UP):
-                    #self.tele.send_message("vente avec benef_ratio > ajout_qtt " + str(benef_ratio))
-                    self.update_bet_with_ID(symbol,int(last_filled["ID_ecart"])-1,float(current_bet)+ajout_qtt)
-                    self.add_to_ajout(symbol,int(last_filled["ID_ecart"])-1,ajout_qtt)
-                    self.ajout_benef_paire_devise(symbol,(benef_ratiounique_fee-ajout_qtt)*last_filled["limite"],ID_client)
-                else:
-                    #self.tele.send_message("vente avec benef_ratio > ajout_qtt + UP " + str(benef_ratio))
-                    self.update_bet_with_ID(symbol,int(last_filled["ID_ecart"])-1,float(current_bet)+ajout_qtt)
-                    self.add_to_ajout(symbol,int(last_filled["ID_ecart"])-1,ajout_qtt)
-                    self.ajout_benef_paire_devise(symbol,(benef_ratiounique_fee-ajout_qtt-UP)*last_filled["limite"],ID_client)
-                    self.ajout_up_bet(symbol,int(last_filled["ID_ecart"])-1,UP)
-            elif int(last_filled["niveau"]) == 3:
-                self.update_bet_with_ID(symbol,int(last_filled["ID_ecart"])-1,int(current_bet)+2)
-                self.add_to_ajout(symbol,int(last_filled["ID_ecart"])-1,2)
-                bet_NV_3 = self.get_ecart_bet_from_symbol_and_ID(symbol,int(last_filled["ID_ecart"])-2)[3]
-                self.update_bet_with_ID(symbol,int(last_filled["ID_ecart"])-2,int(bet_NV_3)+1)
-                self.add_to_ajout(symbol,int(last_filled["ID_ecart"])-2,1)
-                benef_sans_add =self.get_calcul_benefice(symbol,last_filled)
-                ec_bet = self.get_ecart_bet_from_symbol(symbol)
-                epargne = benef_sans_add - 2 * ec_bet[last_filled["ID_ecart"]-1][0]
-                epargne += -ec_bet[last_filled["ID_ecart"]-2][0]
-
-                self.ajout_benef_paire_devise(symbol,epargne,ID_client)
-            elif int(last_filled["niveau"]) == 4:
-                self.update_bet_with_ID(symbol,int(last_filled["ID_ecart"])-1,int(current_bet)+2)
-                self.add_to_ajout(symbol,int(last_filled["ID_ecart"])-1,2)
-                bet_NV_3 = self.get_ecart_bet_from_symbol_and_ID(symbol,int(last_filled["ID_ecart"])-2)[3]
-                self.update_bet_with_ID(symbol,int(last_filled["ID_ecart"])-2,int(bet_NV_3)+1)
-                self.add_to_ajout(symbol,int(last_filled["ID_ecart"])-2,1)
-                bet_NV_4 = self.get_ecart_bet_from_symbol_and_ID(symbol,int(last_filled["ID_ecart"])-3)[3]
-                self.update_bet_with_ID(symbol,int(last_filled["ID_ecart"])-3,int(bet_NV_4)+1)
-                self.add_to_ajout(symbol,int(last_filled["ID_ecart"])-3,1)
-                benef_sans_add =self.get_calcul_benefice(symbol,last_filled)
-                ec_bet = self.get_ecart_bet_from_symbol(symbol)
-                epargne = benef_sans_add - 3 * ec_bet[last_filled["ID_ecart"]-1][0]
-                epargne += - 2 * ec_bet[last_filled["ID_ecart"]-2][0]
-                epargne += - ec_bet[last_filled["ID_ecart"]-3][0]
-                self.ajout_benef_paire_devise(symbol,epargne,ID_client)
-        elif last_filled["sens"] == "BUY":
-            benef_sans_add =self.get_calcul_benefice(symbol,last_filled)
-            self.ajout_benef_paire_devise(symbol,benef_sans_add,ID_client)
-
 
     def convert_fetch_to_dico(self,ordre):
         ordre_dico = {"ID":ordre[0],
@@ -545,32 +419,6 @@ class sqlAcces():
         max = res.fetchall()[0]
         return max[0]
 
-    def set_KPI_restes(self,symbol,restes,last_ID,EUR,XRP,XRP_Prix,DOGE,DOGE_Prix,BTC,BTC_Prix,Total,ETH,ETH_Prix,PEPE,PEPE_Prix):
-        try:
-            self.cur.execute("INSERT INTO reste VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                                 (datetime.now(timezone.utc)
-                                  ,symbol,restes[0]
-                                  ,restes[1]
-                                  ,int(last_ID)
-                                  ,float(EUR)
-                                  ,float(XRP)
-                                  ,float(XRP_Prix)
-                                  ,float(DOGE)
-                                  ,float(DOGE_Prix)
-                                  ,float(BTC)
-                                  ,float(BTC_Prix)
-                                  ,float(Total)
-                                  ,float(ETH)
-                                  ,float(ETH_Prix)
-                                  ,float(PEPE)
-                                  ,float(PEPE_Prix)
-                                  ))
-        except sqlite3.IntegrityError as inst:
-            self.new_log_error("set_KPI_restes_SQL",str(inst),symbol)
-            return inst
-        ret = self.con.commit()
-        return ret
-
     def get_last_reste(self,symbol):
         try:
             res = self.cur.execute("SELECT max(date),symbol,devise1,devise2,last_ID FROM reste WHERE symbol='"+symbol+"'")
@@ -592,45 +440,6 @@ class sqlAcces():
         reste = res.fetchall()
         return reste[0][2]
 
-    def set_ajout_tab(self,symbol,ajout_dic):
-        try:
-            keys = ajout_dic.keys()
-            for ID_ecart in keys:
-                valeur_init = self.get_ajout_reel_by_ID(symbol,ID_ecart)
-                valeur_to_update = valeur_init + ajout_dic[ID_ecart]
-                self.cur.execute("UPDATE ajout SET ajout="+str(valeur_to_update)+" WHERE ID_ecart="+str(ID_ecart)+" AND symbol='"+symbol+"'")
-                self.con.commit()
-        except Exception as inst:
-            self.new_log_error("set_ajout_tab_SQL",str(inst),symbol)
-
-    def get_ajout_flag(self,symbol):
-        try:
-            res = self.cur.execute("SELECT * FROM ajout WHERE symbol='"+symbol+"'")
-        except sqlite3.IntegrityError as inst:
-            self.new_log_error("get_ajout_flag_SQL",str(inst),symbol)
-            return inst
-        self.con.commit()
-        restes = res.fetchall()
-        for reste in restes:
-            if reste[2]>1:
-                return 1
-        return 0
-
-
-    def get_ajout_entier_dic(self,symbol):
-        try:
-            res = self.cur.execute("SELECT * FROM ajout WHERE symbol='"+symbol+"'")
-        except sqlite3.IntegrityError as inst:
-            self.new_log_error("get_ajout_entier_dic_SQL",str(inst),symbol)
-            return inst
-        self.con.commit()
-        reste = res.fetchall()
-        ajout_dico = {}
-        for ajout_sql in reste:
-            if ajout_sql[2]>1:
-                ajout_dico[ajout_sql[0]]=int(ajout_sql[2])
-        return ajout_dico
-    
     def get_ajout(self,symbol):
         try:
             res = self.cur.execute("SELECT * FROM ajout WHERE symbol='"+symbol+"'")
@@ -640,32 +449,6 @@ class sqlAcces():
         self.con.commit()
         ajout = res.fetchall()
         return ajout
-
-    def add_ajout_to_ecart(self,symbol):
-        ajout = self.get_ajout_entier_dic(symbol)
-        keys = ajout.keys()
-        for key in keys:
-            current_bet = self.get_ecart_bet_from_symbol_and_ID(symbol,key)[3]
-            try:
-                self.cur.execute("UPDATE ecart_bet SET bet="
-                                 +str(float(ajout[key]+current_bet))
-                                 +" WHERE ID="
-                                 +str(key)
-                                 +" AND symbol='"+symbol+"'")
-            except sqlite3.IntegrityError as inst:
-                self.new_log_error("add_ajout_to_ecart_SQL_1",str(inst),symbol)
-                return inst
-            self.con.commit()
-        try:
-            for key in keys:
-                valeur_courante = self.get_ajout_reel_by_ID(symbol,key)
-                valeur_to_set = valeur_courante - ajout[key]
-                self.cur.execute("UPDATE ajout SET ajout="+str(valeur_to_set)+" WHERE ID_ecart="+str(key)+" AND symbol='"+symbol+"'")
-                self.con.commit()
-        except sqlite3.IntegrityError as inst:
-            self.new_log_error("add_ajout_to_ecart_SQL_2",str(inst),symbol)
-            return inst
-
 
     #Pour un double achat on recupere le montant entre les deux ordres
     def get_montant_entre_ordres(self,symbol,ID_bas,ID_haut):
@@ -680,16 +463,6 @@ class sqlAcces():
             ID_bas +=1
         return somme
 
-    def get_epargne(self,symbol):
-        try:
-            res = self.cur.execute("SELECT * FROM Devises WHERE symbol='"+symbol+"'")
-        except sqlite3.IntegrityError as inst:
-            self.new_log_error("get_ajout_entier_dic_SQL",str(inst),symbol)
-            return inst
-        self.con.commit()
-        epargne = res.fetchall()[0][6]
-        return epargne
-    
     def calcul_benefice(self,symbol,last_filled):
         FEE=0.00075
         ecart_bet = self.get_ecart_bet_from_symbol(symbol)
@@ -763,77 +536,6 @@ class sqlAcces():
                 Benef3 = B3 * (ecart_bet[ID_ecart_filled+2][0]-ecart_bet[ID_ecart_filled][0])
                 self.update_order_benef(last_filled["ID"],str(Benef2+Benef3-fee_courant),symbol)
     
-    def get_calcul_benefice(self,symbol,last_filled):
-        FEE=0.00075
-        ecart_bet = self.get_ecart_bet_from_symbol(symbol)
-        ID_ecart_filled = last_filled["ID_ecart"]
-
-        if last_filled["sens"]=="SELL":
-            if last_filled["niveau"] == 1 or last_filled["niveau"] == 2:
-                fee_courant=last_filled["montant"]*FEE*last_filled["limite"]
-                benef=last_filled["montant"]*(ecart_bet[ID_ecart_filled+1][0]-ecart_bet[ID_ecart_filled][0])
-                return float(benef-fee_courant)
-            elif last_filled["niveau"] == 3:
-                fee_courant=last_filled["montant"]*FEE*last_filled["limite"]
-                B1=ecart_bet[ID_ecart_filled-1][1]
-                B2=ecart_bet[ID_ecart_filled-2][1]
-                if int(B1+B2) != int(last_filled["montant"]):
-                    self.tele.send_message("probleme de montant:")
-                    self.tele.send_message("B1: "+str(B1))
-                    self.tele.send_message("B2: "+str(B2))
-                    self.tele.send_message("montant: "+str(last_filled["montant"]))
-                Benef1 = B1*(ecart_bet[ID_ecart_filled+1][0]-ecart_bet[ID_ecart_filled][0])
-                Benef2 = B2*(ecart_bet[ID_ecart_filled+1][0]-ecart_bet[ID_ecart_filled-1][0])
-                return float(Benef1+Benef2-fee_courant)
-            elif last_filled["niveau"] == 4:
-                fee_courant=last_filled["montant"]*FEE*last_filled["limite"]
-                B1=ecart_bet[ID_ecart_filled-1][1]
-                B2=ecart_bet[ID_ecart_filled-2][1]
-                B3=ecart_bet[ID_ecart_filled-3][1]
-                if int(B1+B2+B3) != int(last_filled["montant"]):
-                    self.tele.send_message("probleme de montant:")
-                    self.tele.send_message("B1: "+str(B1))
-                    self.tele.send_message("B2: "+str(B2))
-                    self.tele.send_message("B3: "+str(B3))
-                    self.tele.send_message("montant: "+str(last_filled["montant"]))
-                Benef1 = B1*(ecart_bet[ID_ecart_filled+1][0]-ecart_bet[ID_ecart_filled][0])
-                Benef2 = B2*(ecart_bet[ID_ecart_filled+1][0]-ecart_bet[ID_ecart_filled-1][0])
-                Benef3 = B3*(ecart_bet[ID_ecart_filled+1][0]-ecart_bet[ID_ecart_filled-2][0])
-                return float(Benef1+Benef2+Benef3-fee_courant)
-
-        elif last_filled["sens"]=="BUY":
-            if last_filled["niveau"] == 1 or last_filled["niveau"] == 2:
-                fee_courant=last_filled["montant"]*FEE*last_filled["limite"]
-                return float(-fee_courant)
-
-            elif last_filled["niveau"] == 3:
-                fee_courant=last_filled["montant"]*FEE*last_filled["limite"]
-                B1=ecart_bet[ID_ecart_filled][1]        #B1 utilise uniquement pour la verification
-                B2=ecart_bet[ID_ecart_filled+1][1]
-                if int(B1+B2) != int(last_filled["montant"]):
-                    self.tele.send_message("probleme de montant:")
-                    self.tele.send_message("B1: "+str(B1))
-                    self.tele.send_message("B2: "+str(B2))
-                    self.tele.send_message("montant: "+str(last_filled["montant"]))
-                Benef2 = B2 * (ecart_bet[ID_ecart_filled+1][0]-ecart_bet[ID_ecart_filled][0])
-                return float(Benef2-fee_courant)
-            
-            elif last_filled["niveau"] == 4:
-                fee_courant=last_filled["montant"]*FEE*last_filled["limite"]
-                B1=ecart_bet[ID_ecart_filled][1]        #B1 utilise uniquement pour la verification
-                B2=ecart_bet[ID_ecart_filled+1][1]
-                B3=ecart_bet[ID_ecart_filled+2][1]
-                if int(B1+B2+B3) != int(last_filled["montant"]):
-                    self.tele.send_message("probleme de montant:")
-                    self.tele.send_message("B1: "+str(B1))
-                    self.tele.send_message("B2: "+str(B2))
-                    self.tele.send_message("B3: "+str(B3))
-                    self.tele.send_message("montant: "+str(last_filled["montant"]))
-                Benef2 = B2 * (ecart_bet[ID_ecart_filled+1][0]-ecart_bet[ID_ecart_filled][0])
-                Benef3 = B3 * (ecart_bet[ID_ecart_filled+2][0]-ecart_bet[ID_ecart_filled][0])
-                return float(Benef2+Benef3-fee_courant)
-    
-
     def update_order_benef(self,ID,benef,symbol):
         benef_round= str(round(float(benef),8))
         self.add_to_benef_all_and_benef_TMP(symbol,benef)
@@ -959,19 +661,6 @@ class sqlAcces():
         ordres = res.fetchall()
         return ordres[0][0]
     
-    def min_sell(self,symbol,annee,mois):
-        date = str(annee)+"-"+"%02.0f"%mois
-        try:
-            res = self.cur.execute("SELECT MIN(ID_ecart) FROM Ordres WHERE sens='SELL' AND status='FILLED' AND symbol='"
-                                   +str(symbol)+"' AND date_debut LIKE '"+date+"%'")
-        except sqlite3.IntegrityError as inst:
-            self.new_log_error("min_sell_SQL",str(inst),symbol)
-            return ""
-        self.con.commit()
-        ordres = res.fetchall()
-        min_sell = ordres[0][0]
-        return min_sell
-    
     def max_sell(self,symbol,annee,mois):
         date = str(annee)+"-"+"%02.0f"%mois
         try:
@@ -998,19 +687,6 @@ class sqlAcces():
         min_sell = ordres[0][0]
         return min_sell
     
-    def max_buy(self,symbol,annee,mois):
-        date = str(annee)+"-"+"%02.0f"%mois
-        try:
-            res = self.cur.execute("SELECT MAX(ID_ecart) FROM Ordres WHERE sens='BUY' AND status='FILLED' AND symbol='"
-                                   +str(symbol)+"' AND date_debut LIKE '"+date+"%'")
-        except sqlite3.IntegrityError as inst:
-            self.new_log_error("max_buy_SQL",str(inst),symbol)
-            return ""
-        self.con.commit()
-        ordres = res.fetchall()
-        max_buy = ordres[0][0]
-        return max_buy
-
     def count_sell_ID_ecart(self,symbol,annee,mois,ID_ecart):
         date = str(annee)+"-"+"%02.0f"%mois
         try:
@@ -1125,100 +801,6 @@ class sqlAcces():
         benef = delta*ec_b[ID][1]-2*FEE*ec_b[ID][1]*ec_b[ID][0]
         return benef
 
-    def arrangement_DB(self,symbol):
-        tab = {0:13,
-               3:1,
-               6:5,
-               7:2,
-               8:2,
-               9:7,
-               10:2,
-               11:2,
-               12:8,
-               13:2,
-               14:5,
-               15:8,
-               16:2,
-               17:8,
-               18:6,
-               19:11,
-               20:6,
-               21:6,
-               22:8,
-               23:8,
-               24:5,
-               25:6,
-               26:4,
-               27:1,
-               28:1,
-               29:1,
-               30:1,
-               31:3,
-               32:2,
-               33:2,
-               34:-2,
-               35:-1,
-               36:-6,
-               37:-7,
-               39:4,
-               40:-1,
-               41:-9,
-               42:-3,
-               43:-1,
-               45:-2,
-               46:-2,
-               48:-2,
-               49:-19,
-               50:-16,
-               51:-4,
-               52:-25,
-               53:-11,
-               54:2,
-               55:4,
-               56:5,
-               57:17,
-               58:11,
-               59:8,
-               60:10,
-               61:9,
-               62:9,
-               63:14,
-               64:5,
-               65:-2,
-               66:1,
-               67:-3,
-               68:19,
-               69:9,
-               70:2,
-               71:-6,
-               72:-6,
-               73:4,
-               74:5,
-               75:1,
-               76:3,
-               77:1,
-               78:4,
-               79:-15,
-               80:-6,
-               81:8,
-               82:14,
-               83:31,
-               84:21,
-               85:-5,
-               86:-11,
-               87:-23,
-               88:-51,
-               89:-20}
-        keys = tab.keys()
-        for key in keys:
-            print(key)
-            print(self.get_ajout_reel_by_ID(symbol,key))
-            bet = self.get_ecart_bet_from_symbol_and_ID(symbol,key)[3]
-            new_bet = bet + tab[key]
-            print(bet)
-            print(new_bet)
-            self.update_bet_with_ID(symbol,key,new_bet)
-            self.add_to_ajout(symbol,key,tab[key])
             #self
 
     def get_clients_infos(self):
@@ -1269,7 +851,7 @@ class sqlAcces():
             current_value = 0.0
         self.set_up_tmp(symbol,current_value+float(qtt))
 
-    def configure_new_symbol(self,symbol,devise_1,devise_2,perc_down,perc_local,perc_up,ID_client,perc_factu,perc_epargne,dev_entiere,obj_gain,edyn):
+    def configure_new_symbol(self,symbol,devise_1,devise_2,perc_down,perc_local,perc_up,ID_client,perc_factu,perc_epargne,dev_entiere,obj_gain):
         try:
             self.cur.execute("INSERT INTO Devises VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                              (symbol,
@@ -1289,7 +871,7 @@ class sqlAcces():
                               perc_epargne,
                               dev_entiere,
                               obj_gain,
-                              edyn))
+                              0))
         except sqlite3.IntegrityError as inst:
             self.new_log_error("configure_new_symbol_SQL",str(inst),symbol)
             return inst
@@ -1379,22 +961,6 @@ class sqlAcces():
             return None
         return TMP[0]
     
-    def get_sum_30_days_dashboard_benef(self,symbol):
-        date_30 = datetime.now() - timedelta(days=30)
-        try:
-            res = self.cur.execute("SELECT SUM(gain_day) FROM Dashboard WHERE symbol='"
-                                   +symbol+"' and Date > '"+str(date_30.year)+"-"+str(date_30.month).zfill(2)
-                                   +"-"+str(date_30.day).zfill(2)+"'")
-        except sqlite3.IntegrityError as inst:
-            self.new_log_error("get_dashboard_infos_SQL",str(inst),"NA")
-            return inst
-        self.con.commit()
-        try:
-            TMP = res.fetchall()[0]
-        except:
-            return None
-        return TMP[0]
-    
     def new_client(self,client_name,API_key,secret,devise_base,telegram_chat_ID=""):
         if telegram_chat_ID == "":
             telegram_chat_ID = "-4541800269"
@@ -1434,7 +1000,6 @@ def main():
                 ID_client = int(input("Quel est l'ID du client ? "))
                 devise_1 = input("Devise 1 ? ")
                 devise_2 = input("Devise 2 ? ")
-                edyn = input("Edyn ? ")
                 sql.configure_new_symbol(symbol,
                                          devise_1,
                                          devise_2,
@@ -1445,8 +1010,7 @@ def main():
                                          percent_factu,
                                          percent_epargne,
                                          dev_entiere,
-                                         obj_gain,
-                                         edyn)
+                                         obj_gain)
                 sql.set_ecart_bet(CSV_file)
 
             print("init")
@@ -1455,77 +1019,7 @@ def main():
             sql.set_ecart_bet(CSV_file)
         else:
             print("pas init")
-    #sql.set_ecart_bet("XRPBNB_CH.csv")
-    #sql.get_symbols_actif()
-
-    #repart = sql.get_dev_entiere(DEVISE)
-    #print(repart)
 
 
-    #sql.add_ajout_to_ecart(DEVISE)
-    #print(sql.get_ajout_flag(DEVISE))
-    #print(sql.get_ajout_entier_dic(DEVISE))
-    #print(sql.get_ajout_reel_by_ID(DEVISE,30))
-    #dic={4:0.7,5:0.7,6:0.7}
-    #print(sql.set_ajout_tab(DEVISE,dic))
-    #sql.add_ajout_to_ecart(DEVISE)
-    #print(sql.get_montant_entre_ordres(DEVISE,9,6))
-    #print(sql.new_log_debug("ici","message","XRPEUR"))
-    #sql.set_ecart_bet("DOGEEUR.csv")
-    #print(sql.get_last_filled("XRPEUR"))
-    #sql.set_ecart_bet("XRPEUR.csv")
-    #sql.set_ajout("DOGEEUR_Ajout.csv")
-    #print(sql.get_epargne("XRPEUR"))
-    #sql.add_to_ajout("XRPEUR",57,1)
-    #lastfilled = sql.get_last_filled(DEVISE)
-    #for i in range(180):
-    #    sql.calcul_delta_pour_ajout("XRPEUR",lastfilled,2,158+2*i)
-    #sql.calcul_delta_pour_ajout("XRPEUR",lastfilled,4)
-    #sql.calcul_benefice(DEVISE,lastfilled)
-    """
-    resultat = sql.get_gain_mois("XRPEUR",2024,8)
-    print("XRPEUR: "+str(resultat))
-    total = resultat
-    resultat = sql.get_gain_mois("DOGEBTC",2024,8)
-    print("DOGEBTC: "+str(resultat))
-    BTCEUR_Price = float(sql.bin.get_price("BTCEUR")["price"])
-    print("DOGEBTC (EUR): "+str(resultat*BTCEUR_Price))
-    total += resultat*60000
-    resultat = sql.get_gain_mois("DOGEEUR",2024,8)
-    print("DOGEEUR: "+str(resultat))
-    total += resultat
-    resultat = sql.get_gain_mois("XRPETH",2024,8)
-    print("XRPETH: "+str(resultat))
-    ETHEUR_Price = float(sql.bin.get_price("ETHEUR")["price"])
-    print("XRPETH (EUR): "+str(resultat*ETHEUR_Price))
-    total += resultat*2400
-    resultat = sql.get_gain_mois("PEPEEUR",2024,8)
-    print("PEPEEUR: "+str(resultat))
-    total += resultat
-    print("total: "+str(total))
-    #sql.arrangement_DB("XRPEUR")"""
-    """
-    sql.ajout_benef_paire_devise("XRPEUR",2.4,ID_client)
-    infos_devise = sql.get_devises_from_symbol("DOGEEUR")
-    ajout_qtt = infos_devise["local"]
-    UP = infos_devise["up"]
-    print(ajout_qtt)
-    print(UP)
-    ecart_bet = sql.get_ecart_bet_from_symbol_and_ID("DOGEEUR",41)
-    breakpoint()"""
-    #sql.arrangement_DB("XRPEUR_EDYN")
-    #sql.get_devises_from_Clien_ID(1)
-    #sql.set_ecart_bet("Etude-ETHUSDT_Carlos.csv")
-    #sql.set_ajout("EURUSDT_seb_ajout.csv")
-    #sql.set_ecart_bet("EURUSDT_Seb2.csv")
-    #sql.set_ajout("PEPEEUR_3_Ajout.csv")
-    #toto = sql.get_ecart_bet_from_symbol("XRPEUR")
-    #sql.ajout_up_bet("XRPEUR",15,4)
-    #sql.calcul_benef_with_ID("XRPEUR",164)
-    #print(sql.get_ecart_bet_from_symbol_and_ID("XRPEUR",50)[2])
-    #print(sql.get_max_ID_from_symbol("XRPEUR"))
-    #print(sql.get_up_tmp("PEPEEUR"))
-    #sql.add_2_up_tmp("PEPEEUR",0.1)
-    #print(sql.get_up_tmp("PEPEEUR"))
 if __name__ == '__main__':
      main()

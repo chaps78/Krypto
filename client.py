@@ -1,11 +1,7 @@
-import time
 import sys
 
 from bininterface import binAcces
 from sqlInterface import sqlAcces
-from KPI import Kpi
-from telegramInterface import teleAcces
-from sheetInterface import sheetAcces
 
 class Clients():
     def __init__(self):

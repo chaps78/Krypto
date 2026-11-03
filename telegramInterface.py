@@ -22,7 +22,6 @@ class teleAcces():
 
 def main():
     tele = teleAcces()
-    #tele.send_message("haaaaaa")
 
 if __name__ == '__main__':
      main()

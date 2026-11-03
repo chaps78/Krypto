@@ -21,7 +21,7 @@ class binAcces():
         #self.clients[ID_client].
         self.clients[ID_client].transfer_spot_to_margin(asset="PEPE",amount="10000")
 
-    def new_limite_order(self,symbol,montant,limite,sens,ID_ecart,flag_ajout,ID_client,niveau=1,edyn=0):
+    def new_limite_order(self,symbol,montant,limite,sens,ID_ecart,flag_ajout,ID_client,niveau=1):
         try:
             UP = 0
             if sens == self.client.SIDE_BUY and (niveau==1 or niveau == 2):
@@ -37,7 +37,7 @@ class binAcces():
             benef = self.sql.calcul_benef_with_ID(symbol,ID_ecart,limite,montant)
             benef_ratio = benef/limite
             try:
-                if sens == self.client.SIDE_SELL and (niveau==1 or niveau == 2) and benef_ratio < ajout_qtt and symbol=="XRPEUR" and edyn == 0:
+                if sens == self.client.SIDE_SELL and (niveau==1 or niveau == 2) and benef_ratio < ajout_qtt and symbol=="XRPEUR":
                     montant += ajout_qtt
             except TypeError:
                 print("ON PASSE DANS UNE ERREUR MAIS CA DOIT ETRE PLUS OU MOINS CONTROLE")
@@ -88,11 +88,9 @@ class binAcces():
             symbol_plited = symbol.split("_")[0]
             print("Symbol :" + str(type(symbol_plited))+ " : "+ str(symbol_plited))
             if symbol_plited == "PEPEEUR":
-                #print("new order PEPE")
                 montant_call='%.0f' % int(montant)
             elif symbol_plited == "BTCUSDT" or symbol_plited == "BTCEUR" or symbol_plited == "BTCUSDC":
                 print("on passe dans le if "+ symbol_plited)
-                #montant_call='%.5f' % float(montant)
                 montant_tmp = int(float(montant) * 10 ** 5)/10 ** 5
                 montant_call='%.5f' % montant_tmp
             elif symbol_plited == "ETHUSDT" or symbol_plited == "ETHEUR":
@@ -107,8 +105,6 @@ class binAcces():
                 limite = int(limite * 10 ** 4)/10 ** 4
                 limite = float('%.4f' % limite)
             
-            #print("montant_call "+str(montant_call))
-            #print(type(montant_call))
             print("Avant l ordre")
             response = self.clients[ID_client].create_order(symbol=symbol_plited, 
                                             side=sens, 
@@ -119,7 +115,6 @@ class binAcces():
             print("Apres l ordre")
             print(str(response))
         except Exception as inst:
-            #print("ERROR ordre")
             self.sql.new_log_error("new_manual_limite_order",str(inst),symbol)
             return ""
         
@@ -299,7 +294,6 @@ class binAcces():
         try:
             symbol_splited = symbol.split("_")[0]
             if symbol_splited == "PEPEEUR":
-                #print("new order PEPE")
                 montant_call='%.0f' % int(montant)
             else:
                 montant_call = montant
@@ -419,18 +413,6 @@ class binAcces():
     # input liste des devises dont on souhaite avoir le solde
     #ex : ["EUR","DOGE","BTC"]
     #####################################
-    def get_found(self,devises,symbol,ID_client):
-        try:
-            info = self.clients[ID_client].get_account()
-            retour = {}
-            for el in info["balances"]:
-                if el["asset"] in devises:
-                    retour[el["asset"]]=float(el["free"])+float(el["locked"])
-        except Exception as inst:
-            self.sql.new_log_error("get_found_Binance",str(inst),symbol)
-            retour = ["ERROR"]
-        return retour
-    
     #####################################
     # input liste des devises dont on souhaite avoir le solde
     #ex : ["EUR","DOGE","BTC"]
@@ -520,21 +502,7 @@ class binAcces():
 def main():    
     bin = binAcces()
 
-    #bin.new_limite_order("XRPEUR",40,0.3,"BUY")
-    #bin.cancel_order("646164940",ID_client)
-    #exec = bin.new_limite_order("XRPEUR",19,0.3,"BUY")
-    #print("exec : "+str(exec))
-    #exec = bin.new_limite_order("XRPEUR",20,0.3,"BUY")
-    #print("exec : "+str(exec))
-    #exec = bin.new_limite_order("XRPEUR",21,0.3,"BUY")
-    #print("exec : "+str(exec))
-    #retour = bin.changement_status("XRPEUR")
-    #print(retour)
-    #bin.changement_update(retour)
-    #found = bin.get_price("DOGEBTC")
 
-    #print(found)
-    #bin.calcul_benef_partial("XRPEUR",1,"706028678","706082325")
     bin.LDPEPE(1)
     
     

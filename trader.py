@@ -1,12 +1,9 @@
 import time
-from datetime import datetime, timezone, timedelta
 
 from bininterface import binAcces
 from sqlInterface import sqlAcces
-from KPI import Kpi
 from telegramInterface import teleAcces
 from sheetInterface import sheetAcces
-from edyn import Edyn
 
 
 
@@ -15,10 +12,8 @@ class Basics():
     def __init__(self):
         self.sql = sqlAcces()
         self.bin = binAcces()
-        self.kpi = Kpi()
         self.tele = teleAcces()
         self.sheet = sheetAcces()
-        self.edyn = Edyn()
 
     def plus_proche(self,symbol,ID_client):
         ecart_bet_dic = self.sql.get_ecart_bet_from_symbol(symbol)
@@ -68,8 +63,6 @@ class Basics():
             ordres_partial = self.sql.get_orders_status_symbol_filter(self.bin.client.ORDER_STATUS_PARTIALLY_FILLED,symbol,ID_client)
             ordres_DB = ordres_partial + ordres_new
 
-            #if symbol=="ETHUSDT_Carlos":
-            #    breakpoint()
 
             if len(ordres_DB) ==1 :
                 if len(ordres_new) == 1:
@@ -81,7 +74,6 @@ class Basics():
                         print("problème dans calcul benefice")
                         print(str(inst))
                         breakpoint()
-                    #self.sql.add_bet_after_sell(symbol,last_filled,ID_client)
                     #############################################################################
                     #                                                                           #
                     #               Ajouter ici la nouvelle fonction pour le calcul de benef    #
@@ -168,11 +160,9 @@ class Basics():
                     debug_flag = 3
                     down = benef_tmp*repart["down"]/100
                     debug_flag = 4
-                    #local = benef_tmp*repart["local"]/100
                     taux_local = self.get_taux_reinjection(benef_tmp)
                     local = benef_tmp*taux_local/100
                     debug_flag = 5
-                    #up = benef_tmp*repart["up"]/100
                     up_tmp = self.get_taux_up(benef_tmp)
                     up = benef_tmp*up_tmp/100
                     debug_flag = 6
@@ -204,9 +194,6 @@ class Basics():
             ID-=1
         prix = float(self.sql.get_ecart_bet_from_symbol_and_ID(symbol,ID)[2])
         self.sql.add_to_ecart(symbol,ID,down/prix)
-        #self.tele.send_message("Reinject down " +str(down/prix)+"\n ID "+str(ID)
-        #                       +"\nqtt : "+ str(down)
-        #                       +"\nprix : " + str(prix))
         return ID
     
     def reinject_up(self,symbol,ID_client,qtt,last_filled):
@@ -247,11 +234,6 @@ class Basics():
         current_bet = self.sql.get_ecart_bet_from_symbol_and_ID(symbol,float(last_filled["ID_ecart"])-1)[3]
         prix = float(self.sql.get_ecart_bet_from_symbol_and_ID(symbol,int(last_filled["ID_ecart"])-1)[2])
         self.sql.update_bet_with_ID(symbol,int(last_filled["ID_ecart"])-1,float(current_bet)+qtt/prix)
-        #self.tele.send_message("add local ID : "+ str(int(last_filled["ID_ecart"])-1) 
-        #                       +"\nqtt : " 
-        #                       + str(qtt/prix) 
-        #                       +"\nqtt : "+ str(qtt)
-        #                       +"\nprix : " +str(prix))
         self.sql.add_to_ajout(symbol,int(last_filled["ID_ecart"])-1,qtt/prix)
 
     def un_ordre_filled_autre_new(self,ordres_ouvert,symbol,ID_client):
@@ -261,7 +243,6 @@ class Basics():
         self.sql.new_log_debug("Nouveaux ordres apres filled",str(last_filled_order),symbol)
         self.bin.new_achat(symbol,last_filled_order["ID_ecart"],ID_client)
         self.bin.new_vente(symbol,last_filled_order["ID_ecart"],ID_client)
-        #self.kpi.reste_sur_limites(symbol,ID_client)
 
     def un_ordre_filled_autre_partial(self,ordres_partiel,symbol,ID_client):
         for ordre in ordres_partiel:
@@ -277,7 +258,6 @@ class Basics():
 
         self.bin.new_achat(symbol,last_filled_order["ID_ecart"],ID_client)
         self.bin.new_vente(symbol,last_filled_order["ID_ecart"],ID_client)
-        #self.kpi.reste_sur_limites(symbol,ID_client)
         
     
 
@@ -326,46 +306,16 @@ def main():
     basic = Basics()
     DEVISES=basic.sql.get_symbols_actif()
 
-    ################################################
-    #    Initialisation
-    ################################################
     basic.tele.send_message("Bonjour 1")
-    #for DEVISE in DEVISES:
-    #basic.initialise("PEPEEUR_JF2",6)
-    #basic.initialise("BTCEUR_EDYN2",9)
-    #basic.initialise("PEPEEUR_N94",1)
-    #basic.initialise("ETHUSDT_Carlos",5)
-    #basic.initialise("PEPEEUR_3")
-    #    time.sleep(3)
-    
-    start_edyn = datetime.now(timezone.utc)
+    # Pour demarrer une nouvelle paire, decommenter et adapter :
+    #basic.initialise("SYMBOLE_SUFFIXE", ID_client)
+
     while True:
-        users_IDs=DEVISES.keys()
-        now = datetime.now(timezone.utc)
-        #if (now-start_edyn).total_seconds()>3600*12:
-        if False:
-            basic.tele.send_message("Edyn exec pour multi compte")
-            basic.edyn.exec_edyn()
-            start_edyn = datetime.now(timezone.utc)
-        else:
-            for user_ID in users_IDs:
-            
-                for DEVISE in DEVISES[user_ID]:
-                    basic.verification_2_ordres_V2(DEVISE,user_ID)
-
-                    basic.verification_niveau_VS_timer(DEVISE,user_ID)
-                    time.sleep(4)
-    #last_field = basic.sql.get_last_filled("XRPEUR",1)
-    #print(last_field)
-    #print("OUIII")
-    #basic.reinject_down("XRPEUR",1,0.5,last_field)"""
-    #basic.reinject_up("XRPUSDT_nico",2,0.2,last_field)
-
-
-
-
-
-
+        for user_ID in DEVISES.keys():
+            for DEVISE in DEVISES[user_ID]:
+                basic.verification_2_ordres_V2(DEVISE,user_ID)
+                basic.verification_niveau_VS_timer(DEVISE,user_ID)
+                time.sleep(4)
 
 
 if __name__ == '__main__':
