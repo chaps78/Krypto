@@ -133,3 +133,7 @@ dmypy.json
 LOG/
 parameters.py
 
+DB.db
+bin_key.json
+cred.json
+*.swp

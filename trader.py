@@ -1,489 +1,365 @@
-import krakenex
 import time
-import os
-import json
-import telebot
-import datetime
-import importlib
+from datetime import datetime, timezone, timedelta
 
-import bet
-import parameters
-import ecart
-import haleving
-
-ECART         = parameters.ECART
-MONTANT_ACHAT = parameters.MONTANT_ACHAT
-#################
-BET_TAB = bet.BET
-
-#Token pour le bot telegram
-TELEG_TOKEN = parameters.TELEGRAM_TOKEN
-#Id du chat pour le BOT telegram
-BOT_CHAT_ID = parameters.TELEGRAM_CHAT_ID
-HAL_ACHAT_TAB = [0.6,0.8,1.0,1.2,1.4,1.6,1.8,2.0,2.2,2.4,2.6]
-HAL_VENTE_TAB = [0.9,1.1,1.3,1.5,1.7,1.9,2.1,2.3,2.5,2.7,2.9]
-ORDRES_HAL_OPEN = haleving.H_ORDER
+from bininterface import binAcces
+from sqlInterface import sqlAcces
+from KPI import Kpi
+from telegramInterface import teleAcces
+from sheetInterface import sheetAcces
+from edyn import Edyn
 
 
-VERSION="3.0"
 
-def main():
-    cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";START APPLI;VERSION "+VERSION+"' >> LOG/ERROR.error"
-    os.system(cmd)
-    trader=tr_bot()
-    bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
-    bot.send_message(BOT_CHAT_ID, 'RESTART V:'+VERSION)
-    try:
-        trader.run()
-    except Exception as inst:
-        cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI sorti du thread ce message doit apparaitre; ' >> LOG/ERROR.error"
-        os.system(cmd)
-        cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI sorti du thread et celui ci aussi; "+str(inst).replace("'","")+"' >> LOG/ERROR.error"
-        os.system(cmd)
-        bot.send_message(BOT_CHAT_ID, 'CRASHHHHHHHHHHHH:')
-
-class tr_bot():
+class Basics():
 
     def __init__(self):
-        self.TIME_SLEEP=2
+        self.sql = sqlAcces()
+        self.bin = binAcces()
+        self.kpi = Kpi()
+        self.tele = teleAcces()
+        self.sheet = sheetAcces()
+        self.edyn = Edyn()
 
-    def run(self):
-        kraken = krakenex.API()
-        kraken.load_key('kraken.key')
-        basic = basics()
+    def plus_proche(self,symbol,ID_client):
+        ecart_bet_dic = self.sql.get_ecart_bet_from_symbol(symbol)
+        prix_tmp = self.bin.get_price(symbol,ID_client)
+        prix = prix_tmp["price"]
+        breakpoint()
+        delta = abs(float(ecart_bet_dic[0][1])-float(prix))
+        prix_proche_ID=0
+        keys = ecart_bet_dic.keys()
+        for key in keys:
+            if abs(float(prix)-float(ecart_bet_dic[key][0]))<delta:
+                delta = abs(float(prix)-float(ecart_bet_dic[key][0]))
+                prix_proche_ID = key
+        return prix_proche_ID
 
-        achat={}
-        vente={}
+    def initialise(self,symbol,ID_client):
+        GO = False
+        ordres_ouverts = self.sql.get_orders_status_symbol_filter(self.bin.client.ORDER_STATUS_NEW,symbol,ID_client)
+        if len(ordres_ouverts) == 2:
+            changement = self.bin.changement_status(symbol,ID_client)
+            print("changement : "+ str(changement))
+            if changement == []:
+                GO = True
+            else:
+                self.bin.changement_update(changement,symbol,ID_client)
+        print(symbol + "\tGO : "+str(GO))
+        if GO == False:
+            changement = self.bin.changement_status(symbol,ID_client)
+            self.bin.changement_update(changement,symbol,ID_client)
+            ordres_ouverts = self.sql.get_orders_status_symbol_filter(self.bin.client.ORDER_STATUS_NEW,symbol,ID_client)
+            for ordre_ouvert in ordres_ouverts:
+                self.bin.cancel_order(ordre_ouvert["ID"],ID_client)
+            last_close = self.sql.get_last_filled(symbol,ID_client)
+            if last_close != "":
+                ID_ecart_last_close = last_close["ID_ecart"]
+            else:
+                ID_ecart_last_close = self.plus_proche(symbol,ID_client)
+            print(ID_ecart_last_close)
+            self.bin.new_vente(symbol,ID_ecart_last_close,ID_client)
+            self.bin.new_achat(symbol,ID_ecart_last_close,ID_client)
 
-        achat = basic.lecture_achat(achat)
-        vente = basic.lecture_vente(vente)
-
-
-        #Recuperation des niveaux de vente et d achat
-        dico_niv = basic.lecture_niveaux()
-        #count_vente = dico_niv["vente"]
-        #count_achat = dico_niv["achat"]
-        count_vente = 0
-        count_achat = 0
-        delta_achat_niveau=0
-        delta_vente_niveau=0
-
-
-        prix = basic.latest_price(kraken,"XRPEUR")
-
-        ordres_ouverts = kraken.query_private('OpenOrders',{'trades': 'true','start':'1514790000'})
+    def verification_2_ordres_V2(self,symbol,ID_client):
         try:
-            #verification de la synchro entre kraken et les listes
-            verif_OK = basic.verif(achat,vente,ordres_ouverts)
-        except KeyError:
-            verif_OK = False
-        if verif_OK == False or (achat == {} and vente == {}):
-            #supprime l'ensemble des ordres et cree 2 nouveaux ordres pour partir sur de nouvelles bases
-            basic.flush(ordres_ouverts,kraken,achat,vente,prix)
-            achat = basic.lecture_achat(achat)
-            vente = basic.lecture_vente(vente)
+            changement = self.bin.changement_status(symbol,ID_client)
+            self.bin.changement_update(changement,symbol,ID_client)
+            ordres_new = self.sql.get_orders_status_symbol_filter(self.bin.client.ORDER_STATUS_NEW,symbol,ID_client)
+            ordres_partial = self.sql.get_orders_status_symbol_filter(self.bin.client.ORDER_STATUS_PARTIALLY_FILLED,symbol,ID_client)
+            ordres_DB = ordres_partial + ordres_new
+
+            #if symbol=="ETHUSDT_Carlos":
+            #    breakpoint()
+
+            if len(ordres_DB) ==1 :
+                if len(ordres_new) == 1:
+                    last_filled = self.sql.get_last_filled(symbol,ID_client)
+                    try:
+                        self.sql.calcul_benefice(symbol,last_filled)
+                    except Exception as inst:
+                        self.sql.new_log_debug("Ordres V2",str(inst),symbol)
+                        print("problème dans calcul benefice")
+                        print(str(inst))
+                        breakpoint()
+                    #self.sql.add_bet_after_sell(symbol,last_filled,ID_client)
+                    #############################################################################
+                    #                                                                           #
+                    #               Ajouter ici la nouvelle fonction pour le calcul de benef    #
+                    #                                                                           #
+                    #############################################################################
+                    self.reinject_benef(symbol,ID_client,last_filled)
 
 
+                    clients = self.sql.get_clients_infos()
+                    if last_filled["montant_execute"] != 0.0:
+                        self.tele.send_message(str(last_filled["sens"])+" : "
+                                            +symbol+"\n"+str(last_filled["montant_execute"])+"\nLimite : "
+                                            + str(last_filled["limite"]),clients[ID_client]["tele"])
+                    else:
+                        self.tele.send_message(str(last_filled["sens"])+" : "
+                                            +symbol+"\n"+str(last_filled["montant"])+"\nLimite : "
+                                            + str(last_filled["limite"]),clients[ID_client]["tele"])
+                        ordre = self.bin.get_order_info_with_ID(symbol,ID_client,0,0,last_filled["ID"])
+                        self.tele.send_message(str(ordre))
+                    self.sql.new_log_debug("verification_2_ordres_V2","un ordre FILLED et un NEW : "+str(ordres_DB),symbol)
+                    self.un_ordre_filled_autre_new(ordres_DB,symbol,ID_client)
+                    self.sheet.update_all_info(symbol)
+                    # un ordre ferme et un NEW
+                elif len(ordres_partial) == 1:
+                    self.tele.send_message("nouvel ordre avec un partial FILLED")
+                    self.sql.new_log_debug("verification_2_ordres_V2","un ordre FILLED et un PARTIALY : "+str(ordres_DB),symbol)
+                    self.un_ordre_filled_autre_partial(ordres_partial,symbol,ID_client)
+                    # un ordre ferme et l autre partialy FILLED
+            elif len(ordres_DB) == 0 :
+                self.tele.send_message("deux ordres clos en meme temps "+symbol)
+                self.sql.new_log_debug("verification_2_ordres_V2","deux ordres FILLED : "+str(ordres_DB),symbol)
+                self.tele.send_message("sql OK")
+                self.deux_ordres_filled(symbol,ID_client)
+                #Deux ordres ont ete fermes
+            elif len(ordres_DB) > 2 :
+                self.sql.new_log_error("verification_2_ordres_V2_trader","probleme de trade", symbol)
+        except Exception as inst:
+            self.sql.new_log_debug("Ordres V2",str(inst),symbol)
+            return inst
 
-        previous_day = datetime.datetime.today().day
+    def get_taux_reinjection(self, benef):
+        paliers = [
+            (5, 1000),
+            (10, 500),
+            (15, 300),
+            (25, 200),
+            (40, 150),
+            (60, 100),
+        ]
+        for seuil, taux in paliers:
+            if benef < seuil:
+                return taux
+        return 50
 
-        bas = float(max(achat.keys()))
-        haut = float(min(vente.keys()))
-        resume={"a":0,"v":0}
-
-        time.sleep(self.TIME_SLEEP)
-        Ack1=False
-
-
-
-                #ouvrir un stop loss
-        return_status={}
-
-        while 1:
-            passage_haut = False
-            passage_bas = False
-            #Envoi d informations quotidienne
-            last_ben_line = basic.benef_last_line_get_benef()
-
-            ##############################################################
-            #                      HALEVING gestion                      #
-            ##############################################################
-            montant_haleving_vente=172.5
-            if ORDRES_HAL_OPEN["ACHAT"] == [] and ORDRES_HAL_OPEN["VENTE"] == []:
-                if ORDRES_HAL_OPEN["POSITION"] == 0:
-                    if prix > HAL_VENTE_TAB[0] + 0.05:
-                        sell_SL = basic.new_order_haleving(kraken,"XRPEUR","sell","stop-loss",str(HAL_VENTE_TAB[0]),str(montant_haleving_vente))
-                        ORDRES_HAL_OPEN["VENTE"] = sell_SL
-                        ORDRES_HAL_OPEN["POSITION"] = 1
-                        basic.ecriture_haleving_file(ORDRES_HAL_OPEN)
-                elif ORDRES_HAL_OPEN["POSITION"] == 11:
-                    if prix < HAL_ACHAT_TAB[10] - 0.05:
-                        buy_SL = basic.new_order_haleving(kraken,"XRPEUR","buy","stop-loss",str(HAL_ACHAT_TAB[10]),str(172.5))
-                        ORDRES_HAL_OPEN["ACHAT"] = buy_SL
-                        ORDRES_HAL_OPEN["POSITION"] = 10
-                        basic.ecriture_haleving_file(ORDRES_HAL_OPEN)
-                elif prix > HAL_VENTE_TAB[ORDRES_HAL_OPEN["POSITION"]] + 0.05:
-                    ORDRES_HAL_OPEN["POSITION"] += 1
-                    sell_SL = basic.new_order_haleving(kraken,"XRPEUR","sell","stop-loss",str(HAL_VENTE_TAB[ORDRES_HAL_OPEN["POSITION"]]),str(172.5))
-                    ORDRES_HAL_OPEN["VENTE"] = sell_SL
-
-                    basic.ecriture_haleving_file(ORDRES_HAL_OPEN)
-                elif prix < HAL_ACHAT_TAB[ORDRES_HAL_OPEN["POSITION"]-1]:
-                    buy_SL = basic.new_order_haleving(kraken,"XRPEUR","buy","stop-loss",str(HAL_ACHAT_TAB[ORDRES_HAL_OPEN["POSITION"]-1]),str(172.5))
-                    ORDRES_HAL_OPEN["ACHAT"] = buy_SL
-                    ORDRES_HAL_OPEN["POSITION"] -= 1
-                    basic.ecriture_haleving_file(ORDRES_HAL_OPEN)
-            if ORDRES_HAL_OPEN["VENTE"] != []:
-                try:
-                    if return_status[ORDRES_HAL_OPEN["VENTE"][0]] == "closed":
-                        basic.haleving_bet_modification("VENTE",ORDRES_HAL_OPEN["ACHAT"][1],ORDRES_HAL_OPEN["ACHAT"][2])
-                        ORDRES_HAL_OPEN["VENTE"]=[]
-                        basic.ecriture_haleving_file(ORDRES_HAL_OPEN)
-                except:
-                    bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
-                    bot.send_message(BOT_CHAT_ID, 'probleme de recuperation du status VENTE')
-                if prix > ORDRES_HAL_OPEN["VENTE"][1] + 0.1 and prix > HAL_VENTE_TAB[ORDRES_HAL_OPEN["POSITION"]] + 0.05:
-                    kraken.query_private('CancelOrder', {'txid': ORDRES_HAL_OPEN["VENTE"][0]})
-                    sell_SL = basic.new_order_haleving(kraken,"XRPEUR","sell","stop-loss",str(HAL_VENTE_TAB[ORDRES_HAL_OPEN["POSITION"]]),str(172.5 + ORDRES_HAL_OPEN["VENTE"][2]))
-                    ORDRES_HAL_OPEN["POSITION"] += 1
-                    ORDRES_HAL_OPEN["VENTE"] = sell_SL
-                    basic.ecriture_haleving_file(ORDRES_HAL_OPEN)
-                if prix > ORDRES_HAL_OPEN["VENTE"][1] + 0.1:
-                    kraken.query_private('CancelOrder', {'txid': ORDRES_HAL_OPEN["VENTE"][0]})
-                    sell_SL = basic.new_order_haleving(kraken,"XRPEUR","sell","stop-loss",str(float(ORDRES_HAL_OPEN["VENTE"][1])+0.05),str(ORDRES_HAL_OPEN["VENTE"][2]))
-                    ORDRES_HAL_OPEN["VENTE"] = sell_SL
-                    basic.ecriture_haleving_file(ORDRES_HAL_OPEN)
-            if ORDRES_HAL_OPEN["ACHAT"] != []:
-                try:
-                    if return_status[ORDRES_HAL_OPEN["ACHAT"][0]] == "closed":
-                        basic.haleving_bet_modification("ACHAT",ORDRES_HAL_OPEN["ACHAT"][1],ORDRES_HAL_OPEN["ACHAT"][2])
-                        ORDRES_HAL_OPEN["ACHAT"]=[]
-                        basic.ecriture_haleving_file(ORDRES_HAL_OPEN)
-                except:
-                    bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
-                    bot.send_message(BOT_CHAT_ID, 'probleme de recuperation du status ACHAT')
-                if prix < ORDRES_HAL_OPEN["ACHAT"][1] - 0.1 and prix < HAL_VENTE_TAB[ORDRES_HAL_OPEN["POSITION"]-1] - 0.05:
-                    kraken.query_private('CancelOrder', {'txid': ORDRES_HAL_OPEN["ACHAT"][0]})
-                    buy_SL = basic.new_order_haleving(kraken,"XRPEUR","buy","stop-loss",str(HAL_ACHAT_TAB[ORDRES_HAL_OPEN["POSITION"]-1]),str(172.5+ ORDRES_HAL_OPEN["ACHAT"][2]))
-                    ORDRES_HAL_OPEN["POSITION"] -= 1
-                    ORDRES_HAL_OPEN["ACHAT"] = buy_SL
-                    basic.ecriture_haleving_file(ORDRES_HAL_OPEN)
-                if prix < ORDRES_HAL_OPEN["ACHAT"][1] - 0.1:
-                    kraken.query_private('CancelOrder', {'txid': ORDRES_HAL_OPEN["ACHAT"][0]})
-                    buy_SL = basic.new_order_haleving(kraken,"XRPEUR","buy","stop-loss",str(float(ORDRES_HAL_OPEN["ACHAT"][1])-0.05),str(HAL_OPEN["VENTE"][2]))
-                    ORDRES_HAL_OPEN["ACHAT"] = buy_SL
-                    basic.ecriture_haleving_file(ORDRES_HAL_OPEN)
-
-
-
-
-
-
-
-
-
-
-
-            if "trait" in last_ben_line:
-                local = float(last_ben_line[4])
-                up_invest = float(last_ben_line[5])
-                last_close = float(os.popen("cat LOG/*log|grep closed|tail -n 1").readlines()[0].split(";")[4])
-            #    last_close = float(os.system("cat LOG/*log|grep closed|tail -n 1").readlines()[0].split(";")[4])
-                prev_dif = abs(last_close-ecart.ECART[0])
-                for el in ecart.ECART:
-                    if abs(last_close - el) < prev_dif:
-                        prev_dif=abs(last_close - el)
-                        prev_el = el
-                key_last_close= ecart.ECART.index(prev_el)
-                Ack1=True
-                cmd = "echo 'ACK1;local "+str(local)+" up "+str(up_invest)+" last_close "+str(last_close)+" indice "+str(key_last_close)+"' >> benef.log"
-                os.system(cmd)
-
-                bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
-                bot.send_message(BOT_CHAT_ID, 'Last close : '+ str(last_close)+'\nLocal : '+ str(local) + '\nUP : '+ str(up_invest))
-
-                BET_TAB[key_last_close-2]=BET_TAB[key_last_close-2]+(local/5)/last_close
-                BET_TAB[key_last_close-1]=BET_TAB[key_last_close-1]+(local/5)/last_close
-                BET_TAB[key_last_close]=BET_TAB[key_last_close]+(local/5)/last_close
-                BET_TAB[key_last_close+1]=BET_TAB[key_last_close+1]+(local/5)/last_close
-                BET_TAB[key_last_close+2]=BET_TAB[key_last_close+2]+(local/5)/last_close
-
-
-                prem_step = 185
-                largeur = 3
-                for i in range(largeur):
-                    BET_TAB[prem_step+i]=BET_TAB[prem_step+i]+(up_invest/largeur)/last_close
-                cmd = "echo 'BET = "+str(BET_TAB)+"' > bet.py"
-
-                count_achat = 0
-                count_vente = 0
-
-                os.system(cmd)
-                basic.flush_zero(kraken,ORDRES_HAL_OPEN)
-                achat={}
-                vente={}
-
-                haut=ecart.ECART[key_last_close+1]
-                bas=ecart.ECART[key_last_close-1]
-                basic.get_bet_achat(ecart.ECART[key_last_close-1])
-
-                buy = basic.new_order(kraken,"XRPEUR","buy","limit",str(bas),str(basic.bet + up_invest/last_close + 2*local/5/last_close))  #### TODO montant du bet a regler
-                achat[str(ecart.ECART[key_last_close-1])]=str(buy)
-                    #basic.get_bet_achat(bas)
-                    #buy = basic.new_order(kraken,"XRPEUR","buy","limit",str(bas),str(basic.bet+delta_achat_niveau))
-
-                basic.get_bet_vente(ecart.ECART[key_last_close+1])
-                buy = basic.new_order(kraken,"XRPEUR","sell","limit",str(haut),str(basic.bet - up_invest/last_close - 2*local/5/last_close)) #### TODO montant du bet a regler
-
-                vente[str(ecart.ECART[key_last_close+1])]=str(buy)
-                basic.ecriture_achat_vente(achat,vente)
-
-
-
-            if previous_day != datetime.datetime.today().day:
-                previous_day = datetime.datetime.today().day
-                bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
-                bot.send_message(BOT_CHAT_ID, 'NBR Achat : ' + str(resume["a"]) + '\nNBR Vente : ' + str(resume["v"]))
-
-                resume={"a":0,"v":0}
-                importlib.reload(parameters)
-
+    def get_taux_up(self, benef):
+        paliers = [
+            (10, 100),
+            (15, 50),
+            (25, 30),
+            (40, 20),
+            (60, 15),
+        ]
+        for seuil, taux in paliers:
+            if benef < seuil:
+                return taux
+        return 10
+    
+        
+    def reinject_benef(self,symbol,ID_client,last_filled):
+        benef_tmp = self.sql.get_benef_TMP_and_benef_all_from_symbol(symbol)["TMP"]
+        if benef_tmp>0:
             try:
-                prix = basic.latest_price(kraken,"XRPEUR")
-                time.sleep(2)
+                debug_flag = 0
+                repart = self.sql.get_reinject_repartition(symbol)
+                debug_flag = 1
+                self.tele.send_message("Je passe dans le reinject function")
+                if type(repart["local"])==str:
+                    self.tele.send_message("Je passe dans le cas du STR a la place du pourcent repart : "+str(last_filled["benefice"]))
+                    self.sql.add_2_up_tmp(repart["local"],last_filled["benefice"])
+                else:
+                    factu = benef_tmp*repart["factu_prct"]/100
+                    debug_flag = 2
+                    epargne = benef_tmp*repart["epargne_prct"]/100
+                    debug_flag = 3
+                    down = benef_tmp*repart["down"]/100
+                    debug_flag = 4
+                    #local = benef_tmp*repart["local"]/100
+                    taux_local = self.get_taux_reinjection(benef_tmp)
+                    local = benef_tmp*taux_local/100
+                    debug_flag = 5
+                    #up = benef_tmp*repart["up"]/100
+                    up_tmp = self.get_taux_up(benef_tmp)
+                    up = benef_tmp*up_tmp/100
+                    debug_flag = 6
+                    self.reinject_local(symbol,last_filled,local)
+                    debug_flag = 7
+                    if down>0:
+                        self.reinject_down(symbol,ID_client,down,last_filled)
+                    debug_flag = 8
+                    self.sql.ajout_epargne_paire_devise(symbol,epargne,ID_client)
+                    debug_flag = 9
+                    self.reinject_up(symbol,ID_client,up,last_filled)
+                    debug_flag = 10
+                    self.sql.add_to_factu_from_symbol(symbol,factu)
+                    debug_flag = 11
+                    self.sql.add_to_benef_TMP(symbol,-benef_tmp)
+                    debug_flag = 12
+            except Exception as inst:
+                self.sql.new_log_debug("Ordres V2"+ " Flag = "+str(debug_flag),str(inst) ,symbol)
+                self.tele.send_message("Erreur dans les fonctions Flag = "+ str(debug_flag))
+                return inst
+            
 
-                dico_orders={}
-                dico_orders[vente[str(haut)]] = {"niveau":count_vente,"ecart":basic.ecart}
-                dico_orders[achat[str(bas)]] = {"niveau":count_vente,"ecart":basic.ecart}
-                if ORDRES_HAL_OPEN["ACHAT"] == [] and ORDRES_HAL_OPEN["VENTE"] == []:
-                    return_status = basic.orders_status(kraken,dico_orders)
-                elif ORDRES_HAL_OPEN["ACHAT"] != []:
-                    return_status = basic.orders_status(kraken,dico_orders,ORDRES_HAL_OPEN["ACHAT"])
-                elif ORDRES_HAL_OPEN["VENTE"] != []:
-                    return_status = basic.orders_status(kraken,dico_orders,ORDRES_HAL_OPEN["VENTE"])
-
-
-                passage_haut = return_status[vente[str(haut)]] == 'closed'
-                passage_bas = return_status[achat[str(bas)]] == 'closed'
-
-                if passage_bas:
-                    resume["a"] += 1
-
-                if passage_haut:
-                    resume["v"] += 1
-
-            except KeyboardInterrupt:
-                print("ctrl + C")
+    def reinject_down(self,symbol,ID_client,down,last_filled):
+        ID = int(last_filled["ID_ecart"])-1
+        obj = float(self.sql.get_devises_from_symbol(symbol,ID_client)["obj_gain"])
+        while ID >= 0:
+            if self.sql.calcul_benef_with_ID(symbol,ID)<obj:
                 break
-            except Exception as inst:
-                passage_bas=False
-                passage_haut=False
-                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI dans le while vente: "+str(vente)+";"+"achat"+str(achat)+";prix"+str(prix)+";bas"+str(bas)+";haut"+str(haut)+"' >> LOG/ERROR.error"
-                os.system(cmd)
-                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";retour error; "+str(inst).replace("'","")+"' >> LOG/ERROR.error"
-                os.system(cmd)
+            ID-=1
+        prix = float(self.sql.get_ecart_bet_from_symbol_and_ID(symbol,ID)[2])
+        self.sql.add_to_ecart(symbol,ID,down/prix)
+        #self.tele.send_message("Reinject down " +str(down/prix)+"\n ID "+str(ID)
+        #                       +"\nqtt : "+ str(down)
+        #                       +"\nprix : " + str(prix))
+        return ID
+    
+    def reinject_up(self,symbol,ID_client,qtt,last_filled):
+        self.sql.add_2_up_tmp(symbol,qtt)
+        total = float(self.sql.get_up_tmp(symbol))
+        devise_base = self.sql.get_devises_from_symbol(symbol,ID_client)["devise2"]
+        if devise_base == "USDT":
+            convert_to_usdt = total
+        else:
+            taux_convert_to_USDT = float(self.bin.get_price(devise_base+"USDT",ID_client)["price"])
+            convert_to_usdt = total*taux_convert_to_USDT
 
-            try:
-                last_ben_line = basic.benef_last_line_get_benef()
+        if float(convert_to_usdt)>6:
+            symbol_split = symbol.split("_")[0]
+            taux_convert = float(self.bin.get_price(symbol_split,ID_client)["price"])
+            ID = int(last_filled["ID_ecart"])+1
+            max_ID = self.sql.get_max_ID_from_symbol(symbol)
+            obj = float(self.sql.get_devises_from_symbol(symbol,ID_client)["obj_gain"])
+            while ID <= max_ID:
+                if self.sql.calcul_benef_with_ID(symbol,ID)<obj:
+                    break
+                ID+=1
+
+            dev_entier = self.sql.get_devises_from_symbol(symbol,ID_client)["dev_entiere"]
+            self.tele.send_message("Reinject UP "+symbol +str(total)+"\n ID "+str(ID_client))
+            if int(dev_entier) == 1:
+                self.bin.new_market_order(symbol,int(total/taux_convert),"BUY",ID_client)
+                self.sql.add_to_ecart(symbol,ID,int(total/taux_convert))
+                self.sql.add_2_up_tmp(symbol,-int(total/taux_convert)*taux_convert)
+            else:
+                self.bin.new_market_order(symbol,total/taux_convert,"BUY",ID_client)
+                self.sql.add_to_ecart(symbol,ID,total/taux_convert)
+                self.sql.add_2_up_tmp(symbol,-total)
+        
 
 
-                if (passage_bas or passage_haut) and "ACK1" in last_ben_line:
-                    cmd = "echo 'ACK2;' >> benef.log"
-                    os.system(cmd)
-                if (passage_bas and not passage_haut) and "ACK2" in last_ben_line:
-                    del achat[str(bas)]
-                    i=0
-                    while bas > ecart.ECART[i]:
-                        i += 1
-                    if count_achat == 0:
-                        bas=ecart.ECART[i-1]
-                        count_achat +=1
-                        count_vente=0
-                        haut=ecart.ECART[i+1]
-                        delta_achat_niveau=0
-                        delta_vente_niveau=0
-                        achat={}
-                        vente={}
-                        basic.flush_zero(kraken,ORDRES_HAL_OPEN)
-                    elif count_achat == 1:
-                        bas=ecart.ECART[i-2]
-                        count_achat +=1
-                        count_vente=0
-                        haut=ecart.ECART[i+1]
-                        basic.get_bet_achat(ecart.ECART[i-1])
-                        delta_achat_niveau = basic.bet
-                        delta_vente_niveau=0
-                        achat={}
-                        vente={}
-                        basic.flush_zero(kraken,ORDRES_HAL_OPEN)
-                    else:
-                        bas=ecart.ECART[i-3]
-                        count_achat +=1
-                        count_vente=0
-                        delta_vente_niveau=0
-                        haut=ecart.ECART[i+1]
-                        basic.get_bet_achat(ecart.ECART[i-1])
-                        delta_achat_niveau = basic.bet
-                        basic.get_bet_achat(ecart.ECART[i-2])
-                        delta_achat_niveau += basic.bet
-                        achat={}
-                        vente={}
-                        basic.flush_zero(kraken,ORDRES_HAL_OPEN)
-                    ####attention l'achat existe peut etre deja ####################
-                    #TODO Verifier si ce IF est bien necessaire
-                    if not str(bas) in achat.keys():
-                        basic.get_bet_achat(bas)
-                        buy = basic.new_order(kraken,"XRPEUR","buy","limit",str(bas),str(basic.bet+delta_achat_niveau))
-                        achat[str(bas)]=str(buy)
-                    basic.get_bet_vente(haut)
-                    buy = basic.new_order(kraken,"XRPEUR","sell","limit",str(haut),str(basic.bet))
-                    vente[str(haut)]=str(buy)
-                    #Enregistrement du niveau achat_vente pour revenir au meme etat en cas de redemarrage
-                    basic.ecriture_niveaux(count_achat , count_vente)
-                    #Enregistrement des ordres d achat et vente qui viennent d etre passe
-                    basic.ecriture_achat_vente(achat,vente)
+    def reinject_local(self,symbol,last_filled,qtt):
+        current_bet = self.sql.get_ecart_bet_from_symbol_and_ID(symbol,float(last_filled["ID_ecart"])-1)[3]
+        prix = float(self.sql.get_ecart_bet_from_symbol_and_ID(symbol,int(last_filled["ID_ecart"])-1)[2])
+        self.sql.update_bet_with_ID(symbol,int(last_filled["ID_ecart"])-1,float(current_bet)+qtt/prix)
+        #self.tele.send_message("add local ID : "+ str(int(last_filled["ID_ecart"])-1) 
+        #                       +"\nqtt : " 
+        #                       + str(qtt/prix) 
+        #                       +"\nqtt : "+ str(qtt)
+        #                       +"\nprix : " +str(prix))
+        self.sql.add_to_ajout(symbol,int(last_filled["ID_ecart"])-1,qtt/prix)
 
-            except Exception as inst:
-                bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
-                bot.send_message(BOT_CHAT_ID, 'check tes logs, t as une piste (dans le 1er IF)' +str(inst).replace("'",""))
-            try:
-                if (passage_haut and not passage_bas) and "ACK2" in last_ben_line:
-                    i=0
-                    while haut > ecart.ECART[i]:
-                        i += 1
-                    del vente[str(haut)]
-                    if count_vente == 0:
-                        haut=ecart.ECART[i+1]
-                        bas=ecart.ECART[i-1]
-                        count_achat=0
-                        count_vente+=1
-                        delta_achat_niveau=0
-                        delta_vente_niveau=0
-                        achat={}
-                        vente={}
-                        basic.flush_zero(kraken,ORDRES_HAL_OPEN)
-                    elif count_vente == 1:
-                        delta_achat_niveau=0
-                        haut=ecart.ECART[i+2]
-                        bas=ecart.ECART[i-1]
-                        count_achat=0
-                        count_vente+=1
-                        basic.get_bet_vente(ecart.ECART[i+1])
-                        delta_vente_niveau = basic.bet
-                        achat={}
-                        vente={}
-                        basic.flush_zero(kraken,ORDRES_HAL_OPEN)
-                    else:
-                        delta_achat_niveau=0
-                        haut=ecart.ECART[i+3]
-                        bas=ecart.ECART[i-1]
-                        count_achat=0
-                        count_vente+=1
-                        basic.get_bet_vente(ecart.ECART[i+1])
-                        delta_vente_niveau = basic.bet
-                        basic.get_bet_vente(ecart.ECART[i+2])
-                        delta_vente_niveau += basic.bet
-                        achat={}
-                        vente={}
-                        basic.flush_zero(kraken,ORDRES_HAL_OPEN)
-                    basic.get_bet_achat(bas)
-                    buy = basic.new_order(kraken,"XRPEUR","buy","limit",str(bas),str(basic.bet))
-                    achat[str(bas)]=str(buy)
-                    ######        Attention la vente existe peut etre deja
-                    if not str(haut) in vente.keys():
-                        basic.get_bet_vente(haut)
-                        buy = basic.new_order(kraken,"XRPEUR","sell","limit",str(haut),str(basic.bet + delta_vente_niveau ))
-                        vente[str(haut)]=str(buy)
+    def un_ordre_filled_autre_new(self,ordres_ouvert,symbol,ID_client):
+        for ordre_ouvert in ordres_ouvert:
+            self.bin.cancel_order(ordre_ouvert["ID"],ID_client)
+        last_filled_order = self.sql.get_last_filled(symbol,ID_client)
+        self.sql.new_log_debug("Nouveaux ordres apres filled",str(last_filled_order),symbol)
+        self.bin.new_achat(symbol,last_filled_order["ID_ecart"],ID_client)
+        self.bin.new_vente(symbol,last_filled_order["ID_ecart"],ID_client)
+        #self.kpi.reste_sur_limites(symbol,ID_client)
 
-                    #Enregistrement du niveau achat_vente pour revenir au meme etat en cas de redemarrage
-                    basic.ecriture_niveaux(count_achat , count_vente)
-                    #Enregistrement des ordres d achat et vente qui viennent d etre passe
-                    basic.ecriture_achat_vente(achat,vente)
+    def un_ordre_filled_autre_partial(self,ordres_partiel,symbol,ID_client):
+        for ordre in ordres_partiel:
+            self.bin.cancel_order_partial(ordre["ID"],ID_client)
+            sens = ordre["sens"]
+            if sens == self.bin.client.SIDE_BUY:
+                ID_market = self.bin.new_market_order(symbol,ordre["montant_execute"],self.bin.client.SIDE_SELL,ID_client)
+            if sens == self.bin.client.SIDE_SELL:
+                ID_market = self.bin.new_market_order(symbol,ordre["montant_execute"],self.bin.client.SIDE_BUY,ID_client)
+        last_filled_order = self.sql.get_last_filled(symbol,ID_client)
+        self.bin.calcul_benef_partial(symbol,ID_client,ordre["ID"],ID_market)
+        self.sql.new_log_debug("Nouveaux ordres apres filled",str(last_filled_order),symbol)
 
-            except Exception as inst:
-                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI WOOOOOOOOOOOOOOOOOO C ICI: ' >> LOG/ERROR.error"
-                os.system(cmd)
-                bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
-                bot.send_message(BOT_CHAT_ID, 'check tes logs, t as une piste (dans le gros IF)' +str(inst).replace("'",""))
-                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+"; Probleme dans les IF"+str(passage_bas)+";"+str(passage_haut)+";"+str(prix)+"' >> LOG/ERROR.error"
-            try:
-                #Cas particulier: si une vente et achat sont clos en même temps
-                if (passage_haut and passage_bas) and "ACK2" in last_ben_line:
-                    bot.send_message(BOT_CHAT_ID, 'Achat et vente at the same time \nPOINT d attention particulier!!!')
-                    i_bas=0
-                    while bas > ecart.ECART[i_bas]:
-                        i_bas += 1
-                    i_haut=0
-                    while haut > ecart.ECART[i_haut]:
-                        i_haut += 1
-                    bas=ecart.ECART[i_bas-1]
-                    haut=ecart.ECART[i_haut+1]
+        self.bin.new_achat(symbol,last_filled_order["ID_ecart"],ID_client)
+        self.bin.new_vente(symbol,last_filled_order["ID_ecart"],ID_client)
+        #self.kpi.reste_sur_limites(symbol,ID_client)
+        
+    
 
-                    if count_vente<2 and count_achat <2:
-                        basic.get_bet_achat(ecart.ECART[i_bas+1])
-                        delta_achat_niveau=basic.bet
-                        basic.get_bet_vente(ecart.ECART[i_bas+1])
-                        delta_vente_niveau=basic.bet
-                    elif count_vente == 2 and count_achat < 2:
-                        #Achat
-                        basic.get_bet_achat(ecart.ECART[i_bas+1])
-                        delta_achat_niveau=basic.bet
-                        basic.get_bet_achat(ecart.ECART[i_bas+2])
-                        delta_achat_niveau+=basic.bet
-                        #Vente
-                        basic.get_bet_vente(ecart.ECART[i_bas+1])
-                        delta_vente_niveau=basic.bet
-                    elif count_vente > 2 and count_achat < 2:
-                        #Achat
-                        basic.get_bet_achat(ecart.ECART[i_bas+1])
-                        delta_achat_niveau=basic.bet
-                        basic.get_bet_achat(ecart.ECART[i_bas+2])
-                        delta_achat_niveau+=basic.bet
-                        basic.get_bet_achat(ecart.ECART[i_bas+3])
-                        delta_achat_niveau+=basic.bet
-                        #Vente
-                        basic.get_bet_vente(ecart.ECART[i_bas+1])
-                        delta_vente_niveau=basic.bet
-                    elif count_vente < 2 and count_achat == 2:
-                        #Achat
-                        basic.get_bet_achat(ecart.ECART[i_bas+1])
-                        delta_achat_niveau=basic.bet
-                        #Vente
-                        basic.get_bet_vente(ecart.ECART[i_bas+1])
-                        delta_vente_niveau=basic.bet
-                        basic.get_bet_vente(ecart.ECART[i_bas+2])
-                        delta_vente_niveau+=basic.bet
-                    elif count_vente < 2 and count_achat > 2:
-                        #Achat
-                        basic.get_bet_achat(ecart.ECART[i_bas+1])
-                        delta_achat_niveau=basic.bet
-                        #Vente
-                        basic.get_bet_vente(ecart.ECART[i_bas+1])
-                        delta_vente_niveau=basic.bet
-                        basic.get_bet_vente(ecart.ECART[i_bas+2])
-                        delta_vente_niveau+=basic.bet
-                        basic.get_bet_vente(ecart.ECART[i_bas+3])
-                        delta_vente_niveau+=basic.bet
-                    else:
-                        bot.send_message(BOT_CHAT_ID, 'On ne devrait pas arriver jusqu ici')
+    def deux_ordres_filled(self,symbol,ID_client):
+        last_filled_order_buy = self.sql.get_last_filled_buy(symbol)
+        last_filled_order_sell = self.sql.get_last_filled_sell(symbol)
+        montant_interval = self.sql.get_montant_entre_ordres(symbol,
+                                                             last_filled_order_buy["ID_ecart"],
+                                                             last_filled_order_sell["ID_ecart"])
+        bet_ecart = self.sql.get_ecart_bet_from_symbol_and_ID(symbol,last_filled_order_buy["ID_ecart"]-1)
+        self.bin.new_limite_order(symbol,
+                                  bet_ecart[3]+montant_interval,
+                                  bet_ecart[2],
+                                  self.bin.client.SIDE_BUY,
+                                  last_filled_order_buy["ID_ecart"]-1,
+                                  0,
+                                  ID_client)
 
-                    count_vente = 0
-                    count_achat = 0
+        bet_ecart = self.sql.get_ecart_bet_from_symbol_and_ID(symbol,last_filled_order_sell["ID_ecart"]+1)
+        self.bin.new_limite_order(symbol,
+                                  bet_ecart[3]+montant_interval,
+                                  bet_ecart[2],
+                                  self.bin.client.SIDE_SELL,
+                                  last_filled_order_sell["ID_ecart"]+1,
+                                  0,
+                                  ID_client)
 
-                    buy = basic.new_order(kraken,"XRPEUR","buy","limit",str(bas),str(basic.bet+delta_achat_niveau))
-                    achat[str(bas)]=str(buy)
-                    sell = basic.new_order(kraken,"XRPEUR","sell","limit",str(haut),str(basic.bet+delta_vente_niveau ))
-                    vente[str(haut)]=str(sell)
-                    basic.ecriture_niveaux(count_achat=0 , count_vente=0)
-                    basic.ecriture_achat_vente(achat,vente)
-            except Exception as inst:
-                cmd = "echo '"+time.strftime('%Y#%m#%d;%H:%M:%S')+";CRASH APPLI WAAAAAAAAAAAAAAAAAAAAAA C ICI: ' >> LOG/ERROR.error"
-                os.system(cmd)
-                bot = telebot.TeleBot(parameters.TELEGRAM_TOKEN)
-                bot.send_message(BOT_CHAT_ID, 'check tes logs, t as une piste (dans le gros IF avec la double fermeture)')
+    def verification_niveau_VS_timer(self,symbol,ID_client):
+        niveaux = self.sql.get_time_since_open(symbol,ID_client)
+        keys = niveaux.keys()
+        for key in keys:
+            #Delais d attente de 30 min pour un ordre niveau 4
+            if int(niveaux[key]["niveau"]) == 4 and niveaux[key]["time"].seconds > 1800:
+                self.bin.baisser_niveau_ordre(key,ID_client)
+            # Delas d attente de 1 heures pour un ordre de niveau 3
+            if int(niveaux[key]["niveau"]) == 3 and niveaux[key]["time"].seconds > 3600:
+                self.bin.baisser_niveau_ordre(key,ID_client)
+            # Delas d attente de 2 heures pour un ordre de niveau 2
+            if int(niveaux[key]["niveau"]) == 2 and niveaux[key]["time"].seconds > 7200:
+                self.sql.baisser_niveau_ordre_SQL(key,1)
 
-            time.sleep(self.TIME_SLEEP)
+###########################################################################
+#                                 MAIN                                    #
+###########################################################################
+def main():
+    basic = Basics()
+    DEVISES=basic.sql.get_symbols_actif()
 
+    ################################################
+    #    Initialisation
+    ################################################
+    basic.tele.send_message("Bonjour 1")
+    #for DEVISE in DEVISES:
+    #basic.initialise("PEPEEUR_JF2",6)
+    #basic.initialise("BTCEUR_EDYN2",9)
+    #basic.initialise("PEPEEUR_N94",1)
+    #basic.initialise("ETHUSDT_Carlos",5)
+    #basic.initialise("PEPEEUR_3")
+    #    time.sleep(3)
+    
+    start_edyn = datetime.now(timezone.utc)
+    while True:
+        users_IDs=DEVISES.keys()
+        now = datetime.now(timezone.utc)
+        #if (now-start_edyn).total_seconds()>3600*12:
+        if False:
+            basic.tele.send_message("Edyn exec pour multi compte")
+            basic.edyn.exec_edyn()
+            start_edyn = datetime.now(timezone.utc)
+        else:
+            for user_ID in users_IDs:
+            
+                for DEVISE in DEVISES[user_ID]:
+                    basic.verification_2_ordres_V2(DEVISE,user_ID)
+
+                    basic.verification_niveau_VS_timer(DEVISE,user_ID)
+                    time.sleep(4)
+    #last_field = basic.sql.get_last_filled("XRPEUR",1)
+    #print(last_field)
+    #print("OUIII")
+    #basic.reinject_down("XRPEUR",1,0.5,last_field)"""
+    #basic.reinject_up("XRPUSDT_nico",2,0.2,last_field)
 
 
 
