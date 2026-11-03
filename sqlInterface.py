@@ -1,13 +1,16 @@
 import sqlite3
 from datetime import datetime, timezone, timedelta
 import sys
+import os
 
 from telegramInterface import teleAcces
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 class sqlAcces():
     def __init__(self):
-        self.con = sqlite3.connect("/home/chaps/binance/bascule/DB.db")
+        self.con = sqlite3.connect(os.path.join(BASE_DIR, "DB.db"))
         self.cur = self.con.cursor()
         self.tele = teleAcces()
 
