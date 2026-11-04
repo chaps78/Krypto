@@ -1,0 +1,20 @@
+# Service systemd de l'API, sur le serveur du BOT.
+# Installation :
+#   sudo cp deploy/krypto-api.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now krypto-api
+#   journalctl -u krypto-api -f      # logs
+[Unit]
+Description=Krypto API (lecture seule sur DB.db)
+After=network.target
+
+[Service]
+User=chaps
+WorkingDirectory=/home/chaps/binance/Krypto
+# Optionnel : token exige par l'API (en plus du tunnel SSH)
+#Environment=KRYPTO_API_TOKEN=change-moi
+ExecStart=/home/chaps/binance/Krypto/venv-api/bin/uvicorn api:app --host 127.0.0.1 --port 8000 --workers 1
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,20 @@
+# Service systemd du tunnel SSH, sur le serveur du FRONT.
+# Rend l'API du bot disponible en local sur le front : http://127.0.0.1:8000
+# Remplacer IP_DU_SERVEUR_BOT et l'utilisateur, puis :
+#   sudo cp deploy/krypto-tunnel.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now krypto-tunnel
+[Unit]
+Description=Tunnel SSH vers l'API Krypto
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=front
+ExecStart=/usr/bin/ssh -N -i /home/front/.ssh/krypto_tunnel \
+    -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -o ExitOnForwardFailure=yes \
+    -L 127.0.0.1:8000:127.0.0.1:8000 chaps@IP_DU_SERVEUR_BOT
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
