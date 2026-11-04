@@ -1,0 +1,49 @@
+{% extends "dashboard/base.html" %}
+{% block head %}<meta http-equiv="refresh" content="60">{% endblock %}
+{% block title %}Ordres ouverts{% endblock %}
+{% block content %}
+<h1>Ordres ouverts</h1>
+{% if bot %}
+<p class="muted">
+  Dernier ordre enregistré par le bot : {{ bot.dernier_ordre|date:"d/m/Y H:i:s" }} (il y a {{ bot.depuis }})
+  · page actualisée toutes les 60 s
+</p>
+{% endif %}
+
+{% for strat in strategies %}
+<section class="carte">
+  <h2>{{ strat.symbol }} <span class="muted">· {{ strat.devise1 }}/{{ strat.devise2 }} · client {{ strat.id_client }}</span></h2>
+  {% if strat.ordres %}
+  <table>
+    <thead>
+      <tr>
+        <th>Sens</th><th class="num">Prix limite</th><th class="num">Quantité</th>
+        <th class="num">Palier</th><th class="num">Niveau</th><th>Statut</th><th>Ouvert depuis</th><th class="num">ID Binance</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for o in strat.ordres %}
+      <tr>
+        <td class="{{ o.sens }}">{% if o.sens == "BUY" %}Achat{% else %}Vente{% endif %}</td>
+        <td class="num">{{ o.limite_txt }} {{ strat.devise2 }}</td>
+        <td class="num">{{ o.montant_txt }} {{ strat.devise1 }}</td>
+        <td class="num">{{ o.id_ecart }}</td>
+        <td class="num">{{ o.niveau }}</td>
+        <td>{{ o.status }}</td>
+        <td title="{{ o.ouvert_le|date:'d/m/Y H:i:s' }}">{{ o.ouvert_depuis }}</td>
+        <td class="num muted">{{ o.id }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if strat.ordres|length != 2 %}
+  <p class="alerte" style="margin:.8rem 0 0">Attention : {{ strat.ordres|length }} ordre(s) ouvert(s) au lieu de 2.</p>
+  {% endif %}
+  {% else %}
+  <p class="alerte" style="margin:0">Aucun ordre ouvert pour cette stratégie.</p>
+  {% endif %}
+</section>
+{% empty %}
+{% if not erreur %}<p class="muted">Aucune stratégie active.</p>{% endif %}
+{% endfor %}
+{% endblock %}

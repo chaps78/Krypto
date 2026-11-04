@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  {% block head %}{% endblock %}
+  <title>{% block title %}Krypto{% endblock %} · Krypto</title>
+  <style>
+    :root { --bg:#f6f7f9; --card:#fff; --txt:#1d2330; --muted:#6b7385; --line:#e3e6ec;
+            --buy:#1a7f4b; --sell:#b42318; --accent:#2f5bd3; --warn:#fff4e5; --warn-txt:#8a4b00; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg:#14171d; --card:#1c2029; --txt:#e6e9ef; --muted:#9aa3b5; --line:#2c3240;
+              --buy:#4cc38a; --sell:#f97066; --accent:#7b9cff; --warn:#3a2a12; --warn-txt:#ffd08a; }
+    }
+    * { box-sizing: border-box; }
+    body { margin:0; font:15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--txt); }
+    nav { display:flex; align-items:center; gap:1.2rem; padding:.7rem 1.2rem; background:var(--card); border-bottom:1px solid var(--line); }
+    nav .logo { font-weight:700; }
+    nav a { color:var(--muted); text-decoration:none; }
+    nav a.actif { color:var(--txt); font-weight:600; }
+    nav .droite { margin-left:auto; display:flex; gap:1rem; align-items:center; color:var(--muted); font-size:.9rem; }
+    nav button { background:none; border:1px solid var(--line); color:var(--muted); border-radius:6px; padding:.25rem .6rem; cursor:pointer; }
+    main { max-width:1100px; margin:1.5rem auto; padding:0 1rem; }
+    h1 { font-size:1.35rem; margin:0 0 1rem; }
+    h2 { font-size:1.05rem; margin:0 0 .6rem; }
+    .carte { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:1rem 1.2rem; margin-bottom:1rem; }
+    .muted { color:var(--muted); font-size:.9rem; }
+    .alerte { background:var(--warn); color:var(--warn-txt); border-radius:8px; padding:.7rem 1rem; margin-bottom:1rem; }
+    table { width:100%; border-collapse:collapse; }
+    th, td { text-align:left; padding:.45rem .6rem; border-bottom:1px solid var(--line); vertical-align:top; }
+    th { color:var(--muted); font-weight:600; font-size:.85rem; }
+    td.num { text-align:right; font-variant-numeric: tabular-nums; }
+    th.num { text-align:right; }
+    tr:last-child td { border-bottom:none; }
+    .BUY { color:var(--buy); font-weight:600; }
+    .SELL { color:var(--sell); font-weight:600; }
+    .message { font-family: ui-monospace, Menlo, Consolas, monospace; font-size:.85rem; word-break:break-word; }
+    form.filtres { display:flex; gap:.8rem; flex-wrap:wrap; align-items:end; margin-bottom:1rem; }
+    label { display:flex; flex-direction:column; gap:.2rem; font-size:.85rem; color:var(--muted); }
+    select, input, .bouton { font:inherit; padding:.35rem .55rem; border:1px solid var(--line); border-radius:6px; background:var(--card); color:var(--txt); }
+    .bouton { background:var(--accent); color:#fff; border-color:var(--accent); cursor:pointer; }
+  </style>
+</head>
+<body>
+  {% if user.is_authenticated %}
+  <nav>
+    <span class="logo">Krypto</span>
+    <a href="{% url 'ordres' %}" class="{% if request.resolver_match.url_name == 'ordres' %}actif{% endif %}">Ordres ouverts</a>
+    <a href="{% url 'logs' %}" class="{% if request.resolver_match.url_name == 'logs' %}actif{% endif %}">Logs</a>
+    <div class="droite">
+      {{ user.username }}
+      <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button type="submit">Déconnexion</button></form>
+    </div>
+  </nav>
+  {% endif %}
+  <main>
+    {% if erreur %}<div class="alerte">{{ erreur }}</div>{% endif %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

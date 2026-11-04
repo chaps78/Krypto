@@ -1,0 +1,49 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Logs{% endblock %}
+{% block content %}
+<h1>Logs du bot</h1>
+
+<form class="filtres" method="get">
+  <label>Type
+    <select name="type">
+      <option value="ERREUR" {% if filtres.type == "ERREUR" %}selected{% endif %}>Erreurs</option>
+      <option value="DEBUG" {% if filtres.type == "DEBUG" %}selected{% endif %}>Debug</option>
+    </select>
+  </label>
+  <label>Stratégie
+    <select name="symbol">
+      <option value="">Toutes</option>
+      {% for s in symbols %}<option value="{{ s }}" {% if filtres.symbol == s %}selected{% endif %}>{{ s }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Lignes
+    <select name="limit">
+      <option value="50" {% if filtres.limit == "50" %}selected{% endif %}>50</option>
+      <option value="100" {% if filtres.limit == "100" %}selected{% endif %}>100</option>
+      <option value="500" {% if filtres.limit == "500" %}selected{% endif %}>500</option>
+      <option value="1000" {% if filtres.limit == "1000" %}selected{% endif %}>1000</option>
+    </select>
+  </label>
+  <button class="bouton" type="submit">Afficher</button>
+</form>
+
+<section class="carte">
+  {% if lignes %}
+  <table>
+    <thead><tr><th>Date</th><th>Stratégie</th><th>Emplacement</th><th>Message</th></tr></thead>
+    <tbody>
+      {% for l in lignes %}
+      <tr>
+        <td style="white-space:nowrap">{{ l.date_dt|date:"d/m/Y H:i:s" }}</td>
+        <td>{{ l.symbol|default:"" }}</td>
+        <td>{{ l.emplacement }}</td>
+        <td class="message">{{ l.message }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% elif not erreur %}
+  <p class="muted" style="margin:0">Aucune ligne pour ces filtres.</p>
+  {% endif %}
+</section>
+{% endblock %}

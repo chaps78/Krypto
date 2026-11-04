@@ -1,0 +1,15 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Connexion{% endblock %}
+{% block content %}
+<section class="carte" style="max-width:360px;margin:4rem auto">
+  <h1>Krypto</h1>
+  {% if form.errors %}<div class="alerte">Identifiant ou mot de passe incorrect.</div>{% endif %}
+  <form method="post" style="display:flex;flex-direction:column;gap:.8rem">
+    {% csrf_token %}
+    <label>Utilisateur <input name="username" autofocus required autocomplete="username"></label>
+    <label>Mot de passe <input name="password" type="password" required autocomplete="current-password"></label>
+    <input type="hidden" name="next" value="{{ next }}">
+    <button class="bouton" type="submit">Se connecter</button>
+  </form>
+</section>
+{% endblock %}
