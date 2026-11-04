@@ -5,16 +5,19 @@ from sqlInterface import sqlAcces
 
 class Clients():
     def __init__(self):
+        """Instancie les accès SQL et Binance."""
         self.sql = sqlAcces()
         self.bin = binAcces()
 
 
     def display_wallet(self,client):
+        """Affiche les soldes non nuls d'un compte."""
         wallet = self.bin.get_wallet(client)
         for el in wallet:
             print(el)
     
     def market_order(self,client):
+        """Demande paire, quantité et sens, puis passe un ordre au marché."""
         symbol = input("select pair\n")
         montant = input("amount\n")
         sens = input("BUY/SELL\n")
@@ -22,6 +25,7 @@ class Clients():
         self.bin.new_market_order(symbol,montant,sens,client)
 
     def limit_order(self,client):
+        """Demande paire, quantité, sens et prix, puis passe un ordre limite manuel."""
         symbol = input("select pair\n")
         montant = input("amount\n")
         sens = input("BUY/SELL\n")
@@ -30,6 +34,7 @@ class Clients():
         self.bin.new_manual_limite_order(symbol,montant,limit,sens,0,client)
     
     def list_orders(self,ID_client,symbol):
+        """Affiche les ordres ouverts sur Binance pour une paire."""
         symbol_splited = symbol.split("_")[0]
         orders = self.bin.clients[ID_client].get_all_orders(symbol=symbol_splited)
         print("#########################################################################################")
@@ -39,6 +44,7 @@ class Clients():
                       + str(order['price']) + "\tAmount : " + str(order['origQty']))
                 
     def list_orders_for_dashboard(self,ID_client,symbol):
+        """Affiche les ordres ouverts sur Binance qui sont aussi NEW en base pour la stratégie."""
         symbol_splited = symbol.split("_")[0]
         orders = self.bin.clients[ID_client].get_all_orders(symbol=symbol_splited)
         new_db_orders = self.sql.get_orders_status_symbol_filter("NEW",symbol,ID_client)
@@ -51,11 +57,17 @@ class Clients():
                             + str(order['price']) + "\tAmount : " + str(order['origQty']))
                 
     def cancel_order(self,ID_client,symbol):
+        """Affiche les ordres ouverts d'une paire puis annule celui choisi."""
         self.list_orders(ID_client,symbol)
         ID = input("Select the ID of order you whant to cancel : ")
         self.bin.cancel_order(ID,ID_client)
         
     def dashboard_client(self,ID_client):
+        """Affiche le tableau de bord d'un compte.
+
+        Wallet valorisé en USDT et en EUR, puis pour chaque stratégie active : ordres
+        ouverts, pourcentages de répartition et compteurs de gains.
+        """
         wallet = self.bin.get_wallet(ID_client)
         devises = self.sql.get_symbols_actif_client(ID_client)
         devises_info = self.sql.get_devises_from_Clien_ID(ID_client)
@@ -100,6 +112,11 @@ class Clients():
 
 
 def main():
+    """Outil en ligne de commande.
+
+        python3 client.py             menu : wallet, ordres, annulation, tableau de bord
+        python3 client.py new_client  ajoute un compte client
+    """
     Client = Clients()
     clients_liste = Client.sql.get_clients_infos()
     if len(sys.argv) == 2:

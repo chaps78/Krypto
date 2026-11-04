@@ -10,6 +10,7 @@ from sqlInterface import sqlAcces
 
 class sheetAcces():
     def __init__(self):
+        """Ouvre le classeur Google Sheets "binance" avec le compte de service cred.json."""
         scope = ['https://spreadsheets.google.com/feeds','https://www.googleapis.com/auth/drive']
         creds = ServiceAccountCredentials.from_json_keyfile_name('cred.json', scope)
         client = gspread.authorize(creds)
@@ -17,6 +18,7 @@ class sheetAcces():
         self.sql = sqlAcces()
     
     def update_values(self,symbol):
+        """Ecrit la grille (A2 : ID, prix, bet) et les ajouts (D2) dans l'onglet de la stratégie."""
         ecart = self.sql.get_ecart_bet_from_symbol(symbol)
         wsheet = self.sheet.worksheet(symbol)
         keys = ecart.keys()
@@ -31,18 +33,27 @@ class sheetAcces():
         wsheet.update('D2', ajout_to_sheet)
     
     def update_reste(self,symbol):
+        """Ecrit le dernier relevé de la table reste en I3."""
         wsheet = self.sheet.worksheet(symbol)
         reste = self.sql.get_last_reste(symbol)
         reste_2_sheet = [[reste["devise1"],reste["devise2"]]]
         wsheet.update('I3', reste_2_sheet)
 
     def update_last_filled_ID(self,symbol):
+        """Ecrit l'ID du dernier palier exécuté en H2.
+
+        Attention : appelle get_last_filled() sans ID_client -> TypeError.
+        """
         wsheet = self.sheet.worksheet(symbol)
         last_filled = self.sql.get_last_filled(symbol)
         ID=[[last_filled["ID_ecart"]]]
         wsheet.update('H2', ID)
     
     def update_all_info(self,symbol):
+        """Met à jour la grille, les restes et le dernier palier exécuté.
+
+        Attention : échoue actuellement à la dernière étape (voir update_last_filled_ID).
+        """
         self.update_values(symbol)
         self.update_reste(symbol)
         self.update_last_filled_ID(symbol)
@@ -51,6 +62,7 @@ class sheetAcces():
 
 
 def main():    
+    """Test manuel du module."""
     sheet = sheetAcces()
     sheet.update_all_info("DOGEBTC")
 

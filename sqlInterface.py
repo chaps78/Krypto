@@ -10,12 +10,17 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 class sqlAcces():
     def __init__(self):
+        """Ouvre DB.db (dans le dossier du script) et prépare Telegram pour les alertes d'erreur."""
         self.con = sqlite3.connect(os.path.join(BASE_DIR, "DB.db"))
         self.cur = self.con.cursor()
         self.tele = teleAcces()
 
 
     def new_order(self,ID,symbol,montant,limite,status,date_debut,date_fin,montant_exec,type,sens,ID_ecart,flag_ajout,ID_client,niveau=1,benefice=0.0):
+        """Enregistre un nouvel ordre dans la table Ordres.
+
+        flag_ajout contient la quantité UP incluse dans l'ordre (0 sinon).
+        """
         try:
             self.cur.execute("INSERT INTO Ordres VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                              (ID,symbol,montant,limite,status,date_debut,date_fin,montant_exec,type,sens,ID_ecart,int(niveau),int(flag_ajout),benefice,ID_client))
@@ -27,6 +32,7 @@ class sqlAcces():
 
 
     def update_order(self,ID,status,date_fin="",montant_exec="0"):
+        """Met à jour le statut, la date de fin et la quantité exécutée d'un ordre."""
         try:
             self.cur.execute("UPDATE Ordres SET status=?,date_fin=?,montant_execute=? WHERE ID=?",
                              (status,date_fin,montant_exec,str(ID)))
@@ -39,6 +45,11 @@ class sqlAcces():
 
 
     def get_orders_status_symbol_filter(self,status,symbol,ID_client):
+        """Renvoie les ordres d'une stratégie et d'un client ayant un statut donné.
+
+        Returns:
+            list de dict (voir convert_fetch_to_dico).
+        """
         try:
             res = self.cur.execute("SELECT * FROM Ordres WHERE status=? AND symbol=? AND ID_client=?",(str(status),str(symbol),str(ID_client)))
 
@@ -53,6 +64,11 @@ class sqlAcces():
 
 
     def get_time_since_open(self,symbol,ID_user):
+        """Renvoie l'ancienneté et le niveau des ordres NEW d'une stratégie.
+
+        Returns:
+            dict {ID_ordre: {"time": timedelta depuis l'ouverture, "niveau": int}}.
+        """
         ordres_ouverts = self.get_orders_status_symbol_filter("NEW",symbol,ID_user)
         retour = {}
         for ordre_ouvert in ordres_ouverts:
@@ -63,6 +79,7 @@ class sqlAcces():
 
 
     def get_order_info_by_ID(self,ID):
+        """Renvoie un ordre sous forme de dict, ou {} s'il est absent de la base."""
         try:
             res = self.cur.execute("SELECT * FROM Ordres WHERE ID='"+str(ID)+"'")
             self.con.commit()
@@ -78,6 +95,10 @@ class sqlAcces():
 
 
     def new_log_error(self,emplacement,message,symbol):
+        """Enregistre une erreur dans Log et l'envoie sur Telegram.
+
+        Attention : s'appelle lui-même en cas d'échec (risque de récursion infinie).
+        """
         try:
             self.cur.execute("INSERT INTO Log VALUES(?,?,?,?,?)",
                              (datetime.now(timezone.utc),str(emplacement),str(message),"ERREUR",symbol))
@@ -87,6 +108,7 @@ class sqlAcces():
         self.con.commit()
 
     def new_log_debug(self,emplacement,message,symbol):
+        """Enregistre un message DEBUG dans Log si Config.debug_log vaut 1."""
         res = self.cur.execute("SELECT debug_log FROM Config")
         self.con.commit()
         debug_activate = res.fetchall()[0]
@@ -99,6 +121,10 @@ class sqlAcces():
 
 
     def set_ecart_bet(self,fichier_CSV):
+        """Charge une grille depuis un CSV dans ecart_bet.
+
+        Format d'une ligne : ID,symbol,prix,bet (UP initialisé à 0).
+        """
         file = open(fichier_CSV, "r")
         lines = file.readlines()
         file.close()
@@ -114,6 +140,10 @@ class sqlAcces():
         self.con.commit()
 
     def set_ajout(self,fichier_CSV):
+        """Charge les ajouts initiaux depuis un CSV dans la table ajout.
+
+        Format d'une ligne : ID_ecart,symbol,ajout.
+        """
         file = open(fichier_CSV, "r")
         lines = file.readlines()
         file.close()
@@ -128,6 +158,11 @@ class sqlAcces():
 
 
     def get_ecart_bet_from_symbol(self,symbol):
+        """Renvoie la grille complète d'une stratégie.
+
+        Returns:
+            dict {ID: [prix, bet]}.
+        """
         try:
             res = self.cur.execute("SELECT * FROM ecart_bet WHERE symbol='"+str(symbol)+"'")
         except sqlite3.IntegrityError as inst:
@@ -145,6 +180,12 @@ class sqlAcces():
     #[3] donne le montant du bet
     #####################################################
     def get_ecart_bet_from_symbol_and_ID(self,symbol,ID):
+        """Renvoie un palier de la grille.
+
+        Returns:
+            tuple (ID, symbol, prix, bet, UP) : [2] = prix, [3] = bet, [4] = UP.
+            IndexError si le palier n'existe pas.
+        """
         try:
             res = self.cur.execute("SELECT * FROM ecart_bet WHERE ID='"+str(ID)+"' AND symbol='"+str(symbol)+"'")
         except sqlite3.IntegrityError as inst:
@@ -158,6 +199,14 @@ class sqlAcces():
         return ret[0]
 
     def get_last_filled(self,symbol,ID_client):
+        """Renvoie le dernier ordre LIMIT exécuté (FILLED) d'une stratégie et d'un client.
+
+        Attention : "dernier" est déterminé par la date d'ouverture (date_debut),
+        pas par la date d'exécution.
+
+        Returns:
+            dict de l'ordre, ou "" si aucun.
+        """
         try:
             res = self.cur.execute("SELECT *, MAX(date_debut) FROM Ordres WHERE status='FILLED' AND type='LIMIT' AND symbol='"
                                    +str(symbol)+"' AND ID_client='"+str(ID_client)+"'")
@@ -172,6 +221,11 @@ class sqlAcces():
         return ordre
 
     def get_last_filled_buy(self,symbol):
+        """Renvoie le dernier achat exécuté d'une stratégie (tous types, tous clients).
+
+        Returns:
+            dict de l'ordre, ou "" si aucun.
+        """
         try:
             res = self.cur.execute("SELECT *, MAX(date_debut) FROM Ordres WHERE sens='BUY' AND status='FILLED' AND symbol='"+str(symbol)+"'")
         except sqlite3.IntegrityError as inst:
@@ -185,6 +239,11 @@ class sqlAcces():
         return ordre
 
     def get_last_filled_sell(self,symbol):
+        """Renvoie la dernière vente exécutée d'une stratégie (tous types, tous clients).
+
+        Returns:
+            dict de l'ordre, ou "" si aucun.
+        """
         try:
             res = self.cur.execute("SELECT *, MAX(date_debut) FROM Ordres WHERE sens='SELL' AND status='FILLED' AND symbol='"+str(symbol)+"'")
         except sqlite3.IntegrityError as inst:
@@ -198,6 +257,7 @@ class sqlAcces():
         return ordre
 
     def update_bet_with_ID(self,symbol,ID,bet_value):
+        """Fixe la quantité (bet) d'un palier de la grille."""
         try:
 
             self.cur.execute("UPDATE ecart_bet SET bet="
@@ -212,6 +272,7 @@ class sqlAcces():
 
 
     def add_to_ajout(self,symbol,ID_ecart,valeur_to_add):
+        """Ajoute une quantité à l'historique des ajouts d'un palier (table ajout, ligne existante)."""
         try:
             curent_value = self.get_ajout_reel_by_ID(symbol,ID_ecart)
             valeur_to_update = curent_value + valeur_to_add
@@ -222,6 +283,7 @@ class sqlAcces():
         self.con.commit()
 
     def ajout_epargne_paire_devise(self,symbol,qtt,ID_client):
+        """Ajoute un montant au compteur d'épargne (Devises.epargne) d'une stratégie."""
         epargne = self.get_devises_from_symbol(symbol,ID_client)["epargne"]
         try:
             self.cur.execute("UPDATE Devises SET epargne=? WHERE symbol=?",
@@ -233,6 +295,7 @@ class sqlAcces():
         return retour
     
     def set_up_bet(self,symbol,ID,qtt):
+        """Fixe la quantité UP d'un palier (ajoutée au prochain achat sur ce palier)."""
         try:
             self.cur.execute("UPDATE ecart_bet SET UP=? WHERE symbol=? AND ID=?",
                              (qtt,symbol,ID))
@@ -244,6 +307,14 @@ class sqlAcces():
         return retour
     
     def calcul_benef_with_ID(self,symbol,ID,limite=0,montant=0):
+        """Gain théorique d'un aller-retour du palier ID vers le palier ID+1.
+
+        gain = (prix[ID+1] - prix[ID]) * bet[ID] - frais (0,075 % à l'achat et à la vente).
+        Les paramètres limite et montant sont ignorés.
+
+        Returns:
+            float, dans la devise de cotation.
+        """
         FEE = 0.00075
         limite = self.get_ecart_bet_from_symbol_and_ID(symbol,ID)
         ecart_dessus = self.get_ecart_bet_from_symbol_and_ID(symbol,ID+1)
@@ -254,6 +325,7 @@ class sqlAcces():
         
 
     def convert_fetch_to_dico(self,ordre):
+        """Convertit une ligne de la table Ordres en dict (sans la colonne ID_client)."""
         ordre_dico = {"ID":ordre[0],
                       "symbol":ordre[1],
                       "montant":ordre[2],
@@ -272,6 +344,7 @@ class sqlAcces():
         return ordre_dico
 
     def get_symbols(self):
+        """Renvoie la liste de toutes les stratégies (actives ou non)."""
         try:
             res = self.cur.execute("SELECT * FROM Devises")
 
@@ -286,6 +359,7 @@ class sqlAcces():
         return devises_ret
     
     def get_symbols_client(self,ID_client):
+        """Renvoie la liste des stratégies d'un client (actives ou non)."""
         try:
             res = self.cur.execute("SELECT * FROM Devises WHERE client='"+str(ID_client)+"'")
 
@@ -300,6 +374,7 @@ class sqlAcces():
         return devises_ret
     
     def get_symbols_actif_client(self,ID_client):
+        """Renvoie la liste des stratégies actives d'un client."""
         try:
             res = self.cur.execute("SELECT * FROM Devises WHERE actif=1 AND client='"+str(ID_client)+"'")
 
@@ -314,6 +389,11 @@ class sqlAcces():
         return devises_ret
     
     def get_symbols_actif(self):
+        """Renvoie les stratégies actives, regroupées par client.
+
+        Returns:
+            dict {ID_client: [symbol, ...]}.
+        """
         try:
             res = self.cur.execute("SELECT * FROM Devises WHERE actif=1")
 
@@ -330,6 +410,11 @@ class sqlAcces():
         return devises_ret
     
     def get_devises_from_Clien_ID(self,ID_client):
+        """Renvoie les paramètres de chaque stratégie active d'un client.
+
+        Returns:
+            dict {symbol: dict de get_devises_from_symbol()}.
+        """
         symbols = self.get_symbols_actif_client(ID_client)
         devises_info = {}
         for symbol in symbols:
@@ -338,6 +423,7 @@ class sqlAcces():
         return devises_info
     
     def get_ID_client_from_symbol(self,symbol):
+        """Renvoie l'ID du client propriétaire d'une stratégie, ou "" si inconnue."""
         try:
             res = self.cur.execute("SELECT * FROM Devises WHERE symbol='"+str(symbol)+"'")
 
@@ -353,6 +439,13 @@ class sqlAcces():
         return retour
 
     def get_devises_from_symbol(self,symbol,ID_client):
+        """Renvoie les paramètres et compteurs d'une stratégie (table Devises).
+
+        Returns:
+            dict (devise1, devise2, down, local, up, epargne, actif, client, benef_all,
+            benef_tmp, factu_percent, factu, UP_tmp, epargne_prcent, dev_entiere,
+            obj_gain), ou "" si la stratégie n'existe pas pour ce client.
+        """
         try:
             res = self.cur.execute("SELECT * FROM Devises WHERE symbol='"+str(symbol)+"' and client='"+str(ID_client)+"'")
 
@@ -383,6 +476,7 @@ class sqlAcces():
         return(formated_devises)
     
     def get_devises_from_symbol_real(self,symbol):
+        """Comme get_devises_from_symbol(), sans filtrer sur le client."""
         try:
             res = self.cur.execute("SELECT * FROM Devises WHERE symbol='"+str(symbol)+"'")
 
@@ -413,6 +507,7 @@ class sqlAcces():
         return(formated_devises)
     
     def get_max_ID_from_symbol(self,symbol):
+        """Renvoie le plus grand ID de palier de la grille d'une stratégie."""
         try:
             res = self.cur.execute("SELECT MAX(ID) FROM ecart_bet WHERE symbol='"+str(symbol)+"'")
 
@@ -423,6 +518,10 @@ class sqlAcces():
         return max[0]
 
     def get_last_reste(self,symbol):
+        """Renvoie le dernier relevé de la table reste : {"devise1", "devise2"}.
+
+        Attention : la table reste n'est plus alimentée par le code actuel.
+        """
         try:
             res = self.cur.execute("SELECT max(date),symbol,devise1,devise2,last_ID FROM reste WHERE symbol='"+symbol+"'")
         except sqlite3.IntegrityError as inst:
@@ -434,6 +533,7 @@ class sqlAcces():
         return reste_dic
 
     def get_ajout_reel_by_ID(self,symbol,ID_ecart):
+        """Renvoie la valeur cumulée des ajouts d'un palier (table ajout)."""
         try:
 
             res = self.cur.execute("SELECT * FROM ajout WHERE ID_ecart="+str(ID_ecart)+" AND symbol='"+symbol+"'",)
@@ -444,6 +544,7 @@ class sqlAcces():
         return reste[0][2]
 
     def get_ajout(self,symbol):
+        """Renvoie toutes les lignes de la table ajout d'une stratégie (tuples)."""
         try:
             res = self.cur.execute("SELECT * FROM ajout WHERE symbol='"+symbol+"'")
         except sqlite3.IntegrityError as inst:
@@ -455,6 +556,11 @@ class sqlAcces():
 
     #Pour un double achat on recupere le montant entre les deux ordres
     def get_montant_entre_ordres(self,symbol,ID_bas,ID_haut):
+        """Somme des bets des paliers situés strictement entre deux paliers.
+
+        L'ordre des deux ID est indifférent. Sert quand l'achat et la vente sont
+        exécutés en même temps.
+        """
         if ID_bas>ID_haut:
             tmp=ID_bas
             ID_bas=ID_haut
@@ -467,6 +573,14 @@ class sqlAcces():
         return somme
 
     def calcul_benefice(self,symbol,last_filled):
+        """Calcule le bénéfice réel d'un ordre limite exécuté et l'enregistre.
+
+        Le calcul dépend du sens et du niveau (un niveau 3 ou 4 couvre plusieurs
+        paliers). Les frais (0,075 %) de l'ordre sont déduits ; un achat de niveau
+        1 ou 2 ne compte que ses frais. Le résultat est enregistré sur l'ordre et
+        ajouté à benef_all et benef_TMP. Alerte Telegram si la quantité de l'ordre
+        ne correspond pas à la somme des bets attendus.
+        """
         FEE=0.00075
         ecart_bet = self.get_ecart_bet_from_symbol(symbol)
         ID_ecart_filled = last_filled["ID_ecart"]
@@ -540,6 +654,7 @@ class sqlAcces():
                 self.update_order_benef(last_filled["ID"],str(Benef2+Benef3-fee_courant),symbol)
     
     def update_order_benef(self,ID,benef,symbol):
+        """Enregistre le bénéfice d'un ordre et l'ajoute à benef_all et benef_TMP."""
         benef_round= str(round(float(benef),8))
         self.add_to_benef_all_and_benef_TMP(symbol,benef)
         try:
@@ -554,6 +669,7 @@ class sqlAcces():
     
     
     def add_to_benef_all_and_benef_TMP(self,symbol,benef):
+        """Ajoute un bénéfice au cumul total (benef_all) et au montant à redistribuer (benef_TMP)."""
         try:
             benefs_DB = self.get_benef_TMP_and_benef_all_from_symbol(symbol)
             new_benef_all = benefs_DB["ALL"] + float(benef)
@@ -565,6 +681,7 @@ class sqlAcces():
             return inst    
     
     def add_to_benef_TMP(self,symbol,benef):
+        """Ajoute un montant à benef_TMP uniquement (montant négatif pour le remettre à zéro)."""
         try:
             benefs_DB = self.get_benef_TMP_and_benef_all_from_symbol(symbol)
             new_benef_all = benefs_DB["ALL"] + float(benef)
@@ -577,6 +694,7 @@ class sqlAcces():
         
 
     def get_benef_TMP_and_benef_all_from_symbol(self,symbol):
+        """Renvoie {"ALL": benef_all, "TMP": benef_TMP} d'une stratégie."""
         try:
             res = self.cur.execute("SELECT benef_TMP, benef_all FROM Devises WHERE symbol='"+str(symbol)+"'")
 
@@ -588,6 +706,7 @@ class sqlAcces():
         return benefices_dic
     
     def add_to_factu_from_symbol(self,symbol,ajout):
+        """Ajoute un montant au compteur de facturation (Devises.factu)."""
         try:
             factu = self.get_factu_from_symbol(symbol)
             new_factu = factu + ajout
@@ -598,6 +717,12 @@ class sqlAcces():
             return inst
     
     def get_reinject_repartition(self,symbol):
+        """Renvoie les pourcentages de répartition du bénéfice d'une stratégie.
+
+        Returns:
+            dict {"down", "local", "up", "epargne_prct", "factu_prct"}.
+            "local" peut contenir le nom d'une autre stratégie (voir Basics.reinject_benef).
+        """
         try:
             res = self.cur.execute("SELECT down, local, up, epargne_percent, factu_percent FROM Devises WHERE symbol='"+str(symbol)+"'")
 
@@ -614,6 +739,7 @@ class sqlAcces():
     
 
     def get_factu_from_symbol(self,symbol):
+        """Renvoie le compteur de facturation d'une stratégie (0 si vide)."""
         try:
             res = self.cur.execute("SELECT factu FROM Devises WHERE symbol='"+str(symbol)+"'")
 
@@ -626,6 +752,7 @@ class sqlAcces():
         return factu
     
     def get_dev_entiere(self,symbol):
+        """Renvoie 1 si les quantités de la stratégie doivent être entières, 0 sinon."""
         try:
             res = self.cur.execute("SELECT dev_entiere FROM Devises WHERE symbol='"+str(symbol)+"'")
 
@@ -638,6 +765,11 @@ class sqlAcces():
 
 
     def get_gain_jour(self,symbol,annee,mois,jour):
+        """Somme des bénéfices des ordres clos (date_fin) un jour donné.
+
+        Returns:
+            float (0.0 si aucun ordre).
+        """
         date = str(annee)+"-"+"%02.0f"%mois+"-"+"%02.0f"%jour
         try:
             res = self.cur.execute("SELECT SUM(benefice) FROM Ordres WHERE symbol='"
@@ -653,6 +785,11 @@ class sqlAcces():
             return ordres[0][0]
     
     def get_gain_mois(self,symbol,annee,mois):
+        """Somme des bénéfices des ordres ouverts (date_debut) un mois donné.
+
+        Returns:
+            float, ou None si aucun ordre.
+        """
         date = str(annee)+"-"+"%02.0f"%mois
         try:
             res = self.cur.execute("SELECT SUM(benefice) FROM Ordres WHERE symbol='"
@@ -665,6 +802,7 @@ class sqlAcces():
         return ordres[0][0]
     
     def max_sell(self,symbol,annee,mois):
+        """Renvoie le plus haut palier vendu (FILLED) sur un mois donné."""
         date = str(annee)+"-"+"%02.0f"%mois
         try:
             res = self.cur.execute("SELECT MAX(ID_ecart) FROM Ordres WHERE sens='SELL' AND status='FILLED' AND symbol='"
@@ -678,6 +816,7 @@ class sqlAcces():
         return max_sell
 
     def min_buy(self,symbol,annee,mois):
+        """Renvoie le plus bas palier acheté (FILLED) sur un mois donné."""
         date = str(annee)+"-"+"%02.0f"%mois
         try:
             res = self.cur.execute("SELECT MIN(ID_ecart) FROM Ordres WHERE sens='BUY' AND status='FILLED' AND symbol='"
@@ -691,6 +830,11 @@ class sqlAcces():
         return min_sell
     
     def count_sell_ID_ecart(self,symbol,annee,mois,ID_ecart):
+        """Compte les ventes exécutées sur un palier pendant un mois.
+
+        Returns:
+            [nombre niveaux 1-2, nombre niveau 3, nombre niveau 4].
+        """
         date = str(annee)+"-"+"%02.0f"%mois
         try:
             res = self.cur.execute("SELECT COUNT() FROM Ordres "
@@ -729,6 +873,11 @@ class sqlAcces():
         return count
     
     def count_buy_ID_ecart(self,symbol,annee,mois,ID_ecart):
+        """Compte les achats exécutés sur un palier pendant un mois.
+
+        Returns:
+            [nombre niveaux 1-2, nombre niveau 3, nombre niveau 4].
+        """
         date = str(annee)+"-"+"%02.0f"%mois
         try:
             res = self.cur.execute("SELECT COUNT() FROM Ordres "
@@ -767,6 +916,7 @@ class sqlAcces():
         return count
     
     def baisser_niveau_ordre_SQL(self,key,new_niveau):
+        """Change le niveau d'un ordre en base uniquement (l'ordre Binance n'est pas modifié)."""
         try:
             self.cur.execute("UPDATE Ordres SET niveau=? WHERE ID=?",
                              (str(new_niveau),str(key)))
@@ -778,6 +928,7 @@ class sqlAcces():
         return retour
     
     def add_to_ecart(self,symbol,ID_ecart,valeur_to_add):
+        """Ajoute une quantité au bet d'un palier de la grille."""
         try:
             curent_value = self.get_ecart_bet_from_symbol_and_ID(symbol,ID_ecart)[3]
             valeur_to_update = curent_value + valeur_to_add
@@ -788,6 +939,11 @@ class sqlAcces():
         self.con.commit()
 
     def get_ID_to_UP(self,symbol,ID_courant,ID_client):
+        """Renvoie le palier qui doit recevoir une quantité UP.
+
+        Premier palier au-dessus d'ID_courant dont 0,9 x gain théorique / prix est
+        inférieur à Devises.local + Devises.up. None si aucun.
+        """
         devises = self.get_devises_from_symbol(symbol,ID_client)
         local = devises["local"]
         UP = devises["up"]
@@ -798,6 +954,10 @@ class sqlAcces():
                 return ID+ID_courant+1
             
     def get_calcul_benef_with_ID(self,symbol,ID):
+        """Variante de calcul_benef_with_ID().
+
+        Frais comptés 2 fois au prix du palier ID (au lieu d'achat + vente).
+        """
         FEE = 0.00075
         ec_b = self.get_ecart_bet_from_symbol(symbol)
         delta = ec_b[ID+1][0]-ec_b[ID][0]
@@ -807,6 +967,11 @@ class sqlAcces():
             #self
 
     def get_clients_infos(self):
+        """Renvoie tous les comptes de la table client.
+
+        Returns:
+            dict {ID_client: {"name", "api", "secret", "tele", "base"}}.
+        """
         try:
             res = self.cur.execute("SELECT * FROM client")
         except sqlite3.IntegrityError as inst:
@@ -826,6 +991,7 @@ class sqlAcces():
         return clients_infos
     
     def set_up_tmp(self,symbol,qtt):
+        """Fixe Devises.up_TMP (montant "up" en attente d'investissement)."""
         try:
             self.cur.execute("UPDATE Devises SET up_TMP="
                                  +str(qtt)
@@ -838,6 +1004,7 @@ class sqlAcces():
         self.con.commit()
     
     def get_up_tmp(self,symbol):
+        """Renvoie Devises.up_TMP d'une stratégie."""
         try:
             res = self.cur.execute("SELECT up_TMP FROM Devises WHERE symbol='"+symbol+"'")
         except sqlite3.IntegrityError as inst:
@@ -848,6 +1015,7 @@ class sqlAcces():
         return up_TMP
     
     def add_2_up_tmp(self,symbol,qtt):
+        """Ajoute un montant à Devises.up_TMP (part de 0 si la valeur est illisible)."""
         try:
             current_value = float(self.get_up_tmp(symbol))
         except:
@@ -855,6 +1023,7 @@ class sqlAcces():
         self.set_up_tmp(symbol,current_value+float(qtt))
 
     def configure_new_symbol(self,symbol,devise_1,devise_2,perc_down,perc_local,perc_up,ID_client,perc_factu,perc_epargne,dev_entiere,obj_gain):
+        """Crée une stratégie dans Devises : active, compteurs à 0, e_dyn à 0."""
         try:
             self.cur.execute("INSERT INTO Devises VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                              (symbol,
@@ -882,6 +1051,7 @@ class sqlAcces():
         return retour
     
     def set_dashboard(self,symbol,date,capital_graph,instant_price,gain_day,epargne,factu,tmp):
+        """Enregistre un relevé journalier dans la table Dashboard."""
         try:
             self.cur.execute("INSERT INTO Dashboard VALUES(?,?,?,?,?,?,?,?)",
                              (symbol,date,capital_graph,instant_price,gain_day,epargne,factu,tmp))
@@ -892,6 +1062,12 @@ class sqlAcces():
         return retour
     
     def get_dashboard_infos(self,symbol,date):
+        """Renvoie le relevé Dashboard d'un jour (date au format "AAAA-MM-JJ").
+
+        Returns:
+            dict {"symbol", "date", "cap_graph", "instant_price", "gain_day",
+            "epargne", "factu", "up_TMP"}, ou None si absent.
+        """
         try:
             res = self.cur.execute("SELECT * FROM Dashboard WHERE symbol='"+symbol+"' AND Date LIKE '"+ str(date) +"%'")
         except sqlite3.IntegrityError as inst:
@@ -914,6 +1090,7 @@ class sqlAcces():
         return retour
 
     def get_older_dashboard_infos(self,symbol):
+        """Renvoie le plus ancien relevé Dashboard d'une stratégie (même format), ou None."""
         try:
             res = self.cur.execute("select * from Dashboard where symbol='"+symbol+"' AND Date=(select min(Date) from Dashboard where symbol='"+symbol+"')")
         except sqlite3.IntegrityError as inst:
@@ -936,6 +1113,7 @@ class sqlAcces():
         return retour
 
     def get_sum_dashboard_benef(self,symbol):
+        """Somme de tous les gains journaliers (Dashboard.gain_day) d'une stratégie."""
         try:
             res = self.cur.execute("SELECT SUM(gain_day) FROM Dashboard WHERE symbol='"+symbol+"'")
         except sqlite3.IntegrityError as inst:
@@ -949,6 +1127,7 @@ class sqlAcces():
         return TMP[0]
     
     def get_sum_7_days_dashboard_benef(self,symbol):
+        """Somme des gains journaliers des 7 derniers jours d'une stratégie."""
         date_7 = datetime.now() - timedelta(days=7)
         try:
             res = self.cur.execute("SELECT SUM(gain_day) FROM Dashboard WHERE symbol='"
@@ -965,6 +1144,10 @@ class sqlAcces():
         return TMP[0]
     
     def new_client(self,client_name,API_key,secret,devise_base,telegram_chat_ID=""):
+        """Ajoute un compte client (ID = plus grand ID existant + 1).
+
+        Sans chat Telegram fourni, utilise le chat par défaut -4541800269.
+        """
         if telegram_chat_ID == "":
             telegram_chat_ID = "-4541800269"
         try:
@@ -982,6 +1165,12 @@ class sqlAcces():
 
 
 def main():
+    """Outil en ligne de commande.
+
+        python3 sqlInterface.py init       crée une stratégie et charge sa grille CSV
+                                           (les 5 pourcentages doivent faire 100)
+        python3 sqlInterface.py load_file  charge une grille CSV
+    """
     sql = sqlAcces()
     DEVISE='EURUSDT_seb'
     if len(sys.argv) == 2:

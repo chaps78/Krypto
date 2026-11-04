@@ -10,12 +10,20 @@ from sheetInterface import sheetAcces
 class Basics():
 
     def __init__(self):
+        """Instancie les accès SQL, Binance, Telegram et Google Sheet utilisés par la boucle."""
         self.sql = sqlAcces()
         self.bin = binAcces()
         self.tele = teleAcces()
         self.sheet = sheetAcces()
 
     def plus_proche(self,symbol,ID_client):
+        """Renvoie l'ID du palier de la grille dont le prix est le plus proche du prix actuel.
+
+        Utilisé par initialise() quand aucun ordre n'a encore été exécuté sur la stratégie.
+
+        Attention : contient un breakpoint() oublié, et delta est initialisé avec
+        ecart_bet_dic[0][1] (le bet) au lieu de ecart_bet_dic[0][0] (le prix).
+        """
         ecart_bet_dic = self.sql.get_ecart_bet_from_symbol(symbol)
         prix_tmp = self.bin.get_price(symbol,ID_client)
         prix = prix_tmp["price"]
@@ -30,6 +38,14 @@ class Basics():
         return prix_proche_ID
 
     def initialise(self,symbol,ID_client):
+        """Pose (ou repose) le couple achat/vente d'une stratégie.
+
+        Si deux ordres NEW sont déjà en place et à jour avec Binance, ne fait rien.
+        Sinon : synchronise la base, annule les ordres ouverts, puis place un achat
+        et une vente autour du dernier palier exécuté (ou du palier le plus proche
+        du prix si aucun ordre n'a encore été exécuté).
+        A lancer à la main pour démarrer une nouvelle stratégie (voir main()).
+        """
         GO = False
         ordres_ouverts = self.sql.get_orders_status_symbol_filter(self.bin.client.ORDER_STATUS_NEW,symbol,ID_client)
         if len(ordres_ouverts) == 2:
@@ -56,6 +72,18 @@ class Basics():
             self.bin.new_achat(symbol,ID_ecart_last_close,ID_client)
 
     def verification_2_ordres_V2(self,symbol,ID_client):
+        """Coeur de la boucle : détecte les exécutions et replace les ordres.
+
+        Synchronise les statuts avec Binance, puis selon les ordres encore ouverts en base :
+          - 1 NEW     : un ordre a été exécuté -> calcul du bénéfice, réinjection,
+                        Telegram au client, nouveaux achat/vente, mise à jour Google Sheet.
+          - 1 PARTIAL : un ordre exécuté, l'autre partiellement -> un_ordre_filled_autre_partial().
+          - 0         : les deux exécutés en même temps -> deux_ordres_filled().
+          - > 2       : anomalie, simplement loguée.
+
+        Returns:
+            None, ou l'exception rencontrée (déjà loguée).
+        """
         try:
             changement = self.bin.changement_status(symbol,ID_client)
             self.bin.changement_update(changement,symbol,ID_client)
@@ -115,6 +143,12 @@ class Basics():
             return inst
 
     def get_taux_reinjection(self, benef):
+        """Taux (%) de la part "local" en fonction du bénéfice à redistribuer.
+
+        1000 % sous 5, 500 % sous 10, 300 % sous 15, 200 % sous 25, 150 % sous 40,
+        100 % sous 60, 50 % au-delà.
+        Attention : seuils en valeur absolue, quelle que soit la devise de cotation.
+        """
         paliers = [
             (5, 1000),
             (10, 500),
@@ -129,6 +163,11 @@ class Basics():
         return 50
 
     def get_taux_up(self, benef):
+        """Taux (%) de la part "up" en fonction du bénéfice à redistribuer.
+
+        100 % sous 10, 50 % sous 15, 30 % sous 25, 20 % sous 40, 15 % sous 60, 10 % au-delà.
+        Attention : seuils en valeur absolue, quelle que soit la devise de cotation.
+        """
         paliers = [
             (10, 100),
             (15, 50),
@@ -143,6 +182,22 @@ class Basics():
     
         
     def reinject_benef(self,symbol,ID_client,last_filled):
+        """Redistribue le bénéfice en attente (Devises.benef_TMP) d'une stratégie.
+
+          - local    : taux get_taux_reinjection() -> reinject_local()
+          - up       : taux get_taux_up()          -> reinject_up()
+          - down     : % Devises.down              -> reinject_down()
+          - épargne  : % Devises.epargne_percent   -> compteur Devises.epargne
+          - facture  : % Devises.factu_percent     -> compteur Devises.factu
+        puis remet benef_TMP à zéro.
+
+        Si Devises.local contient du texte, c'est le nom d'une autre stratégie : le
+        bénéfice de l'ordre est alors versé dans le up_TMP de celle-ci (et benef_TMP
+        n'est pas remis à zéro).
+
+        Returns:
+            None, ou l'exception rencontrée (loguée avec l'étape atteinte : debug_flag).
+        """
         benef_tmp = self.sql.get_benef_TMP_and_benef_all_from_symbol(symbol)["TMP"]
         if benef_tmp>0:
             try:
@@ -186,6 +241,14 @@ class Basics():
             
 
     def reinject_down(self,symbol,ID_client,down,last_filled):
+        """Ajoute la part "down" à un palier situé sous le dernier palier exécuté.
+
+        Descend depuis ID_ecart-1 jusqu'au premier palier dont le gain théorique
+        (calcul_benef_with_ID) est inférieur à Obj_gain, et y ajoute down/prix au bet.
+
+        Returns:
+            int: ID du palier renforcé.
+        """
         ID = int(last_filled["ID_ecart"])-1
         obj = float(self.sql.get_devises_from_symbol(symbol,ID_client)["obj_gain"])
         while ID >= 0:
@@ -197,6 +260,13 @@ class Basics():
         return ID
     
     def reinject_up(self,symbol,ID_client,qtt,last_filled):
+        """Accumule la part "up" et l'investit quand le montant est suffisant.
+
+        La quantité est ajoutée à Devises.up_TMP. Dès que up_TMP vaut plus de 6 USDT,
+        achète au marché, ajoute la quantité achetée au premier palier au-dessus du
+        dernier exécuté dont le gain théorique est inférieur à Obj_gain, puis
+        décrémente up_TMP.
+        """
         self.sql.add_2_up_tmp(symbol,qtt)
         total = float(self.sql.get_up_tmp(symbol))
         devise_base = self.sql.get_devises_from_symbol(symbol,ID_client)["devise2"]
@@ -231,12 +301,21 @@ class Basics():
 
 
     def reinject_local(self,symbol,last_filled,qtt):
+        """Renforce le palier juste sous le dernier exécuté (ID_ecart-1).
+
+        Ajoute qtt/prix au bet de ce palier et trace l'ajout dans la table ajout.
+        """
         current_bet = self.sql.get_ecart_bet_from_symbol_and_ID(symbol,float(last_filled["ID_ecart"])-1)[3]
         prix = float(self.sql.get_ecart_bet_from_symbol_and_ID(symbol,int(last_filled["ID_ecart"])-1)[2])
         self.sql.update_bet_with_ID(symbol,int(last_filled["ID_ecart"])-1,float(current_bet)+qtt/prix)
         self.sql.add_to_ajout(symbol,int(last_filled["ID_ecart"])-1,qtt/prix)
 
     def un_ordre_filled_autre_new(self,ordres_ouvert,symbol,ID_client):
+        """Cas normal : un ordre exécuté, l'autre encore ouvert.
+
+        Annule l'ordre restant puis pose un nouvel achat et une nouvelle vente
+        autour du dernier palier exécuté.
+        """
         for ordre_ouvert in ordres_ouvert:
             self.bin.cancel_order(ordre_ouvert["ID"],ID_client)
         last_filled_order = self.sql.get_last_filled(symbol,ID_client)
@@ -245,6 +324,12 @@ class Basics():
         self.bin.new_vente(symbol,last_filled_order["ID_ecart"],ID_client)
 
     def un_ordre_filled_autre_partial(self,ordres_partiel,symbol,ID_client):
+        """Cas : un ordre exécuté, l'autre partiellement exécuté.
+
+        Annule l'ordre partiel, solde sa partie exécutée par un ordre au marché de
+        sens inverse, calcule le bénéfice de cet aller-retour, puis pose un nouvel
+        achat et une nouvelle vente autour du dernier palier exécuté.
+        """
         for ordre in ordres_partiel:
             self.bin.cancel_order_partial(ordre["ID"],ID_client)
             sens = ordre["sens"]
@@ -262,6 +347,12 @@ class Basics():
     
 
     def deux_ordres_filled(self,symbol,ID_client):
+        """Cas : l'achat et la vente ont été exécutés en même temps.
+
+        Pose un achat sous le dernier achat et une vente au-dessus de la dernière
+        vente, chacun augmenté de la quantité des paliers compris entre les deux.
+        Attention : get_last_filled_buy/sell ne filtrent pas sur le client.
+        """
         last_filled_order_buy = self.sql.get_last_filled_buy(symbol)
         last_filled_order_sell = self.sql.get_last_filled_sell(symbol)
         montant_interval = self.sql.get_montant_entre_ordres(symbol,
@@ -286,6 +377,14 @@ class Basics():
                                   ID_client)
 
     def verification_niveau_VS_timer(self,symbol,ID_client):
+        """Rapproche du prix les ordres "accélérés" qui ne sont pas exécutés.
+
+          - niveau 4 ouvert depuis plus de 30 min -> remplacé par un ordre de niveau 3
+          - niveau 3 ouvert depuis plus de 1 h    -> remplacé par un ordre de niveau 1
+          - niveau 2 ouvert depuis plus de 2 h    -> simplement ré-étiqueté niveau 1 en base
+        Attention : timedelta.seconds ignore les jours (un ordre ouvert depuis
+        1 jour et 10 min est vu comme ouvert depuis 10 min).
+        """
         niveaux = self.sql.get_time_since_open(symbol,ID_client)
         keys = niveaux.keys()
         for key in keys:
@@ -303,6 +402,12 @@ class Basics():
 #                                 MAIN                                    #
 ###########################################################################
 def main():
+    """Boucle principale du bot.
+
+    Envoie "Bonjour 1" sur Telegram, puis indéfiniment : pour chaque client et
+    chaque stratégie active (liste lue une seule fois au démarrage), vérifie les
+    ordres et les niveaux, avec une pause de 4 s entre deux stratégies.
+    """
     basic = Basics()
     DEVISES=basic.sql.get_symbols_actif()
 

@@ -7,10 +7,15 @@ import sys
 class Kpi():
 
     def __init__(self):
+        """Instancie les accès Binance et SQL."""
         self.bin = binAcces()
         self.sql = sqlAcces()
 
     def stat_mois(self,symbol,annee,mois):
+        """Affiche, pour un mois, le nombre d'exécutions par palier et par niveau.
+
+        Parcourt les paliers entre le plus bas achat et la plus haute vente du mois.
+        """
         min=self.sql.min_buy(symbol,annee,mois)
         max=self.sql.max_sell(symbol,annee,mois)
         result={}
@@ -33,6 +38,13 @@ class Kpi():
             
 
     def gain_month_global(self,year,month,ID_client):
+        """Affiche et renvoie le gain d'un mois pour toutes les stratégies d'un client.
+
+        Les gains sont convertis dans la devise de base du client.
+
+        Returns:
+            float : total du mois.
+        """
         print("\n\n#########################################################")
         print("#              KPI YEAR "+str(year) + " MONTH "+str(month)+ "\t                #")
         print("#########################################################")
@@ -58,6 +70,12 @@ class Kpi():
         return total
 
     def set_dashboard_info(self,symbol):
+        """Enregistre le relevé du jour d'une stratégie dans Dashboard.
+
+        Capital de la grille = paliers sous le prix (en devise de cotation) + crypto
+        des paliers au-dessus valorisée au prix actuel. Enregistre aussi le prix, le
+        gain de la veille, l'épargne, la facturation et up_TMP.
+        """
         date = datetime.now(timezone.utc)
         ID_client = self.sql.get_ID_client_from_symbol(symbol)
         symbol_plited = symbol.split("_")[0]
@@ -82,6 +100,12 @@ class Kpi():
         self.sql.set_dashboard(symbol,date,graph_capital,instant_price,day_gain,epargne,factu,tmp_up)
 
     def get_dashboard_KPI(self,symbol):
+        """Envoie au client sur Telegram le tableau de performance d'une stratégie.
+
+        ROI actif (évolution du capital) et passif (évolution du prix) sur 24 h,
+        7 jours, 30 jours et depuis le premier relevé. Pas d'envoi pour BTCEUR_JF_2.
+        Attention : la colonne 30 J affiche la somme de tous les gains, pas 30 jours.
+        """
         devises = self.sql.get_devises_from_symbol_real(symbol)
         date_0 = datetime.now()    
         date_1 = datetime.now() - timedelta(days=1)
@@ -185,6 +209,11 @@ class Kpi():
             self.sql.tele.send_message(str_message,clients[devises["client"]]["tele"])
 
     def new_dashboard(self,symbol,ID_client):
+        """Rapport spécifique au compte de Jeff, envoyé sur Telegram.
+
+        Valeur du wallet en EUR comparée à un simple achat-conservation de BTC
+        (capital initial 5111 EUR au 28/11/2024). ID client 6 codé en dur.
+        """
         str_message = "###########"
         str_message += "\n#\t\t Hello Jeff\t\t\t#"
         str_message += "\n###########"
@@ -228,6 +257,13 @@ class Kpi():
 #                                 MAIN                                    #
 ###########################################################################
 def main():
+    """Outil en ligne de commande.
+
+        python3 KPI.py day   relevé + rapport Telegram pour toutes les stratégies actives
+        python3 KPI.py jeff  rapport du compte de Jeff uniquement
+        python3 KPI.py       menu : gain mensuel ou statistiques par palier
+    Attention : "day" affiche aussi le menu ensuite (if/if/else).
+    """
     DEVISE="PEPEEUR_1"
     kpi = Kpi()
     sql = sqlAcces()
