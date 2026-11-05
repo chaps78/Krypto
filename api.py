@@ -18,9 +18,11 @@ Variables d'environnement (optionnelles) :
 
 Documentation interactive : http://127.0.0.1:8000/docs
 """
+import json
 import os
 import sqlite3
 import subprocess
+import urllib.request
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
@@ -200,6 +202,72 @@ def gains(
             GROUP BY periode ORDER BY periode""",
         (symbol, depuis),
     )
+
+
+def prix_binance(paire):
+    """Prix public Binance d'une paire (ex. BTCEUR), sans clé API, ou None."""
+    url = f"https://api.binance.com/api/v3/ticker/price?symbol={paire}"
+    try:
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            return float(json.load(resp)["price"])
+    except (OSError, ValueError, KeyError):
+        return None
+
+
+def taux_conversion(devise, base, cache):
+    """Taux pour convertir devise -> base : paire directe, sinon paire inverse."""
+    if devise == base:
+        return 1.0
+    if (devise, base) not in cache:
+        taux = prix_binance(devise + base)
+        if taux is None:
+            inverse = prix_binance(base + devise)
+            taux = 1 / inverse if inverse else None
+        cache[(devise, base)] = taux
+    return cache[(devise, base)]
+
+
+@app.get("/gains-mois")
+def gains_mois(
+    annee: int | None = Query(default=None, ge=2020, le=2100),
+    mois: int | None = Query(default=None, ge=1, le=12),
+):
+    """Gain d'un mois par client, comme KPI.py gain_month_global.
+
+    Même règle que KPI.py : somme de Ordres.benefice des ordres dont date_debut
+    est dans le mois, pour toutes les stratégies du client (actives ou non).
+    Chaque gain est converti dans la devise de base du client au prix Binance
+    actuel (prix public, sans clé). Mois en cours par défaut.
+    Si un taux est introuvable, convertible=false et le total l'ignore.
+    """
+    maintenant = datetime.now(timezone.utc)
+    annee = annee or maintenant.year
+    mois = mois or maintenant.month
+    lignes = query(
+        """SELECT o.symbol, d.DEVISE2 AS devise, d.client AS id_client,
+                  c.nom, c.devise_base AS base, SUM(o.benefice) AS gain
+           FROM Ordres o
+           JOIN Devises d ON d.symbol = o.symbol
+           JOIN client c ON c.ID_client = d.client
+           WHERE o.date_debut LIKE ?
+           GROUP BY o.symbol HAVING gain IS NOT NULL
+           ORDER BY d.client, o.symbol""",
+        (f"{annee}-{mois:02d}%",),
+    )
+    clients, cache = {}, {}
+    for l in lignes:
+        c = clients.setdefault(l["id_client"], {
+            "id_client": l["id_client"], "nom": l["nom"], "base": l["base"],
+            "total": 0.0, "complet": True, "strategies": []})
+        taux = taux_conversion(l["devise"], l["base"], cache)
+        converti = l["gain"] * taux if taux is not None else None
+        if converti is None:
+            c["complet"] = False
+        else:
+            c["total"] += converti
+        c["strategies"].append({"symbol": l["symbol"], "gain": l["gain"], "devise": l["devise"],
+                                "gain_base": converti, "convertible": converti is not None})
+    return {"annee": annee, "mois": mois, "clients": list(clients.values())}
 
 
 @app.get("/strategies/{symbol}/dashboard")

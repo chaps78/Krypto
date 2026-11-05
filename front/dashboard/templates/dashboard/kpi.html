@@ -1,8 +1,8 @@
 {% extends "dashboard/base.html" %}
 {% block head %}<meta http-equiv="refresh" content="60">{% endblock %}
-{% block title %}Ordres ouverts{% endblock %}
+{% block title %}KPI{% endblock %}
 {% block content %}
-<h1>Ordres ouverts</h1>
+<h1>KPI</h1>
 {% if bot %}
 <p class="muted">
   Dernier ordre enregistré par le bot : {{ bot.dernier_ordre|date:"d/m/Y H:i:s" }} (il y a {{ bot.depuis }})
@@ -10,6 +10,34 @@
 </p>
 {% endif %}
 
+{% if gains %}
+<section class="carte">
+  <h2>Gain du mois <span class="muted">· {{ gains.mois|stringformat:"02d" }}/{{ gains.annee }}</span></h2>
+  {% if gains.clients %}
+  <div class="tuiles">
+    {% for c in gains.clients %}
+    <div class="tuile">
+      <div class="muted">{{ c.nom }} <span title="client {{ c.id_client }}">#{{ c.id_client }}</span></div>
+      <div class="valeur">{{ c.total_txt }} {{ c.base }}{% if not c.complet %} <span class="muted" title="Taux de conversion introuvable pour au moins une stratégie : total incomplet">*</span>{% endif %}</div>
+      <table class="detail">
+        {% for s in c.strategies %}
+        <tr>
+          <td>{{ s.symbol }}</td>
+          <td class="num">{% if s.devise != c.base %}<span class="muted">{{ s.gain_txt }} {{ s.devise }} →</span> {% endif %}{{ s.gain_base_txt }} {{ c.base }}</td>
+        </tr>
+        {% endfor %}
+      </table>
+    </div>
+    {% endfor %}
+  </div>
+  <p class="muted" style="margin:.6rem 0 0">Même calcul que KPI.py : bénéfices des ordres ouverts ce mois-ci, convertis au prix Binance actuel.</p>
+  {% else %}
+  <p class="muted" style="margin:0">Aucun gain enregistré ce mois-ci.</p>
+  {% endif %}
+</section>
+{% endif %}
+
+<h2 style="margin-top:1.5rem">Ordres ouverts</h2>
 {% for strat in strategies %}
 <section class="carte">
   <h2>{{ strat.symbol }} <span class="muted">· {{ strat.devise1 }}/{{ strat.devise2 }} · client {{ strat.id_client }}</span></h2>

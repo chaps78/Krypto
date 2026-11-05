@@ -1,4 +1,4 @@
-"""Pages du front : ordres ouverts et journal du bot."""
+"""Pages du front : KPI (gain du mois et ordres ouverts) et journal du bot."""
 from datetime import datetime, timezone
 
 from django.contrib.auth.decorators import login_required
@@ -48,12 +48,29 @@ def etat_bot():
     return {"dernier_ordre": dernier, "depuis": duree(dernier)}
 
 
+def montant(x):
+    """Montant arrondi à 2 décimales avec espace des milliers (ex. 1 234.57)."""
+    return f"{x:,.2f}".replace(",", " ") if x is not None else "?"
+
+
+def gains_du_mois():
+    """Gain du mois en cours par client (route /gains-mois), mis en forme."""
+    gains = api_client.get("/gains-mois")
+    for c in gains["clients"]:
+        c["total_txt"] = montant(c["total"])
+        for s in c["strategies"]:
+            s["gain_txt"] = montant(s["gain"])
+            s["gain_base_txt"] = montant(s["gain_base"])
+    return gains
+
+
 @login_required
-def ordres_ouverts(request):
-    """Ordres ouverts de toutes les stratégies actives, groupés par stratégie."""
-    contexte = {"erreur": None, "strategies": []}
+def kpi(request):
+    """Page KPI : gain du mois par client, puis ordres ouverts des stratégies actives."""
+    contexte = {"erreur": None, "strategies": [], "gains": None}
     try:
         contexte["bot"] = etat_bot()
+        contexte["gains"] = gains_du_mois()
         for strat in api_client.get("/strategies", actif="true"):
             ordres = api_client.get(f"/strategies/{strat['symbol']}/open-orders")
             for o in ordres:
@@ -65,7 +82,7 @@ def ordres_ouverts(request):
             contexte["strategies"].append({**strat, "ordres": ordres})
     except api_client.ApiError as e:
         contexte["erreur"] = str(e)
-    return render(request, "dashboard/ordres.html", contexte)
+    return render(request, "dashboard/kpi.html", contexte)
 
 
 @login_required
