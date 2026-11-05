@@ -61,6 +61,62 @@
 </section>
 {% endif %}
 
+{% if wallets %}
+<section class="carte">
+  <div class="entete-gains">
+    <h2>Portefeuille</h2>
+    {% if wallets.comptes|length > 1 %}
+    <div><strong>{{ wallets.total_eur_txt }} EUR</strong> <span class="muted">·</span> <strong>{{ wallets.total_usdt_txt }} USDT</strong> <span class="muted">tous comptes</span></div>
+    {% endif %}
+    {% if wallets.maj_dt %}<span class="muted" style="margin-left:auto">prix et soldes du {{ wallets.maj_dt|date:"d/m/Y H:i:s" }}</span>{% endif %}
+  </div>
+  {% if wallets.erreur %}
+  <p class="alerte" style="margin:0">Portefeuille indisponible : {{ wallets.erreur }}</p>
+  {% elif not wallets.configure %}
+  <p class="muted" style="margin:0">Aucune clé Binance en lecture seule configurée : fichier <code>cles_lecture.json</code> à créer sur le serveur du bot.</p>
+  {% else %}
+  {% for c in wallets.comptes %}
+  <div class="compte">
+    <div class="compte-entete">
+      <span class="muted">{{ c.nom }} #{{ c.id_client }}</span>
+      {% if not c.erreur %}
+      <span class="valeur">{{ c.total_eur_txt }} EUR</span>
+      <span class="valeur">{{ c.total_usdt_txt }} USDT</span>
+      {% if not c.complet %}<span class="muted" title="Au moins un actif sans prix EUR/USDT sur Binance : total incomplet">* total incomplet</span>{% endif %}
+      {% endif %}
+    </div>
+    {% if c.erreur %}
+    <p class="alerte" style="margin:.4rem 0 0">{{ c.erreur }}</p>
+    {% else %}
+    <table>
+      <thead><tr><th>Actif</th><th class="num">Disponible</th><th class="num">Bloqué (ordres)</th><th class="num">Total</th><th class="num">EUR</th><th class="num">USDT</th></tr></thead>
+      <tbody>
+        {% for a in c.principaux %}
+        <tr>
+          <td><strong>{{ a.actif }}</strong></td>
+          <td class="num">{{ a.libre_txt }}</td>
+          <td class="num">{{ a.bloque_txt }}</td>
+          <td class="num">{{ a.total_txt }}</td>
+          <td class="num">{{ a.eur_txt }}</td>
+          <td class="num">{{ a.usdt_txt }}</td>
+        </tr>
+        {% endfor %}
+        {% if c.petits %}
+        <tr><td colspan="6" class="muted">
+          <details><summary>{{ c.petits|length }} petit{{ c.petits|length|pluralize }} solde{{ c.petits|length|pluralize }} (moins de 1 EUR chacun, {{ c.petits_eur_txt }} EUR au total)</summary>
+            {% for a in c.petits %}{{ a.actif }} {{ a.total_txt }} ({{ a.eur_txt }} EUR){% if not forloop.last %} · {% endif %}{% endfor %}
+          </details>
+        </td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% endif %}
+</section>
+{% endif %}
+
 <h2 style="margin-top:1.5rem">Ordres ouverts</h2>
 {% for strat in strategies %}
 <section class="carte">

@@ -15,13 +15,22 @@ Variables d'environnement (optionnelles) :
     KRYPTO_HEARTBEAT  fichier de battement du bot (défaut : bot.heartbeat à côté)
     KRYPTO_BOT_DELAI  secondes sans battement avant de considérer le bot
                       arrêté ou figé (défaut : 180)
+    KRYPTO_CLES_LECTURE  fichier des clés Binance EN LECTURE SEULE utilisées
+                      pour /wallets (défaut : cles_lecture.json à côté).
+                      Jamais les clés de trading du bot : voir
+                      deploy/cles_lecture.json.example.
 
 Documentation interactive : http://127.0.0.1:8000/docs
 """
+import hashlib
+import hmac
 import json
 import os
 import sqlite3
 import subprocess
+import time
+import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
 
@@ -32,6 +41,7 @@ DB_PATH = os.environ.get("KRYPTO_DB", os.path.join(BASE_DIR, "DB.db"))
 API_TOKEN = os.environ.get("KRYPTO_API_TOKEN")
 HEARTBEAT = os.environ.get("KRYPTO_HEARTBEAT", os.path.join(BASE_DIR, "bot.heartbeat"))
 BOT_DELAI = int(os.environ.get("KRYPTO_BOT_DELAI", "180"))
+CLES_LECTURE = os.environ.get("KRYPTO_CLES_LECTURE", os.path.join(BASE_DIR, "cles_lecture.json"))
 
 
 def check_token(authorization: str | None = Header(default=None)):
@@ -295,6 +305,148 @@ def gains_mois(
     return {"annee": annee, "mois": mois, "nb_mois": nb_mois,
             "clients": list(par_mois[f"{annee}-{mois:02d}"].values()),
             "historique": historique}
+
+
+###########################################################################
+#                    PORTEFEUILLES (clés en lecture seule)                #
+###########################################################################
+BINANCE = "https://api.binance.com"
+CACHE_DUREE = 60  # secondes : la page KPI se rafraîchit toutes les 60 s
+_cache = {}
+
+
+def en_cache(cle, fonction):
+    """Renvoie le résultat de fonction() gardé CACHE_DUREE secondes."""
+    maintenant = time.time()
+    if cle in _cache and maintenant - _cache[cle][0] < CACHE_DUREE:
+        return _cache[cle][1]
+    valeur = fonction()
+    _cache[cle] = (maintenant, valeur)
+    return valeur
+
+
+def tous_les_prix():
+    """Tous les prix Binance en un appel (route publique) : {"BTCEUR": 61234.5, ...}."""
+    with urllib.request.urlopen(BINANCE + "/api/v3/ticker/price", timeout=10) as resp:
+        return {p["symbol"]: float(p["price"]) for p in json.load(resp)}
+
+
+def valeur_en(actif, cible, prix):
+    """Prix d'une unité d'actif dans la devise cible, ou None.
+
+    Paire directe, sinon inverse, sinon en passant par USDT puis BTC.
+    Les actifs « LDxxx » (Simple Earn flexible) valent l'actif xxx.
+    """
+    def direct(a, b):
+        if a == b:
+            return 1.0
+        if a + b in prix:
+            return prix[a + b]
+        if b + a in prix and prix[b + a]:
+            return 1 / prix[b + a]
+        return None
+
+    for a in ([actif, actif[2:]] if actif.startswith("LD") else [actif]):
+        v = direct(a, cible)
+        if v is not None:
+            return v
+        for pivot in ("USDT", "BTC"):
+            v1, v2 = direct(a, pivot), direct(pivot, cible)
+            if v1 is not None and v2 is not None:
+                return v1 * v2
+    return None
+
+
+def compte_binance(api, secret):
+    """Soldes non nuls d'un compte spot (GET /api/v3/account, requête signée).
+
+    Lecture seule : seule cette route est appelée, avec une clé qui ne doit
+    avoir que le droit « Enable Reading ».
+    """
+    params = urllib.parse.urlencode({"omitZeroBalances": "true", "recvWindow": 10000,
+                                     "timestamp": int(time.time() * 1000)})
+    signature = hmac.new(secret.encode(), params.encode(), hashlib.sha256).hexdigest()
+    req = urllib.request.Request(f"{BINANCE}/api/v3/account?{params}&signature={signature}",
+                                 headers={"X-MBX-APIKEY": api})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return json.load(resp)["balances"]
+    except urllib.error.HTTPError as e:
+        try:
+            detail = json.load(e).get("msg", "")
+        except ValueError:
+            detail = ""
+        raise RuntimeError(f"Binance a refusé ({e.code}) {detail}".strip()) from e
+
+
+def lire_cles():
+    """Clés en lecture seule par ID_client, depuis CLES_LECTURE ({} si absent)."""
+    if not os.path.exists(CLES_LECTURE):
+        return {}
+    with open(CLES_LECTURE) as f:
+        return {int(k): v for k, v in json.load(f).items()}
+
+
+def calculer_wallets():
+    """Soldes de chaque compte configuré, valorisés en EUR et en USDT."""
+    try:
+        cles = lire_cles()
+    except (OSError, ValueError) as e:
+        raise HTTPException(status_code=500, detail=f"{os.path.basename(CLES_LECTURE)} illisible : {e}")
+    if not cles:
+        return {"configure": False, "comptes": [], "total_eur": 0.0, "total_usdt": 0.0, "complet": True}
+    noms = {c["ID_client"]: c["nom"] for c in query("SELECT ID_client, nom FROM client")}
+    try:
+        prix = tous_les_prix()
+    except (OSError, ValueError) as e:
+        raise HTTPException(status_code=502, detail=f"Prix Binance indisponibles : {e}")
+    comptes = []
+    for id_client, cle in sorted(cles.items()):
+        compte = {"id_client": id_client, "nom": noms.get(id_client, f"client {id_client}"),
+                  "erreur": None, "actifs": [], "total_eur": 0.0, "total_usdt": 0.0, "complet": True}
+        try:
+            soldes = compte_binance(cle["api"], cle["secret"])
+        except (RuntimeError, OSError, KeyError, ValueError) as e:
+            compte["erreur"] = str(e)
+            compte["complet"] = False
+            comptes.append(compte)
+            continue
+        for b in soldes:
+            libre, bloque = float(b["free"]), float(b["locked"])
+            total = libre + bloque
+            if total <= 0:
+                continue
+            eur, usdt = valeur_en(b["asset"], "EUR", prix), valeur_en(b["asset"], "USDT", prix)
+            actif = {"actif": b["asset"], "libre": libre, "bloque": bloque, "total": total,
+                     "eur": total * eur if eur is not None else None,
+                     "usdt": total * usdt if usdt is not None else None}
+            if actif["eur"] is None or actif["usdt"] is None:
+                compte["complet"] = False
+            compte["total_eur"] += actif["eur"] or 0.0
+            compte["total_usdt"] += actif["usdt"] or 0.0
+            compte["actifs"].append(actif)
+        compte["actifs"].sort(key=lambda a: a["eur"] or 0.0, reverse=True)
+        comptes.append(compte)
+    return {
+        "configure": True,
+        "maj": datetime.now(timezone.utc).isoformat(),
+        "comptes": comptes,
+        "total_eur": sum(c["total_eur"] for c in comptes),
+        "total_usdt": sum(c["total_usdt"] for c in comptes),
+        "complet": all(c["complet"] for c in comptes),
+    }
+
+
+@app.get("/wallets")
+def wallets():
+    """Portefeuilles spot des comptes ayant une clé en lecture seule configurée.
+
+    Pour chaque compte : actifs (libre, bloqué dans des ordres, total) valorisés
+    en EUR et en USDT au prix Binance actuel, et totaux. Résultat gardé 60 s
+    en cache (Binance limite les appels, partagés avec le bot sur cette IP).
+    configure=false si le fichier de clés est absent ou vide.
+    """
+    return en_cache("wallets", calculer_wallets)
 
 
 @app.get("/strategies/{symbol}/dashboard")

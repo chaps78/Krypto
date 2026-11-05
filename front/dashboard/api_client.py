@@ -27,6 +27,10 @@ def get(path, **params):
         with urllib.request.urlopen(req, timeout=10) as resp:
             return json.load(resp)
     except urllib.error.HTTPError as e:
-        raise ApiError(f"L'API a répondu {e.code} sur {path}") from e
+        try:
+            detail = json.load(e).get("detail")
+        except (ValueError, AttributeError):
+            detail = None
+        raise ApiError(f"L'API a répondu {e.code} sur {path}" + (f" : {detail}" if isinstance(detail, str) else "")) from e
     except (urllib.error.URLError, TimeoutError, OSError) as e:
         raise ApiError(f"API injoignable ({settings.KRYPTO_API_URL}) : le tunnel SSH est-il actif ?") from e

@@ -57,6 +57,10 @@
     form.nb-mois label { flex-direction:row; align-items:center; gap:.4rem; }
     form.nb-mois input[type=number] { width:4.2rem; padding:.2rem .4rem; }
     form.nb-mois .bouton { padding:.2rem .6rem; }
+    .compte + .compte { margin-top:1.2rem; padding-top:1rem; border-top:1px solid var(--line); }
+    .compte-entete { display:flex; flex-wrap:wrap; align-items:baseline; gap:.3rem 1.2rem; margin-bottom:.4rem; }
+    .compte-entete .valeur { font-size:1.35rem; font-weight:700; font-variant-numeric:tabular-nums; }
+    details summary { cursor:pointer; }
     .moyennes { display:flex; gap:1rem; font-size:.9rem; font-variant-numeric:tabular-nums; margin-bottom:.4rem; }
     /* Grille : surlignage par sens (case prix du palier de l'ordre, cases de quantité des paliers qui la fournissent) */
     tr.q-BUY td:not(.prix), td.p-BUY { background:color-mix(in srgb, var(--achat) 16%, transparent); }

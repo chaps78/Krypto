@@ -125,10 +125,42 @@ def gains_du_mois(request):
     }
 
 
+SEUIL_PETIT_SOLDE = 1.0  # EUR : en dessous, l'actif est regroupé dans « petits soldes »
+
+
+def portefeuilles():
+    """Portefeuilles Binance (route /wallets), mis en forme pour la page KPI.
+
+    Une erreur ici n'empêche pas le reste de la page de s'afficher : elle est
+    renvoyée dans "erreur" et montrée dans la carte Portefeuille uniquement.
+    """
+    try:
+        w = api_client.get("/wallets")
+    except api_client.ApiError as e:
+        return {"erreur": str(e)}
+    for c in w["comptes"]:
+        for a in c["actifs"]:
+            a["libre_txt"] = nombre(a["libre"])
+            a["bloque_txt"] = nombre(a["bloque"]) if a["bloque"] else ""
+            a["total_txt"] = nombre(a["total"])
+            a["eur_txt"] = montant(a["eur"])
+            a["usdt_txt"] = montant(a["usdt"])
+        c["principaux"] = [a for a in c["actifs"] if a["eur"] is None or a["eur"] >= SEUIL_PETIT_SOLDE]
+        c["petits"] = [a for a in c["actifs"] if a["eur"] is not None and a["eur"] < SEUIL_PETIT_SOLDE]
+        c["petits_eur_txt"] = montant(sum(a["eur"] for a in c["petits"]))
+        c["total_eur_txt"] = montant(c["total_eur"])
+        c["total_usdt_txt"] = montant(c["total_usdt"])
+    w["total_eur_txt"] = montant(w["total_eur"])
+    w["total_usdt_txt"] = montant(w["total_usdt"])
+    w["maj_dt"] = parse_date(w.get("maj"))
+    return w
+
+
 @login_required
 def kpi(request):
-    """Page KPI : gain du mois par client, puis ordres ouverts des stratégies actives."""
+    """Page KPI : gain du mois, portefeuilles Binance, puis ordres ouverts."""
     contexte = {"erreur": None, "strategies": [], "gains": None}
+    contexte["wallets"] = portefeuilles()
     try:
         contexte["bot"] = etat_bot()
         contexte["gains"] = gains_du_mois(request)
