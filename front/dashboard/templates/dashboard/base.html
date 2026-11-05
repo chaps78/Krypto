@@ -7,10 +7,12 @@
   <title>{% block title %}Krypto{% endblock %} · Krypto</title>
   <style>
     :root { --bg:#f6f7f9; --card:#fff; --txt:#1d2330; --muted:#6b7385; --line:#e3e6ec;
-            --buy:#1a7f4b; --sell:#b42318; --accent:#2f5bd3; --warn:#fff4e5; --warn-txt:#8a4b00; }
+            --buy:#1a7f4b; --sell:#b42318; --accent:#2f5bd3; --warn:#fff4e5; --warn-txt:#8a4b00;
+            --achat:#2a78d6; --vente:#eb6834; --palier:#c3c8d2; }
     @media (prefers-color-scheme: dark) {
       :root { --bg:#14171d; --card:#1c2029; --txt:#e6e9ef; --muted:#9aa3b5; --line:#2c3240;
-              --buy:#4cc38a; --sell:#f97066; --accent:#7b9cff; --warn:#3a2a12; --warn-txt:#ffd08a; }
+              --buy:#4cc38a; --sell:#f97066; --accent:#7b9cff; --warn:#3a2a12; --warn-txt:#ffd08a;
+              --achat:#3987e5; --vente:#d95926; --palier:#3d4454; }
     }
     * { box-sizing: border-box; }
     body { margin:0; font:15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--txt); }
@@ -20,6 +22,7 @@
     nav a.actif { color:var(--txt); font-weight:600; }
     nav .droite { margin-left:auto; display:flex; gap:1rem; align-items:center; color:var(--muted); font-size:.9rem; }
     nav button { background:none; border:1px solid var(--line); color:var(--muted); border-radius:6px; padding:.25rem .6rem; cursor:pointer; }
+    main a { color:var(--accent); }
     main { max-width:1100px; margin:1.5rem auto; padding:0 1rem; }
     h1 { font-size:1.35rem; margin:0 0 1rem; }
     h2 { font-size:1.05rem; margin:0 0 .6rem; }
@@ -55,7 +58,30 @@
     form.nb-mois input[type=number] { width:4.2rem; padding:.2rem .4rem; }
     form.nb-mois .bouton { padding:.2rem .6rem; }
     .moyennes { display:flex; gap:1rem; font-size:.9rem; font-variant-numeric:tabular-nums; margin-bottom:.4rem; }
-    tr.ouvert td { background:color-mix(in srgb, var(--accent) 12%, transparent); }
+    /* Grille : surlignage par sens (case prix du palier de l'ordre, cases de quantité des paliers qui la fournissent) */
+    tr.q-BUY td:not(.prix), td.p-BUY { background:color-mix(in srgb, var(--achat) 16%, transparent); }
+    tr.q-SELL td:not(.prix), td.p-SELL { background:color-mix(in srgb, var(--vente) 16%, transparent); }
+    .graphe-grille { position:relative; }
+    .entete-graphe { display:flex; flex-wrap:wrap; align-items:center; gap:.5rem 1.2rem; margin-bottom:.4rem; }
+    .entete-graphe h2 { margin:0; }
+    .legende { display:flex; flex-wrap:wrap; gap:.3rem 1rem; font-size:.82rem; color:var(--muted); }
+    .legende span { display:inline-flex; align-items:center; gap:.35rem; }
+    .legende i { display:inline-block; width:.75rem; height:.75rem; border-radius:3px; }
+    .pastille-achat { background:var(--achat); } .pastille-vente { background:var(--vente); } .pastille-palier { background:var(--palier); }
+    .legende i.trait-prix { width:0; height:.9rem; border-left:2px dashed var(--txt); border-radius:0; }
+    .zoom { margin-left:auto; display:flex; gap:.3rem; }
+    .zoom button { font:inherit; font-size:.82rem; padding:.2rem .6rem; border:1px solid var(--line); border-radius:6px; background:var(--card); color:var(--muted); cursor:pointer; }
+    .zoom button.actif { color:var(--txt); border-color:var(--muted); font-weight:600; }
+    .graphe { width:100%; }
+    .graphe svg { display:block; overflow:visible; }
+    .graphe .barre { fill:var(--palier); } .graphe .barre.achat { fill:var(--achat); } .graphe .barre.vente { fill:var(--vente); }
+    .graphe .quadrillage { stroke:var(--line); stroke-width:1; } .graphe .axe { stroke:var(--muted); stroke-width:1; }
+    .graphe .graduation { fill:var(--muted); font-size:11px; font-variant-numeric:tabular-nums; }
+    .graphe .etiquette { fill:var(--txt); font-size:12px; font-weight:600; }
+    .graphe .trait-ordre { stroke:var(--txt); stroke-width:1.5; stroke-dasharray:4 3; }
+    .graphe .cible { fill:transparent; } .graphe .cible:hover { fill:color-mix(in srgb, var(--txt) 6%, transparent); }
+    .bulle { position:absolute; z-index:2; pointer-events:none; background:var(--card); color:var(--txt); border:1px solid var(--line);
+             border-radius:8px; padding:.45rem .65rem; font-size:.82rem; line-height:1.4; box-shadow:0 4px 14px rgba(0,0,0,.12); white-space:nowrap; font-variant-numeric:tabular-nums; }
     table.detail td { padding:.2rem 0; font-size:.85rem; border-bottom:none; }
     .bouton { background:var(--accent); color:#fff; border-color:var(--accent); cursor:pointer; }
   </style>

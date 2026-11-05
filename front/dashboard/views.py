@@ -146,13 +146,28 @@ def kpi(request):
     return render(request, "dashboard/kpi.html", contexte)
 
 
+def paliers_quantite(ordre):
+    """Paliers dont le bet compose la quantité d'un ordre ouvert (cf. bininterface).
+
+    L'ordre est enregistré sur le palier de son PRIX (id_ecart). Sa quantité
+    vient d'autres paliers selon le sens et le niveau :
+      - vente : paliers sous le prix, 1 (niveaux 1-2), 2 (niveau 3) ou 3 (niveau 4) ;
+      - achat : palier du prix et au-dessus, 1, 2 ou 3 paliers de même.
+    """
+    n = int(ordre["niveau"] or 1)
+    k = 1 if n <= 2 else (2 if n == 3 else 3)
+    s = ordre["id_ecart"]
+    return list(range(s - k, s)) if ordre["sens"] == "SELL" else list(range(s, s + k))
+
+
 @login_required
 def grille(request):
-    """Tableau ecart_bet d'une stratégie : prix, quantité, UP et ajout par palier.
+    """Tableau et graphique ecart_bet d'une stratégie : prix, quantité, UP et ajout.
 
     Seules les stratégies de settings.KRYPTO_GRILLE_SYMBOLS sont proposées
-    (PEPEEUR_N91 par défaut, modifiable dans .env). Les paliers portant un
-    ordre ouvert sont mis en évidence.
+    (PEPEEUR_N91 par défaut, modifiable dans .env). Pour chaque ordre ouvert,
+    la case prix de son palier est surlignée, ainsi que les paliers qui
+    fournissent sa quantité (pour une vente : le palier du dessous).
     """
     autorises = settings.KRYPTO_GRILLE_SYMBOLS
     symbol = request.GET.get("symbol")
@@ -163,22 +178,43 @@ def grille(request):
         contexte["erreur"] = "Aucune stratégie configurée (KRYPTO_GRILLE_SYMBOLS)."
         return render(request, "dashboard/grille.html", contexte)
     try:
-        contexte["strat"] = api_client.get(f"/strategies/{symbol}")
-        ouverts = {o["id_ecart"]: o for o in api_client.get(f"/strategies/{symbol}/open-orders")}
+        strat = contexte["strat"] = api_client.get(f"/strategies/{symbol}")
+        ouverts = api_client.get(f"/strategies/{symbol}/open-orders")
         paliers = api_client.get(f"/strategies/{symbol}/grid")
+        par_id = {p["id"]: p for p in paliers}
         for p in paliers:
             p["prix_txt"] = nombre(p["prix"])
             p["bet_txt"] = nombre(round(p["bet"]))
             p["valeur_txt"] = montant(p["prix"] * p["bet"])
             p["ajout_txt"] = nombre(round(p["ajout"])) if p["ajout"] is not None else ""
-            p["ordre"] = ouverts.get(p["id"])
-            if p["ordre"]:
-                p["ordre"]["montant_txt"] = nombre(p["ordre"]["montant"])
-        premier = next((p for p in paliers if p["ordre"]), None)
-        if premier:
-            premier["ancre"] = True  # cible du lien « aller aux ordres ouverts »
+            p["prix_de"] = p["quantite_de"] = p["ordre"] = None
+            p["suite"] = False
+        for o in ouverts:
+            o["montant_txt"] = nombre(o["montant"])
+            o["prix_txt"] = nombre(o["limite"])
+            if o["id_ecart"] in par_id:
+                par_id[o["id_ecart"]]["prix_de"] = o["sens"]
+            ids = [i for i in paliers_quantite(o) if i in par_id]
+            for i in ids:
+                par_id[i]["quantite_de"] = o["sens"]
+                par_id[i]["suite"] = True
+            if ids:
+                # Libellé complet sur le palier de quantité le plus proche du prix
+                proche = par_id[min(ids, key=lambda i: abs(i - o["id_ecart"]))]
+                proche["ordre"], proche["suite"] = o, False
+        surlignes = [p for p in paliers if p["prix_de"] or p["quantite_de"]]
+        if surlignes:
+            surlignes[0]["ancre"] = True  # cible du lien « aller aux ordres ouverts »
         contexte["paliers"] = paliers
         contexte["nb_ouverts"] = len(ouverts)
+        contexte["graphe"] = {
+            "devise1": strat["devise1"], "devise2": strat["devise2"],
+            "paliers": [{"id": p["id"], "prix": p["prix"], "bet": p["bet"], "ajout": p["ajout"],
+                         "up": p["up"], "prix_de": p["prix_de"], "quantite_de": p["quantite_de"]}
+                        for p in paliers],
+            "ordres": [{"sens": o["sens"], "id_ecart": o["id_ecart"], "niveau": o["niveau"],
+                        "prix": o["limite"], "montant": o["montant"]} for o in ouverts],
+        }
     except api_client.ApiError as e:
         contexte["erreur"] = str(e)
     return render(request, "dashboard/grille.html", contexte)

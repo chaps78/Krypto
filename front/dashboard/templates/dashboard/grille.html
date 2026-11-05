@@ -16,10 +16,34 @@
 {% if paliers %}
 <p class="muted">
   {{ paliers|length }} paliers{% if strat %} · {{ strat.devise1 }}/{{ strat.devise2 }} · client {{ strat.id_client }}{% endif %}
-  {% if nb_ouverts %} · <a href="#ordres-ouverts">aller aux ordres ouverts</a>{% endif %}
+  {% if nb_ouverts %} · <a href="#ordres-ouverts">aller aux ordres ouverts dans le tableau</a>{% endif %}
 </p>
+
+<section class="carte graphe-grille">
+  <div class="entete-graphe">
+    <h2>Quantité par palier <span class="muted">({{ strat.devise1 }})</span></h2>
+    <div class="legende">
+      <span><i class="pastille-achat"></i>quantité de l'achat ouvert</span>
+      <span><i class="pastille-vente"></i>quantité de la vente ouverte</span>
+      <span><i class="pastille-palier"></i>autres paliers</span>
+      <span><i class="trait-prix"></i>prix d'un ordre ouvert</span>
+    </div>
+    <div class="zoom" role="group" aria-label="Plage affichée">
+      <button type="button" data-zoom="ordres" class="actif">Autour des ordres</button>
+      <button type="button" data-zoom="tout">Toute la grille</button>
+    </div>
+  </div>
+  <div id="graphe" class="graphe" aria-label="Graphique de la quantité par palier ; le détail est dans le tableau ci-dessous"></div>
+  <div id="bulle" class="bulle" hidden></div>
+</section>
+
 <section class="carte">
-  <table>
+  <p class="muted" style="margin-top:0">
+    Pour chaque ordre ouvert, la case <strong>Prix</strong> de son palier est surlignée, ainsi que les paliers qui
+    fournissent sa <strong>quantité</strong> : pour une vente, le palier du dessous (2 ou 3 paliers aux niveaux 3-4) ;
+    pour un achat, son propre palier (et ceux du dessus aux niveaux 3-4).
+  </p>
+  <table class="grille">
     <thead>
       <tr>
         <th class="num">Palier</th><th class="num">Prix</th><th class="num">Quantité (bet)</th>
@@ -28,19 +52,148 @@
     </thead>
     <tbody>
       {% for p in paliers %}
-      <tr{% if p.ordre %} class="ouvert"{% endif %}{% if p.ancre %} id="ordres-ouverts"{% endif %}>
+      <tr{% if p.quantite_de %} class="q-{{ p.quantite_de }}"{% endif %}{% if p.ancre %} id="ordres-ouverts"{% endif %}>
         <td class="num">{{ p.id }}</td>
-        <td class="num">{{ p.prix_txt }} {{ strat.devise2 }}</td>
+        <td class="num prix{% if p.prix_de %} p-{{ p.prix_de }}{% endif %}">{{ p.prix_txt }} {{ strat.devise2 }}</td>
         <td class="num">{{ p.bet_txt }} {{ strat.devise1 }}</td>
         <td class="num">{{ p.valeur_txt }} {{ strat.devise2 }}</td>
         <td class="num">{% if p.up %}{{ p.up }}{% else %}<span class="muted">0</span>{% endif %}</td>
         <td class="num">{{ p.ajout_txt }}</td>
-        <td>{% if p.ordre %}<span class="{{ p.ordre.sens }}">{% if p.ordre.sens == "BUY" %}Achat{% else %}Vente{% endif %}</span> {{ p.ordre.montant_txt }} {{ strat.devise1 }} <span class="muted">niv. {{ p.ordre.niveau }}</span>{% endif %}</td>
+        <td>
+          {% if p.ordre %}<span class="{{ p.ordre.sens }}">{% if p.ordre.sens == "BUY" %}Achat{% else %}Vente{% endif %}</span>
+            {{ p.ordre.montant_txt }} {{ strat.devise1 }} à {{ p.ordre.prix_txt }}
+            <span class="muted">· palier {{ p.ordre.id_ecart }} · niv. {{ p.ordre.niveau }}</span>
+          {% elif p.suite %}<span class="muted">↳ fait partie de la quantité de l'ordre</span>
+          {% elif p.prix_de %}<span class="muted">← prix de l'ordre</span>{% endif %}
+        </td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
 </section>
+{{ graphe|json_script:"donnees-grille" }}
+<script>
+(function () {
+  const D = JSON.parse(document.getElementById("donnees-grille").textContent);
+  const zone = document.getElementById("graphe");
+  const bulle = document.getElementById("bulle");
+  const NS = "http://www.w3.org/2000/svg";
+  let plage = "ordres";
+
+  // 0.00000419 plutôt que 4.19e-6 ; 1 234 567 avec espaces
+  const prixTxt = x => x.toFixed(Math.max(0, 2 - Math.floor(Math.log10(Math.abs(x) || 1)) + 1)).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
+  const entierTxt = x => Math.round(x).toLocaleString("fr-FR");
+  const compact = x => x >= 1e9 ? (x / 1e9).toLocaleString("fr-FR", {maximumFractionDigits: 1}) + " G"
+                     : x >= 1e6 ? (x / 1e6).toLocaleString("fr-FR", {maximumFractionDigits: 1}) + " M"
+                     : x >= 1e3 ? (x / 1e3).toLocaleString("fr-FR", {maximumFractionDigits: 1}) + " k"
+                     : x.toLocaleString("fr-FR", {maximumFractionDigits: 2});
+  const sensTxt = s => s === "BUY" ? "achat" : "vente";
+
+  function pasRond(max, n) {
+    const brut = max / n, p = Math.pow(10, Math.floor(Math.log10(brut)));
+    return [1, 2, 2.5, 5, 10].map(m => m * p).find(s => s >= brut);
+  }
+
+  function el(nom, attrs, parent) {
+    const e = document.createElementNS(NS, nom);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+
+  function paliersVisibles() {
+    const tous = D.paliers;
+    if (plage === "tout" || !D.ordres.length) return tous;
+    const ids = D.ordres.map(o => o.id_ecart);
+    const bas = Math.min(...ids) - 30, haut = Math.max(...ids) + 30;
+    return tous.filter(p => p.id >= bas && p.id <= haut);
+  }
+
+  function dessiner() {
+    zone.innerHTML = "";
+    const P = paliersVisibles();
+    if (!P.length) return;
+    const L = zone.clientWidth, H = 300, m = {h: 28, d: 12, b: 34, g: 56};
+    const l = L - m.g - m.d, h = H - m.h - m.b;
+    const svg = el("svg", {width: L, height: H, role: "img"}, zone);
+    const max = Math.max(...P.map(p => p.bet)) || 1;
+    const pas = pasRond(max, 4), haut = Math.ceil(max / pas) * pas;
+    const y = v => m.h + h - (v / haut) * h;
+    const bande = l / P.length;
+    const larg = Math.max(1, Math.min(24, bande - (bande > 4 ? 2 : 1)));
+    const x = i => m.g + i * bande + (bande - larg) / 2;
+
+    // Grille horizontale et axe des quantités
+    for (let v = 0; v <= haut + 1e-9; v += pas) {
+      el("line", {x1: m.g, x2: L - m.d, y1: y(v), y2: y(v), class: v === 0 ? "axe" : "quadrillage"}, svg);
+      el("text", {x: m.g - 6, y: y(v) + 4, "text-anchor": "end", class: "graduation"}, svg).textContent = compact(v);
+    }
+    // Graduations de prix (environ 6)
+    const tous = Math.max(1, Math.round(P.length / 6));
+    P.forEach((p, i) => {
+      if (i % tous) return;
+      el("text", {x: x(i) + larg / 2, y: H - m.b + 16, "text-anchor": "middle", class: "graduation"}, svg).textContent = prixTxt(p.prix);
+    });
+    el("text", {x: L - m.d, y: H - 4, "text-anchor": "end", class: "graduation"}, svg).textContent = "prix (" + D.devise2 + ")";
+
+    // Barres : extrémité haute arrondie, base carrée
+    const r = Math.min(4, larg / 2);
+    P.forEach((p, i) => {
+      const x0 = x(i), y0 = y(p.bet), base = y(0);
+      const cls = p.quantite_de === "BUY" ? "barre achat" : p.quantite_de === "SELL" ? "barre vente" : "barre";
+      const hb = base - y0;
+      const rr = Math.min(r, hb);
+      el("path", {class: cls, d: hb <= 0 ? "" :
+        `M${x0},${base}V${y0 + rr}Q${x0},${y0} ${x0 + rr},${y0}H${x0 + larg - rr}Q${x0 + larg},${y0} ${x0 + larg},${y0 + rr}V${base}Z`}, svg);
+    });
+
+    // Prix des ordres ouverts : trait vertical + libellé direct
+    D.ordres.forEach(o => {
+      const i = P.findIndex(p => p.id === o.id_ecart);
+      if (i < 0) return;
+      const cx = x(i) + larg / 2;
+      el("line", {x1: cx, x2: cx, y1: m.h - 6, y2: y(0), class: "trait-ordre"}, svg);
+      el("text", {x: cx, y: m.h - 10, "text-anchor": o.sens === "SELL" ? "start" : "end", class: "etiquette"}, svg)
+        .textContent = (o.sens === "BUY" ? "Achat " : "Vente ") + prixTxt(o.prix);
+    });
+
+    // Zones de survol : toute la hauteur de la bande, plus large que la barre
+    P.forEach((p, i) => {
+      const cible = el("rect", {x: m.g + i * bande, y: m.h, width: bande, height: h, class: "cible"}, svg);
+      cible.addEventListener("mouseenter", () => montrer(p, m.g + i * bande + bande / 2));
+      cible.addEventListener("mouseleave", () => { bulle.hidden = true; });
+    });
+  }
+
+  function montrer(p, cx) {
+    const lignes = [
+      `<strong>Palier ${p.id}</strong>`,
+      `Prix : ${prixTxt(p.prix)} ${D.devise2}`,
+      `Quantité : ${entierTxt(p.bet)} ${D.devise1}`,
+      `Valeur : ${(p.prix * p.bet).toLocaleString("fr-FR", {minimumFractionDigits: 2, maximumFractionDigits: 2})} ${D.devise2}`,
+    ];
+    if (p.ajout) lignes.push(`Ajout : ${entierTxt(p.ajout)}`);
+    if (p.up) lignes.push(`UP : ${p.up}`);
+    if (p.quantite_de) lignes.push(`Fournit la quantité de l'${sensTxt(p.quantite_de)} ouvert${p.quantite_de === "SELL" ? "e" : ""}`);
+    if (p.prix_de) lignes.push(`Prix de l'${sensTxt(p.prix_de)} ouvert${p.prix_de === "SELL" ? "e" : ""}`);
+    bulle.innerHTML = lignes.join("<br>");
+    bulle.hidden = false;
+    const max = zone.clientWidth - bulle.offsetWidth;
+    bulle.style.left = zone.offsetLeft + Math.max(0, Math.min(max, cx + 12)) + "px";
+    bulle.style.top = zone.offsetTop + 40 + "px";
+  }
+
+  document.querySelectorAll(".zoom button").forEach(b => b.addEventListener("click", () => {
+    plage = b.dataset.zoom;
+    document.querySelectorAll(".zoom button").forEach(x => x.classList.toggle("actif", x === b));
+    dessiner();
+  }));
+  if (!D.ordres.length) document.querySelector(".zoom").hidden = true;
+  let attente;
+  window.addEventListener("resize", () => { clearTimeout(attente); attente = setTimeout(dessiner, 150); });
+  dessiner();
+})();
+</script>
 {% elif not erreur %}
 <p class="muted">Grille vide pour cette stratégie.</p>
 {% endif %}
