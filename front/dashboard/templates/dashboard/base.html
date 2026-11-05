@@ -45,6 +45,16 @@
     .tuiles { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:.8rem; }
     .tuile { border:1px solid var(--line); border-radius:8px; padding:.7rem .9rem; }
     .tuile .valeur { font-size:1.5rem; font-weight:700; font-variant-numeric:tabular-nums; margin:.1rem 0 .4rem; }
+    .entete-gains { display:flex; flex-wrap:wrap; align-items:center; gap:.6rem 1.5rem; margin-bottom:.8rem; }
+    .entete-gains h2 { margin:0; }
+    .nav-mois { display:flex; align-items:center; gap:.6rem; font-variant-numeric:tabular-nums; }
+    .nav-mois a { color:var(--accent); text-decoration:none; }
+    .nav-mois .inactif { color:var(--line); }
+    form.nb-mois { display:flex; align-items:center; gap:.4rem; margin-left:auto; }
+    form.nb-mois label { flex-direction:row; align-items:center; gap:.4rem; }
+    form.nb-mois input[type=number] { width:4.2rem; padding:.2rem .4rem; }
+    form.nb-mois .bouton { padding:.2rem .6rem; }
+    .moyennes { display:flex; gap:1rem; font-size:.9rem; font-variant-numeric:tabular-nums; margin-bottom:.4rem; }
     table.detail td { padding:.2rem 0; font-size:.85rem; border-bottom:none; }
     .bouton { background:var(--accent); color:#fff; border-color:var(--accent); cursor:pointer; }
   </style>

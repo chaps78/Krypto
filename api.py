@@ -227,10 +227,17 @@ def taux_conversion(devise, base, cache):
     return cache[(devise, base)]
 
 
+def decaler_mois(annee, mois, n):
+    """Ajoute n mois (négatif pour reculer) à (annee, mois)."""
+    i = annee * 12 + (mois - 1) + n
+    return i // 12, i % 12 + 1
+
+
 @app.get("/gains-mois")
 def gains_mois(
     annee: int | None = Query(default=None, ge=2020, le=2100),
     mois: int | None = Query(default=None, ge=1, le=12),
+    nb_mois: int = Query(default=1, ge=1, le=60, description="mois d'historique, mois affiché inclus"),
 ):
     """Gain d'un mois par client, comme KPI.py gain_month_global.
 
@@ -239,23 +246,35 @@ def gains_mois(
     Chaque gain est converti dans la devise de base du client au prix Binance
     actuel (prix public, sans clé). Mois en cours par défaut.
     Si un taux est introuvable, convertible=false et le total l'ignore.
+
+    clients : détail du mois demandé, par client et par stratégie.
+    historique : total par client pour chacun des nb_mois mois finissant au
+    mois demandé (du plus ancien au plus récent), pour calculer une moyenne.
     """
     maintenant = datetime.now(timezone.utc)
     annee = annee or maintenant.year
     mois = mois or maintenant.month
+    debut = decaler_mois(annee, mois, -(nb_mois - 1))
+    fin = decaler_mois(annee, mois, 1)
     lignes = query(
-        """SELECT o.symbol, d.DEVISE2 AS devise, d.client AS id_client,
+        """SELECT substr(o.date_debut, 1, 7) AS periode, o.symbol,
+                  d.DEVISE2 AS devise, d.client AS id_client,
                   c.nom, c.devise_base AS base, SUM(o.benefice) AS gain
            FROM Ordres o
            JOIN Devises d ON d.symbol = o.symbol
            JOIN client c ON c.ID_client = d.client
-           WHERE o.date_debut LIKE ?
-           GROUP BY o.symbol HAVING gain IS NOT NULL
+           WHERE o.date_debut >= ? AND o.date_debut < ?
+           GROUP BY periode, o.symbol HAVING gain IS NOT NULL
            ORDER BY d.client, o.symbol""",
-        (f"{annee}-{mois:02d}%",),
+        (f"{debut[0]}-{debut[1]:02d}", f"{fin[0]}-{fin[1]:02d}"),
     )
-    clients, cache = {}, {}
+    periodes = [decaler_mois(debut[0], debut[1], i) for i in range(nb_mois)]
+    par_mois = {f"{a}-{m:02d}": {} for a, m in periodes}
+    cache = {}
     for l in lignes:
+        clients = par_mois.get(l["periode"])
+        if clients is None:
+            continue
         c = clients.setdefault(l["id_client"], {
             "id_client": l["id_client"], "nom": l["nom"], "base": l["base"],
             "total": 0.0, "complet": True, "strategies": []})
@@ -267,7 +286,15 @@ def gains_mois(
             c["total"] += converti
         c["strategies"].append({"symbol": l["symbol"], "gain": l["gain"], "devise": l["devise"],
                                 "gain_base": converti, "convertible": converti is not None})
-    return {"annee": annee, "mois": mois, "clients": list(clients.values())}
+    historique = [
+        {"annee": a, "mois": m, "clients": [
+            {k: c[k] for k in ("id_client", "nom", "base", "total", "complet")}
+            for c in par_mois[f"{a}-{m:02d}"].values()]}
+        for a, m in periodes
+    ]
+    return {"annee": annee, "mois": mois, "nb_mois": nb_mois,
+            "clients": list(par_mois[f"{annee}-{mois:02d}"].values()),
+            "historique": historique}
 
 
 @app.get("/strategies/{symbol}/dashboard")

@@ -1,4 +1,5 @@
 """Pages du front : KPI (gain du mois et ordres ouverts) et journal du bot."""
+import calendar
 from datetime import datetime, timezone
 
 from django.contrib.auth.decorators import login_required
@@ -53,15 +54,74 @@ def montant(x):
     return f"{x:,.2f}".replace(",", " ") if x is not None else "?"
 
 
-def gains_du_mois():
-    """Gain du mois en cours par client (route /gains-mois), mis en forme."""
-    gains = api_client.get("/gains-mois")
-    for c in gains["clients"]:
-        c["total_txt"] = montant(c["total"])
+def entier(texte, defaut, mini, maxi):
+    """Entier lu dans l'URL, ramené entre mini et maxi ; defaut si illisible."""
+    try:
+        return min(max(int(texte), mini), maxi)
+    except (TypeError, ValueError):
+        return defaut
+
+
+def decaler_mois(annee, mois, n):
+    """Ajoute n mois (négatif pour reculer) à (annee, mois)."""
+    i = annee * 12 + (mois - 1) + n
+    return i // 12, i % 12 + 1
+
+
+def gains_du_mois(request):
+    """Gain du mois choisi par client, moyenne par jour et moyenne sur X mois.
+
+    Paramètres d'URL : annee, mois (mois en cours par défaut, jamais dans le
+    futur) et nb_mois (X, 3 par défaut). Le mois en cours compte les jours
+    écoulés, aujourd'hui inclus ; un mois passé compte tous ses jours.
+    """
+    maintenant = datetime.now(timezone.utc)
+    courant = (maintenant.year, maintenant.month)
+    annee = entier(request.GET.get("annee"), courant[0], 2020, 2100)
+    mois = entier(request.GET.get("mois"), courant[1], 1, 12)
+    if (annee, mois) > courant:
+        annee, mois = courant
+    nb_mois = entier(request.GET.get("nb_mois"), 3, 1, 60)
+
+    gains = api_client.get("/gains-mois", annee=annee, mois=mois, nb_mois=nb_mois)
+    en_cours = (annee, mois) == courant
+    jours = maintenant.day if en_cours else calendar.monthrange(annee, mois)[1]
+
+    # Tous les clients ayant un gain sur la période, même nul le mois affiché
+    du_mois = {c["id_client"]: c for c in gains["clients"]}
+    cumul = {}
+    for h in gains["historique"]:
+        for c in h["clients"]:
+            cu = cumul.setdefault(c["id_client"], {**c, "total": 0.0})
+            cu["total"] += c["total"]
+            cu["complet"] = cu["complet"] and c["complet"]
+    clients = []
+    for id_client in sorted(cumul):
+        cu = cumul[id_client]
+        c = du_mois.get(id_client, {**cu, "total": 0.0, "complet": True, "strategies": []})
         for s in c["strategies"]:
             s["gain_txt"] = montant(s["gain"])
             s["gain_base_txt"] = montant(s["gain_base"])
-    return gains
+        c["total_txt"] = montant(c["total"])
+        c["par_jour_txt"] = montant(c["total"] / jours)
+        c["moyenne_txt"] = montant(cu["total"] / nb_mois)
+        c["moyenne_complete"] = cu["complet"]
+        clients.append(c)
+
+    def lien(a, m):
+        return f"?annee={a}&mois={m}&nb_mois={nb_mois}"
+
+    precedent = decaler_mois(annee, mois, -1)
+    suivant = decaler_mois(annee, mois, 1)
+    debut = decaler_mois(annee, mois, -(nb_mois - 1))
+    return {
+        "annee": annee, "mois": mois, "nb_mois": nb_mois, "jours": jours,
+        "en_cours": en_cours, "clients": clients,
+        "debut_txt": f"{debut[1]:02d}/{debut[0]}",
+        "lien_precedent": lien(*precedent),
+        "lien_suivant": None if en_cours else lien(*suivant),
+        "lien_courant": None if en_cours else lien(*courant),
+    }
 
 
 @login_required
@@ -70,7 +130,7 @@ def kpi(request):
     contexte = {"erreur": None, "strategies": [], "gains": None}
     try:
         contexte["bot"] = etat_bot()
-        contexte["gains"] = gains_du_mois()
+        contexte["gains"] = gains_du_mois(request)
         for strat in api_client.get("/strategies", actif="true"):
             ordres = api_client.get(f"/strategies/{strat['symbol']}/open-orders")
             for o in ordres:

@@ -12,13 +12,32 @@
 
 {% if gains %}
 <section class="carte">
-  <h2>Gain du mois <span class="muted">· {{ gains.mois|stringformat:"02d" }}/{{ gains.annee }}</span></h2>
+  <div class="entete-gains">
+    <h2>Gain du mois</h2>
+    <div class="nav-mois">
+      <a href="{{ gains.lien_precedent }}" title="Mois précédent">&#9664;</a>
+      <strong>{{ gains.mois|stringformat:"02d" }}/{{ gains.annee }}</strong>
+      {% if gains.lien_suivant %}<a href="{{ gains.lien_suivant }}" title="Mois suivant">&#9654;</a>{% else %}<span class="inactif">&#9654;</span>{% endif %}
+      {% if gains.lien_courant %}<a href="{{ gains.lien_courant }}" class="muted">mois en cours</a>{% endif %}
+    </div>
+    <form method="get" class="nb-mois">
+      <input type="hidden" name="annee" value="{{ gains.annee }}">
+      <input type="hidden" name="mois" value="{{ gains.mois }}">
+      <label>Moyenne sur <input type="number" name="nb_mois" value="{{ gains.nb_mois }}" min="1" max="60"> mois</label>
+      <button type="submit" class="bouton">OK</button>
+    </form>
+  </div>
   {% if gains.clients %}
   <div class="tuiles">
     {% for c in gains.clients %}
     <div class="tuile">
       <div class="muted">{{ c.nom }} <span title="client {{ c.id_client }}">#{{ c.id_client }}</span></div>
       <div class="valeur">{{ c.total_txt }} {{ c.base }}{% if not c.complet %} <span class="muted" title="Taux de conversion introuvable pour au moins une stratégie : total incomplet">*</span>{% endif %}</div>
+      <div class="moyennes">
+        <div><span class="muted">par jour</span> {{ c.par_jour_txt }}</div>
+        <div title="Moyenne mensuelle de {{ gains.debut_txt }} à {{ gains.mois|stringformat:'02d' }}/{{ gains.annee }}"><span class="muted">moy. {{ gains.nb_mois }} mois</span> {{ c.moyenne_txt }}{% if not c.moyenne_complete %} *{% endif %}</div>
+      </div>
+      {% if c.strategies %}
       <table class="detail">
         {% for s in c.strategies %}
         <tr>
@@ -27,12 +46,17 @@
         </tr>
         {% endfor %}
       </table>
+      {% endif %}
     </div>
     {% endfor %}
   </div>
-  <p class="muted" style="margin:.6rem 0 0">Même calcul que KPI.py : bénéfices des ordres ouverts ce mois-ci, convertis au prix Binance actuel.</p>
+  <p class="muted" style="margin:.6rem 0 0">
+    Même calcul que KPI.py : bénéfices des ordres ouverts dans le mois, convertis au prix Binance actuel.
+    Moyenne par jour sur {{ gains.jours }} jour{{ gains.jours|pluralize }}{% if gains.en_cours %} (mois en cours, aujourd'hui inclus){% endif %}.
+    Moyenne mensuelle de {{ gains.debut_txt }} à {{ gains.mois|stringformat:"02d" }}/{{ gains.annee }}, un mois sans gain comptant pour 0.
+  </p>
   {% else %}
-  <p class="muted" style="margin:0">Aucun gain enregistré ce mois-ci.</p>
+  <p class="muted" style="margin:0">Aucun gain enregistré sur cette période.</p>
   {% endif %}
 </section>
 {% endif %}
