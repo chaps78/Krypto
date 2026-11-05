@@ -1,0 +1,47 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Grille{% endblock %}
+{% block content %}
+<h1>Grille{% if symbol %} · {{ symbol }}{% endif %}</h1>
+
+{% if symbols|length > 1 %}
+<form class="filtres" method="get">
+  <label>Stratégie
+    <select name="symbol" onchange="this.form.submit()">
+      {% for s in symbols %}<option value="{{ s }}" {% if s == symbol %}selected{% endif %}>{{ s }}</option>{% endfor %}
+    </select>
+  </label>
+</form>
+{% endif %}
+
+{% if paliers %}
+<p class="muted">
+  {{ paliers|length }} paliers{% if strat %} · {{ strat.devise1 }}/{{ strat.devise2 }} · client {{ strat.id_client }}{% endif %}
+  {% if nb_ouverts %} · <a href="#ordres-ouverts">aller aux ordres ouverts</a>{% endif %}
+</p>
+<section class="carte">
+  <table>
+    <thead>
+      <tr>
+        <th class="num">Palier</th><th class="num">Prix</th><th class="num">Quantité (bet)</th>
+        <th class="num">Valeur</th><th class="num">UP</th><th class="num">Ajout</th><th>Ordre ouvert</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in paliers %}
+      <tr{% if p.ordre %} class="ouvert"{% endif %}{% if p.ancre %} id="ordres-ouverts"{% endif %}>
+        <td class="num">{{ p.id }}</td>
+        <td class="num">{{ p.prix_txt }} {{ strat.devise2 }}</td>
+        <td class="num">{{ p.bet_txt }} {{ strat.devise1 }}</td>
+        <td class="num">{{ p.valeur_txt }} {{ strat.devise2 }}</td>
+        <td class="num">{% if p.up %}{{ p.up }}{% else %}<span class="muted">0</span>{% endif %}</td>
+        <td class="num">{{ p.ajout_txt }}</td>
+        <td>{% if p.ordre %}<span class="{{ p.ordre.sens }}">{% if p.ordre.sens == "BUY" %}Achat{% else %}Vente{% endif %}</span> {{ p.ordre.montant_txt }} {{ strat.devise1 }} <span class="muted">niv. {{ p.ordre.niveau }}</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% elif not erreur %}
+<p class="muted">Grille vide pour cette stratégie.</p>
+{% endif %}
+{% endblock %}

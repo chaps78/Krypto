@@ -31,6 +31,8 @@ ALLOWED_HOSTS = [h.strip() for h in os.environ.get("DJANGO_ALLOWED_HOSTS", "127.
 
 KRYPTO_API_URL = os.environ.get("KRYPTO_API_URL", "http://127.0.0.1:8000").rstrip("/")
 KRYPTO_API_TOKEN = os.environ.get("KRYPTO_API_TOKEN")
+# Stratégies dont la page Grille peut afficher le tableau ecart_bet (séparées par des virgules)
+KRYPTO_GRILLE_SYMBOLS = [s.strip() for s in os.environ.get("KRYPTO_GRILLE_SYMBOLS", "PEPEEUR_N91").split(",") if s.strip()]
 
 INSTALLED_APPS = [
     "django.contrib.auth",

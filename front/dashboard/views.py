@@ -1,7 +1,8 @@
-"""Pages du front : KPI (gain du mois et ordres ouverts) et journal du bot."""
+"""Pages du front : KPI (gain du mois et ordres ouverts), grille et journal du bot."""
 import calendar
 from datetime import datetime, timezone
 
+from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render
 
@@ -143,6 +144,44 @@ def kpi(request):
     except api_client.ApiError as e:
         contexte["erreur"] = str(e)
     return render(request, "dashboard/kpi.html", contexte)
+
+
+@login_required
+def grille(request):
+    """Tableau ecart_bet d'une stratégie : prix, quantité, UP et ajout par palier.
+
+    Seules les stratégies de settings.KRYPTO_GRILLE_SYMBOLS sont proposées
+    (PEPEEUR_N91 par défaut, modifiable dans .env). Les paliers portant un
+    ordre ouvert sont mis en évidence.
+    """
+    autorises = settings.KRYPTO_GRILLE_SYMBOLS
+    symbol = request.GET.get("symbol")
+    if symbol not in autorises:
+        symbol = autorises[0] if autorises else None
+    contexte = {"erreur": None, "symbols": autorises, "symbol": symbol, "paliers": [], "strat": None}
+    if symbol is None:
+        contexte["erreur"] = "Aucune stratégie configurée (KRYPTO_GRILLE_SYMBOLS)."
+        return render(request, "dashboard/grille.html", contexte)
+    try:
+        contexte["strat"] = api_client.get(f"/strategies/{symbol}")
+        ouverts = {o["id_ecart"]: o for o in api_client.get(f"/strategies/{symbol}/open-orders")}
+        paliers = api_client.get(f"/strategies/{symbol}/grid")
+        for p in paliers:
+            p["prix_txt"] = nombre(p["prix"])
+            p["bet_txt"] = nombre(round(p["bet"]))
+            p["valeur_txt"] = montant(p["prix"] * p["bet"])
+            p["ajout_txt"] = nombre(round(p["ajout"])) if p["ajout"] is not None else ""
+            p["ordre"] = ouverts.get(p["id"])
+            if p["ordre"]:
+                p["ordre"]["montant_txt"] = nombre(p["ordre"]["montant"])
+        premier = next((p for p in paliers if p["ordre"]), None)
+        if premier:
+            premier["ancre"] = True  # cible du lien « aller aux ordres ouverts »
+        contexte["paliers"] = paliers
+        contexte["nb_ouverts"] = len(ouverts)
+    except api_client.ApiError as e:
+        contexte["erreur"] = str(e)
+    return render(request, "dashboard/grille.html", contexte)
 
 
 @login_required

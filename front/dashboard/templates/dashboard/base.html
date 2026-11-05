@@ -55,6 +55,7 @@
     form.nb-mois input[type=number] { width:4.2rem; padding:.2rem .4rem; }
     form.nb-mois .bouton { padding:.2rem .6rem; }
     .moyennes { display:flex; gap:1rem; font-size:.9rem; font-variant-numeric:tabular-nums; margin-bottom:.4rem; }
+    tr.ouvert td { background:color-mix(in srgb, var(--accent) 12%, transparent); }
     table.detail td { padding:.2rem 0; font-size:.85rem; border-bottom:none; }
     .bouton { background:var(--accent); color:#fff; border-color:var(--accent); cursor:pointer; }
   </style>
@@ -65,6 +66,7 @@
     <span class="logo">Krypto</span>
     <span class="pastille {{ bot_etat }}" title="{{ bot_info }}">{% if bot_etat == "marche" %}Bot en marche{% elif bot_etat == "fige" %}Bot figé{% elif bot_etat == "arrete" %}Bot arrêté{% else %}Bot ?{% endif %}</span>
     <a href="{% url 'kpi' %}" class="{% if request.resolver_match.url_name == 'kpi' %}actif{% endif %}">KPI</a>
+    <a href="{% url 'grille' %}" class="{% if request.resolver_match.url_name == 'grille' %}actif{% endif %}">Grille</a>
     <a href="{% url 'logs' %}" class="{% if request.resolver_match.url_name == 'logs' %}actif{% endif %}">Logs</a>
     <div class="droite">
       {{ user.username }}

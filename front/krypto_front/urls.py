@@ -6,6 +6,7 @@ from dashboard import views
 
 urlpatterns = [
     path("", views.kpi, name="kpi"),
+    path("grille/", views.grille, name="grille"),
     path("logs/", views.logs, name="logs"),
     path("connexion/", auth_views.LoginView.as_view(), name="login"),
     path("deconnexion/", auth_views.LogoutView.as_view(), name="logout"),
