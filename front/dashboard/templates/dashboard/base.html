@@ -32,8 +32,10 @@
     table { width:100%; border-collapse:collapse; }
     th, td { text-align:left; padding:.45rem .6rem; border-bottom:1px solid var(--line); vertical-align:top; }
     th { color:var(--muted); font-weight:600; font-size:.85rem; }
-    td.num { text-align:right; font-variant-numeric: tabular-nums; }
+    td.negatif { color:var(--sell); }
+    td.num { white-space:nowrap; text-align:right; font-variant-numeric: tabular-nums; }
     th.num { text-align:right; }
+    table.grille th, table.grille td { padding-left:.45rem; padding-right:.45rem; }
     tr:last-child td { border-bottom:none; }
     .BUY { color:var(--buy); font-weight:600; }
     .SELL { color:var(--sell); font-weight:600; }

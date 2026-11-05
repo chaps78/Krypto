@@ -41,6 +41,9 @@
 
 <section class="carte">
   <p class="muted" style="margin-top:0">
+    <strong>Gain achat → vente</strong> : la quantité du palier achetée à son prix puis revendue au prix du palier
+    du dessus, moins 0,075 % de frais sur l'achat et sur la vente. <strong>Valeur cumulée</strong> : somme des valeurs
+    du palier et de tous ceux en dessous.<br>
     Pour chaque ordre ouvert, la case <strong>Prix</strong> de son palier est surlignée, ainsi que les paliers qui
     fournissent sa <strong>quantité</strong> : pour une vente, le palier du dessous (2 ou 3 paliers aux niveaux 3-4) ;
     pour un achat, son propre palier (et ceux du dessus aux niveaux 3-4).
@@ -49,7 +52,10 @@
     <thead>
       <tr>
         <th class="num">Palier</th><th class="num">Prix</th><th class="num">Quantité (bet)</th>
-        <th class="num">Valeur</th><th>Ordre ouvert</th>
+        <th class="num">Valeur</th>
+        <th class="num" title="Somme des valeurs de ce palier et de tous ceux en dessous">Valeur cumulée</th>
+        <th class="num" title="Achat de la quantité au prix du palier, vente au prix du palier du dessus, moins 0,075 % de frais sur chacun des deux ordres">Gain achat → vente</th>
+        <th>Ordre ouvert</th>
       </tr>
     </thead>
     <tbody>
@@ -59,10 +65,11 @@
         <td class="num prix{% if p.prix_de %} p-{{ p.prix_de }}{% endif %}">{{ p.prix_txt }} {{ strat.devise2 }}</td>
         <td class="num">{{ p.bet_txt }} {{ strat.devise1 }}</td>
         <td class="num">{{ p.valeur_txt }} {{ strat.devise2 }}</td>
+        <td class="num">{{ p.cumul_txt }} {{ strat.devise2 }}</td>
+        <td class="num{% if p.gain is not None and p.gain < 0 %} negatif{% endif %}">{% if p.gain_txt %}{{ p.gain_txt }} {{ strat.devise2 }}{% endif %}</td>
         <td>
-          {% if p.ordre %}<span class="{{ p.ordre.sens }}">{% if p.ordre.sens == "BUY" %}Achat{% else %}Vente{% endif %}</span>
-            {{ p.ordre.montant_txt }} {{ strat.devise1 }} à {{ p.ordre.prix_txt }}
-            <span class="muted">· palier {{ p.ordre.id_ecart }} · niv. {{ p.ordre.niveau }}</span>
+          {% if p.ordre %}<span title="{{ p.ordre.montant_txt }} {{ strat.devise1 }} à {{ p.ordre.prix_txt }} {{ strat.devise2 }}, ordre posé au palier {{ p.ordre.id_ecart }}, niveau {{ p.ordre.niveau }}"><span class="{{ p.ordre.sens }}">{% if p.ordre.sens == "BUY" %}Achat{% else %}Vente{% endif %}</span>
+            {{ p.ordre.montant_txt }} à {{ p.ordre.prix_txt }} <span class="muted">· niv. {{ p.ordre.niveau }}</span></span>
           {% elif p.suite %}<span class="muted">↳ fait partie de la quantité de l'ordre</span>
           {% elif p.prix_de %}<span class="muted">← prix de l'ordre</span>{% endif %}
         </td>
@@ -172,6 +179,7 @@
       `Quantité : ${entierTxt(p.bet)} ${D.devise1}`,
       `Valeur : ${(p.prix * p.bet).toLocaleString("fr-FR", {minimumFractionDigits: 2, maximumFractionDigits: 2})} ${D.devise2}`,
     ];
+    if (p.gain !== null) lignes.push(`Gain achat → vente : ${p.gain.toLocaleString("fr-FR", {minimumFractionDigits: 2, maximumFractionDigits: 2})} ${D.devise2}`);
     if (p.quantite_de) lignes.push(`Fournit la quantité de l'${sensTxt(p.quantite_de)} ouvert${p.quantite_de === "SELL" ? "e" : ""}`);
     if (p.prix_de) lignes.push(`Prix de l'${sensTxt(p.prix_de)} ouvert${p.prix_de === "SELL" ? "e" : ""}`);
     bulle.innerHTML = lignes.join("<br>");

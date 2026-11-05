@@ -208,6 +208,23 @@ def kpi(request):
     return render(request, "dashboard/kpi.html", contexte)
 
 
+FRAIS_BROKER = 0.00075  # 0,075 % de frais Binance, payés sur l'achat ET sur la vente
+
+
+def gain_aller_retour(palier, dessus):
+    """Gain net d'un achat au palier puis d'une vente au palier du dessus.
+
+    Même quantité (bet du palier) : achat au prix du palier, vente au prix
+    du palier du dessus, moins FRAIS_BROKER sur le montant de chacun des deux
+    ordres. None pour le dernier palier (pas de palier au-dessus).
+    """
+    if dessus is None or palier["prix"] is None or dessus["prix"] is None or palier["bet"] is None:
+        return None
+    achat = palier["bet"] * palier["prix"]
+    vente = palier["bet"] * dessus["prix"]
+    return vente - achat - FRAIS_BROKER * (achat + vente)
+
+
 def paliers_quantite(ordre):
     """Paliers dont le bet compose la quantité d'un ordre ouvert (cf. bininterface).
 
@@ -247,7 +264,15 @@ def grille(request):
         for p in paliers:
             p["prix_txt"] = nombre(p["prix"])
             p["bet_txt"] = nombre(round(p["bet"]))
-            p["valeur_txt"] = montant(p["prix"] * p["bet"])
+            p["valeur"] = p["prix"] * p["bet"]
+            p["valeur_txt"] = montant(p["valeur"])
+        cumul = 0.0
+        for p in paliers:  # du palier le plus bas au plus haut (ordre de l'API)
+            cumul += p["valeur"]
+            p["cumul_txt"] = montant(cumul)
+            p["gain"] = gain_aller_retour(p, par_id.get(p["id"] + 1))
+            p["gain_txt"] = montant(p["gain"]) if p["gain"] is not None else ""
+        for p in paliers:
             p["prix_de"] = p["quantite_de"] = p["ordre"] = None
             p["suite"] = False
         for o in ouverts:
@@ -270,7 +295,7 @@ def grille(request):
         contexte["nb_ouverts"] = len(ouverts)
         contexte["graphe"] = {
             "devise1": strat["devise1"], "devise2": strat["devise2"],
-            "paliers": [{"id": p["id"], "prix": p["prix"] or 0, "bet": p["bet"] or 0,
+            "paliers": [{"id": p["id"], "prix": p["prix"] or 0, "bet": p["bet"] or 0, "gain": p["gain"],
                          "prix_de": p["prix_de"], "quantite_de": p["quantite_de"]}
                         for p in paliers],
             "ordres": [{"sens": o["sens"], "id_ecart": o["id_ecart"], "niveau": o["niveau"],
