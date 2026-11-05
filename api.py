@@ -12,11 +12,15 @@ Variables d'environnement (optionnelles) :
     KRYPTO_DB         chemin de la base (défaut : DB.db à côté de ce fichier)
     KRYPTO_API_TOKEN  si défini, chaque requête doit envoyer l'en-tête
                       "Authorization: Bearer <token>"
+    KRYPTO_HEARTBEAT  fichier de battement du bot (défaut : bot.heartbeat à côté)
+    KRYPTO_BOT_DELAI  secondes sans battement avant de considérer le bot
+                      arrêté ou figé (défaut : 180)
 
 Documentation interactive : http://127.0.0.1:8000/docs
 """
 import os
 import sqlite3
+import subprocess
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
@@ -24,6 +28,8 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.environ.get("KRYPTO_DB", os.path.join(BASE_DIR, "DB.db"))
 API_TOKEN = os.environ.get("KRYPTO_API_TOKEN")
+HEARTBEAT = os.environ.get("KRYPTO_HEARTBEAT", os.path.join(BASE_DIR, "bot.heartbeat"))
+BOT_DELAI = int(os.environ.get("KRYPTO_BOT_DELAI", "180"))
 
 
 def check_token(authorization: str | None = Header(default=None)):
@@ -73,6 +79,33 @@ def health():
     """Etat de l'API et date du dernier ordre enregistré par le bot."""
     last = query("SELECT MAX(date_debut) AS dernier_ordre FROM Ordres")[0]
     return {"status": "ok", **last}
+
+
+@app.get("/bot")
+def bot():
+    """Etat du bot de trading.
+
+    en_marche est vrai si trader.py a écrit son battement il y a moins de
+    KRYPTO_BOT_DELAI secondes. service donne l'état systemd de krypto-bot
+    ("active", "inactive", "failed"... ou null si inconnu) : un service
+    "active" sans battement récent signifie que le bot est figé.
+    """
+    try:
+        dernier = datetime.fromtimestamp(os.path.getmtime(HEARTBEAT), timezone.utc)
+        age = int((datetime.now(timezone.utc) - dernier).total_seconds())
+    except OSError:
+        dernier, age = None, None
+    try:
+        service = subprocess.run(["systemctl", "is-active", "krypto-bot"],
+                                 capture_output=True, text=True, timeout=3).stdout.strip() or None
+    except (OSError, subprocess.SubprocessError):
+        service = None
+    return {
+        "en_marche": age is not None and age < BOT_DELAI,
+        "dernier_battement": dernier.isoformat() if dernier else None,
+        "age_secondes": age,
+        "service": service,
+    }
 
 
 @app.get("/clients")

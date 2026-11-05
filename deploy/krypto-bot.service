@@ -1,0 +1,30 @@
+# Service systemd du bot de trading, sur le serveur du BOT.
+# Installation et pilotage : ./deploy/krypto-bot.sh
+#
+# "systemctl stop" envoie SIGTERM : trader.py termine la stratégie en cours,
+# supprime son fichier de battement, prévient sur Telegram puis s'arrête.
+# Si l'arrêt dépasse TimeoutStopSec (ex. bot bloqué dans un appel Binance),
+# systemd le tue (SIGKILL).
+[Unit]
+Description=Krypto bot de trading (trader.py)
+After=network-online.target
+Wants=network-online.target
+# Au plus 3 redémarrages automatiques en 10 min, ensuite on laisse arrêté.
+StartLimitIntervalSec=600
+StartLimitBurst=3
+
+[Service]
+User=chaps
+WorkingDirectory=/home/chaps/binance/Krypto
+# Sorties envoyées tout de suite au journal (journalctl -u krypto-bot)
+Environment=PYTHONUNBUFFERED=1
+# Vérifier le chemin avec "which python3" (même python que celui utilisé à la main)
+ExecStart=/usr/bin/python3 trader.py
+KillSignal=SIGTERM
+TimeoutStopSec=120
+# Redémarre seulement en cas de plantage, pas après un arrêt demandé.
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target

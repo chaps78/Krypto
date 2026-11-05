@@ -16,11 +16,19 @@ class teleAcces():
 
 
     def send_message(self,message,ID_chat=0):
-        """Envoie un message Telegram (ID_chat=0 : chat par défaut)."""
+        """Envoie un message Telegram (ID_chat=0 : chat par défaut).
+
+        Ne lève jamais d'exception : une panne de Telegram (timeout, réseau...)
+        est seulement affichée, pour ne pas interrompre le bot au milieu d'un
+        traitement d'ordre.
+        """
         if ID_chat==0:
             ID_chat = self.BOT_CHAT_ID
-        bot = telebot.TeleBot(self.TELEG_TOKEN)
-        bot.send_message(ID_chat, message)
+        try:
+            bot = telebot.TeleBot(self.TELEG_TOKEN)
+            bot.send_message(ID_chat, message)
+        except Exception as inst:
+            print("Telegram : envoi impossible : "+str(inst))
 
 def main():
     """Test manuel du module."""

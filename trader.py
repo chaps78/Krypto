@@ -1,4 +1,9 @@
+import fcntl
+import os
+import signal
+import sys
 import time
+from datetime import datetime, timezone
 
 from bininterface import binAcces
 from sqlInterface import sqlAcces
@@ -392,15 +397,60 @@ class Basics():
                 self.sql.baisser_niveau_ordre_SQL(key,1)
 
 ###########################################################################
+#                       ARRET PROPRE ET BATTEMENT                         #
+###########################################################################
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# Fichier réécrit après chaque stratégie traitée : l'API s'en sert pour savoir
+# si le bot tourne (date récente) ou s'il est arrêté / figé.
+HEARTBEAT = os.path.join(BASE_DIR, "bot.heartbeat")
+# Verrou empêchant deux instances du bot de tourner en même temps.
+LOCK = os.path.join(BASE_DIR, "bot.lock")
+
+arret_demande = False
+
+
+def demander_arret(signum, frame):
+    """Signal SIGTERM/SIGINT : le bot s'arrêtera après l'opération en cours."""
+    global arret_demande
+    arret_demande = True
+
+
+def battement():
+    """Ecrit la date courante dans le fichier de battement."""
+    try:
+        with open(HEARTBEAT, "w") as f:
+            f.write(datetime.now(timezone.utc).isoformat())
+    except OSError:
+        pass
+
+
+def verrouiller():
+    """Prend le verrou d'instance unique, ou quitte si un autre bot tourne déjà."""
+    fichier = open(LOCK, "w")
+    try:
+        fcntl.flock(fichier, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        print("Un autre trader.py tourne déjà : abandon.")
+        sys.exit(1)
+    return fichier  # à garder ouvert tant que le bot tourne
+
+
+###########################################################################
 #                                 MAIN                                    #
 ###########################################################################
 def main():
     """Boucle principale du bot.
 
-    Envoie "Bonjour 1" sur Telegram, puis indéfiniment : pour chaque client et
-    chaque stratégie active (liste lue une seule fois au démarrage), vérifie les
-    ordres et les niveaux, avec une pause de 4 s entre deux stratégies.
+    Envoie "Bonjour 1" sur Telegram, puis jusqu'à un arrêt demandé (SIGTERM,
+    par exemple systemctl stop, ou Ctrl+C) : pour chaque client et chaque
+    stratégie active (liste lue une seule fois au démarrage), vérifie les ordres
+    et les niveaux, avec une pause de 4 s entre deux stratégies.
+    L'arrêt n'interrompt jamais une stratégie en cours de traitement.
     """
+    verrou = verrouiller()
+    signal.signal(signal.SIGTERM, demander_arret)
+    signal.signal(signal.SIGINT, demander_arret)
+
     basic = Basics()
     DEVISES=basic.sql.get_symbols_actif()
 
@@ -408,12 +458,26 @@ def main():
     # Pour demarrer une nouvelle paire, decommenter et adapter :
     #basic.initialise("SYMBOLE_SUFFIXE", ID_client)
 
-    while True:
+    while not arret_demande:
         for user_ID in DEVISES.keys():
             for DEVISE in DEVISES[user_ID]:
+                if arret_demande:
+                    break
                 basic.verification_2_ordres_V2(DEVISE,user_ID)
                 basic.verification_niveau_VS_timer(DEVISE,user_ID)
+                battement()
                 time.sleep(4)
+
+    try:
+        os.remove(HEARTBEAT)
+    except OSError:
+        pass
+    print("Arrêt propre du bot.")
+    try:
+        basic.tele.send_message("Bot arrêté proprement")
+    except Exception:
+        pass
+    verrou.close()
 
 
 if __name__ == '__main__':

@@ -137,3 +137,6 @@ DB.db
 bin_key.json
 cred.json
 *.swp
+bot.heartbeat
+bot.lock
+trader.out
