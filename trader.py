@@ -20,15 +20,11 @@ class Basics():
         """Renvoie l'ID du palier de la grille dont le prix est le plus proche du prix actuel.
 
         Utilisé par initialise() quand aucun ordre n'a encore été exécuté sur la stratégie.
-
-        Attention : contient un breakpoint() oublié, et delta est initialisé avec
-        ecart_bet_dic[0][1] (le bet) au lieu de ecart_bet_dic[0][0] (le prix).
         """
         ecart_bet_dic = self.sql.get_ecart_bet_from_symbol(symbol)
         prix_tmp = self.bin.get_price(symbol,ID_client)
         prix = prix_tmp["price"]
-        breakpoint()
-        delta = abs(float(ecart_bet_dic[0][1])-float(prix))
+        delta = float("inf")
         prix_proche_ID=0
         keys = ecart_bet_dic.keys()
         for key in keys:
@@ -101,7 +97,6 @@ class Basics():
                         self.sql.new_log_debug("Ordres V2",str(inst),symbol)
                         print("problème dans calcul benefice")
                         print(str(inst))
-                        breakpoint()
                     #############################################################################
                     #                                                                           #
                     #               Ajouter ici la nouvelle fonction pour le calcul de benef    #
@@ -123,7 +118,7 @@ class Basics():
                         self.tele.send_message(str(ordre))
                     self.sql.new_log_debug("verification_2_ordres_V2","un ordre FILLED et un NEW : "+str(ordres_DB),symbol)
                     self.un_ordre_filled_autre_new(ordres_DB,symbol,ID_client)
-                    self.sheet.update_all_info(symbol)
+                    self.sheet.update_all_info(symbol,ID_client)
                     # un ordre ferme et un NEW
                 elif len(ordres_partial) == 1:
                     self.tele.send_message("nouvel ordre avec un partial FILLED")
@@ -382,20 +377,18 @@ class Basics():
           - niveau 4 ouvert depuis plus de 30 min -> remplacé par un ordre de niveau 3
           - niveau 3 ouvert depuis plus de 1 h    -> remplacé par un ordre de niveau 1
           - niveau 2 ouvert depuis plus de 2 h    -> simplement ré-étiqueté niveau 1 en base
-        Attention : timedelta.seconds ignore les jours (un ordre ouvert depuis
-        1 jour et 10 min est vu comme ouvert depuis 10 min).
         """
         niveaux = self.sql.get_time_since_open(symbol,ID_client)
         keys = niveaux.keys()
         for key in keys:
             #Delais d attente de 30 min pour un ordre niveau 4
-            if int(niveaux[key]["niveau"]) == 4 and niveaux[key]["time"].seconds > 1800:
+            if int(niveaux[key]["niveau"]) == 4 and niveaux[key]["time"].total_seconds() > 1800:
                 self.bin.baisser_niveau_ordre(key,ID_client)
             # Delas d attente de 1 heures pour un ordre de niveau 3
-            if int(niveaux[key]["niveau"]) == 3 and niveaux[key]["time"].seconds > 3600:
+            if int(niveaux[key]["niveau"]) == 3 and niveaux[key]["time"].total_seconds() > 3600:
                 self.bin.baisser_niveau_ordre(key,ID_client)
             # Delas d attente de 2 heures pour un ordre de niveau 2
-            if int(niveaux[key]["niveau"]) == 2 and niveaux[key]["time"].seconds > 7200:
+            if int(niveaux[key]["niveau"]) == 2 and niveaux[key]["time"].total_seconds() > 7200:
                 self.sql.baisser_niveau_ordre_SQL(key,1)
 
 ###########################################################################

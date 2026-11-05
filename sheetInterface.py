@@ -39,24 +39,18 @@ class sheetAcces():
         reste_2_sheet = [[reste["devise1"],reste["devise2"]]]
         wsheet.update('I3', reste_2_sheet)
 
-    def update_last_filled_ID(self,symbol):
-        """Ecrit l'ID du dernier palier exécuté en H2.
-
-        Attention : appelle get_last_filled() sans ID_client -> TypeError.
-        """
+    def update_last_filled_ID(self,symbol,ID_client):
+        """Ecrit l'ID du dernier palier exécuté en H2."""
         wsheet = self.sheet.worksheet(symbol)
-        last_filled = self.sql.get_last_filled(symbol)
+        last_filled = self.sql.get_last_filled(symbol,ID_client)
         ID=[[last_filled["ID_ecart"]]]
         wsheet.update('H2', ID)
     
-    def update_all_info(self,symbol):
-        """Met à jour la grille, les restes et le dernier palier exécuté.
-
-        Attention : échoue actuellement à la dernière étape (voir update_last_filled_ID).
-        """
+    def update_all_info(self,symbol,ID_client):
+        """Met à jour la grille, les restes et le dernier palier exécuté."""
         self.update_values(symbol)
         self.update_reste(symbol)
-        self.update_last_filled_ID(symbol)
+        self.update_last_filled_ID(symbol,ID_client)
 
 
 
@@ -64,7 +58,7 @@ class sheetAcces():
 def main():    
     """Test manuel du module."""
     sheet = sheetAcces()
-    sheet.update_all_info("DOGEBTC")
+    sheet.update_all_info("DOGEBTC", 1)
 
     
 

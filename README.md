@@ -1,6 +1,6 @@
 # Krypto
 #####################################
-Python trader BOT hosted by Docker
+Python trader BOT for Binance
 
 #####################################
 

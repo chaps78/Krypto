@@ -262,7 +262,6 @@ def main():
         python3 KPI.py day   relevé + rapport Telegram pour toutes les stratégies actives
         python3 KPI.py jeff  rapport du compte de Jeff uniquement
         python3 KPI.py       menu : gain mensuel ou statistiques par palier
-    Attention : "day" affiche aussi le menu ensuite (if/if/else).
     """
     DEVISE="PEPEEUR_1"
     kpi = Kpi()
@@ -281,7 +280,7 @@ def main():
                 if symbol == "BTCEUR_JF_2":
                     kpi.new_dashboard(symbol,6)
 
-    if a == "jeff":
+    elif a == "jeff":
         symbols = kpi.sql.get_symbols_actif()
         for ID_client in symbols:
             for symbol in symbols[ID_client]:

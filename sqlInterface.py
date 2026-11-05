@@ -97,15 +97,19 @@ class sqlAcces():
     def new_log_error(self,emplacement,message,symbol):
         """Enregistre une erreur dans Log et l'envoie sur Telegram.
 
-        Attention : s'appelle lui-même en cas d'échec (risque de récursion infinie).
+        Un échec de l'écriture ou de l'envoi est seulement affiché (pas de nouvel
+        appel à new_log_error, qui pourrait boucler).
         """
         try:
             self.cur.execute("INSERT INTO Log VALUES(?,?,?,?,?)",
                              (datetime.now(timezone.utc),str(emplacement),str(message),"ERREUR",symbol))
+            self.con.commit()
+        except Exception as inst:
+            print("new_log_error : écriture Log impossible : "+str(inst))
+        try:
             self.tele.send_message("log erreur : "+str(message))
         except Exception as inst:
-            self.new_log_error("new_log_error_SQL",str(inst),symbol)
-        self.con.commit()
+            print("new_log_error : envoi Telegram impossible : "+str(inst))
 
     def new_log_debug(self,emplacement,message,symbol):
         """Enregistre un message DEBUG dans Log si Config.debug_log vaut 1."""
