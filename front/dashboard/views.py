@@ -162,7 +162,7 @@ def paliers_quantite(ordre):
 
 @login_required
 def grille(request):
-    """Tableau et graphique ecart_bet d'une stratégie : prix, quantité, UP et ajout.
+    """Tableau et graphique ecart_bet d'une stratégie : prix, quantité et valeur par palier.
 
     Seules les stratégies de settings.KRYPTO_GRILLE_SYMBOLS sont proposées
     (PEPEEUR_N91 par défaut, modifiable dans .env). Pour chaque ordre ouvert,
@@ -186,7 +186,6 @@ def grille(request):
             p["prix_txt"] = nombre(p["prix"])
             p["bet_txt"] = nombre(round(p["bet"]))
             p["valeur_txt"] = montant(p["prix"] * p["bet"])
-            p["ajout_txt"] = nombre(round(p["ajout"])) if p["ajout"] is not None else ""
             p["prix_de"] = p["quantite_de"] = p["ordre"] = None
             p["suite"] = False
         for o in ouverts:
@@ -209,8 +208,8 @@ def grille(request):
         contexte["nb_ouverts"] = len(ouverts)
         contexte["graphe"] = {
             "devise1": strat["devise1"], "devise2": strat["devise2"],
-            "paliers": [{"id": p["id"], "prix": p["prix"], "bet": p["bet"], "ajout": p["ajout"],
-                         "up": p["up"], "prix_de": p["prix_de"], "quantite_de": p["quantite_de"]}
+            "paliers": [{"id": p["id"], "prix": p["prix"] or 0, "bet": p["bet"] or 0,
+                         "prix_de": p["prix_de"], "quantite_de": p["quantite_de"]}
                         for p in paliers],
             "ordres": [{"sens": o["sens"], "id_ecart": o["id_ecart"], "niveau": o["niveau"],
                         "prix": o["limite"], "montant": o["montant"]} for o in ouverts],

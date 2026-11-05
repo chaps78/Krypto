@@ -33,7 +33,9 @@
       <button type="button" data-zoom="tout">Toute la grille</button>
     </div>
   </div>
-  <div id="graphe" class="graphe" aria-label="Graphique de la quantité par palier ; le détail est dans le tableau ci-dessous"></div>
+  <div id="graphe" class="graphe" aria-label="Graphique de la quantité par palier ; le détail est dans le tableau ci-dessous">
+    <noscript><p class="alerte">Le graphique nécessite JavaScript, désactivé dans ce navigateur.</p></noscript>
+  </div>
   <div id="bulle" class="bulle" hidden></div>
 </section>
 
@@ -47,7 +49,7 @@
     <thead>
       <tr>
         <th class="num">Palier</th><th class="num">Prix</th><th class="num">Quantité (bet)</th>
-        <th class="num">Valeur</th><th class="num">UP</th><th class="num">Ajout</th><th>Ordre ouvert</th>
+        <th class="num">Valeur</th><th>Ordre ouvert</th>
       </tr>
     </thead>
     <tbody>
@@ -57,8 +59,6 @@
         <td class="num prix{% if p.prix_de %} p-{{ p.prix_de }}{% endif %}">{{ p.prix_txt }} {{ strat.devise2 }}</td>
         <td class="num">{{ p.bet_txt }} {{ strat.devise1 }}</td>
         <td class="num">{{ p.valeur_txt }} {{ strat.devise2 }}</td>
-        <td class="num">{% if p.up %}{{ p.up }}{% else %}<span class="muted">0</span>{% endif %}</td>
-        <td class="num">{{ p.ajout_txt }}</td>
         <td>
           {% if p.ordre %}<span class="{{ p.ordre.sens }}">{% if p.ordre.sens == "BUY" %}Achat{% else %}Vente{% endif %}</span>
             {{ p.ordre.montant_txt }} {{ strat.devise1 }} à {{ p.ordre.prix_txt }}
@@ -172,8 +172,6 @@
       `Quantité : ${entierTxt(p.bet)} ${D.devise1}`,
       `Valeur : ${(p.prix * p.bet).toLocaleString("fr-FR", {minimumFractionDigits: 2, maximumFractionDigits: 2})} ${D.devise2}`,
     ];
-    if (p.ajout) lignes.push(`Ajout : ${entierTxt(p.ajout)}`);
-    if (p.up) lignes.push(`UP : ${p.up}`);
     if (p.quantite_de) lignes.push(`Fournit la quantité de l'${sensTxt(p.quantite_de)} ouvert${p.quantite_de === "SELL" ? "e" : ""}`);
     if (p.prix_de) lignes.push(`Prix de l'${sensTxt(p.prix_de)} ouvert${p.prix_de === "SELL" ? "e" : ""}`);
     bulle.innerHTML = lignes.join("<br>");
@@ -186,12 +184,18 @@
   document.querySelectorAll(".zoom button").forEach(b => b.addEventListener("click", () => {
     plage = b.dataset.zoom;
     document.querySelectorAll(".zoom button").forEach(x => x.classList.toggle("actif", x === b));
-    dessiner();
+    dessinerSur();
   }));
   if (!D.ordres.length) document.querySelector(".zoom").hidden = true;
   let attente;
-  window.addEventListener("resize", () => { clearTimeout(attente); attente = setTimeout(dessiner, 150); });
-  dessiner();
+  window.addEventListener("resize", () => { clearTimeout(attente); attente = setTimeout(dessinerSur, 150); });
+  dessinerSur();
+
+  // En cas d'erreur, l'afficher dans la page plutôt que laisser une zone vide
+  function dessinerSur() {
+    try { dessiner(); }
+    catch (e) { zone.innerHTML = '<p class="alerte">Graphique impossible à afficher : ' + e + '</p>'; }
+  }
 })();
 </script>
 {% elif not erreur %}
