@@ -14,7 +14,7 @@ def etat_bot(request):
         return {}
     try:
         bot = api_client.get("/bot")
-    except api_client.ApiError:
+    except Exception:  # la pastille ne doit jamais faire tomber une page
         return {"bot_etat": "inconnu", "bot_info": "API injoignable : état du bot inconnu"}
     age = bot.get("age_secondes")
     if bot.get("en_marche"):

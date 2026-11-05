@@ -11,7 +11,7 @@ Wants=network-online.target
 User=chaps
 WorkingDirectory=/home/chaps/krypto_front/Krypto/front
 EnvironmentFile=-/home/chaps/krypto_front/Krypto/front/.env
-ExecStart=/home/chaps/krypto_front/Krypto/front/venv/bin/gunicorn krypto_front.wsgi:application --bind 100.90.255.68:8010 --workers 2
+ExecStart=/home/chaps/krypto_front/Krypto/front/venv/bin/gunicorn krypto_front.wsgi:application --bind 100.90.255.68:8010 --workers 2 --timeout 60
 Restart=always
 RestartSec=5
 

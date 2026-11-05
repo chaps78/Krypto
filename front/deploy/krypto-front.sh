@@ -46,8 +46,9 @@ while true; do
         6) sudo systemctl stop "$SERVICE" && echo "Arrêté."; pause ;;
         7) sudo cp "$UNIT_SRC" "$UNIT_DST" \
              && sudo systemctl daemon-reload \
-             && sudo systemctl enable --now "$SERVICE" \
-             && echo "Service installé et démarré."; pause ;;
+             && sudo systemctl enable "$SERVICE" \
+             && sudo systemctl restart "$SERVICE" \
+             && echo "Service installé et (re)démarré."; pause ;;
         8) sudo systemctl disable "$SERVICE" && echo "Ne démarrera plus au boot (toujours actif jusqu'à l'arrêt)."; pause ;;
         q|Q) exit 0 ;;
         *) echo "Choix inconnu."; pause ;;

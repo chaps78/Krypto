@@ -28,10 +28,12 @@ import json
 import os
 import sqlite3
 import subprocess
+import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
@@ -50,7 +52,20 @@ def check_token(authorization: str | None = Header(default=None)):
         raise HTTPException(status_code=401, detail="Token invalide")
 
 
-app = FastAPI(title="Krypto API", version="1.0", dependencies=[Depends(check_token)])
+@asynccontextmanager
+async def demarrage(app):
+    """Précharge prix et portefeuilles en arrière-plan dès le démarrage de l'API."""
+    def precharger():
+        try:
+            prix_actuels()
+            en_cache("wallets", calculer_wallets)
+        except Exception as e:
+            print(f"Préchargement des portefeuilles impossible : {e}")
+    threading.Thread(target=precharger, daemon=True).start()
+    yield
+
+
+app = FastAPI(title="Krypto API", version="1.0", dependencies=[Depends(check_token)], lifespan=demarrage)
 
 
 def query(sql, params=()):
@@ -214,29 +229,6 @@ def gains(
     )
 
 
-def prix_binance(paire):
-    """Prix public Binance d'une paire (ex. BTCEUR), sans clé API, ou None."""
-    url = f"https://api.binance.com/api/v3/ticker/price?symbol={paire}"
-    try:
-        with urllib.request.urlopen(url, timeout=5) as resp:
-            return float(json.load(resp)["price"])
-    except (OSError, ValueError, KeyError):
-        return None
-
-
-def taux_conversion(devise, base, cache):
-    """Taux pour convertir devise -> base : paire directe, sinon paire inverse."""
-    if devise == base:
-        return 1.0
-    if (devise, base) not in cache:
-        taux = prix_binance(devise + base)
-        if taux is None:
-            inverse = prix_binance(base + devise)
-            taux = 1 / inverse if inverse else None
-        cache[(devise, base)] = taux
-    return cache[(devise, base)]
-
-
 def decaler_mois(annee, mois, n):
     """Ajoute n mois (négatif pour reculer) à (annee, mois)."""
     i = annee * 12 + (mois - 1) + n
@@ -254,7 +246,7 @@ def gains_mois(
     Même règle que KPI.py : somme de Ordres.benefice des ordres dont date_debut
     est dans le mois, pour toutes les stratégies du client (actives ou non).
     Chaque gain est converti dans la devise de base du client au prix Binance
-    actuel (prix public, sans clé). Mois en cours par défaut.
+    actuel (liste de prix publique partagée, en cache). Mois en cours par défaut.
     Si un taux est introuvable, convertible=false et le total l'ignore.
 
     clients : détail du mois demandé, par client et par stratégie.
@@ -280,7 +272,7 @@ def gains_mois(
     )
     periodes = [decaler_mois(debut[0], debut[1], i) for i in range(nb_mois)]
     par_mois = {f"{a}-{m:02d}": {} for a, m in periodes}
-    cache = {}
+    prix = prix_actuels()
     for l in lignes:
         clients = par_mois.get(l["periode"])
         if clients is None:
@@ -288,7 +280,7 @@ def gains_mois(
         c = clients.setdefault(l["id_client"], {
             "id_client": l["id_client"], "nom": l["nom"], "base": l["base"],
             "total": 0.0, "complet": True, "strategies": []})
-        taux = taux_conversion(l["devise"], l["base"], cache)
+        taux = valeur_en(l["devise"], l["base"], prix)
         converti = l["gain"] * taux if taux is not None else None
         if converti is None:
             c["complet"] = False
@@ -311,24 +303,61 @@ def gains_mois(
 #                    PORTEFEUILLES (clés en lecture seule)                #
 ###########################################################################
 BINANCE = "https://api.binance.com"
-CACHE_DUREE = 60  # secondes : la page KPI se rafraîchit toutes les 60 s
-_cache = {}
+CACHE_DUREE = 60  # secondes avant de rafraîchir (en arrière-plan) prix et portefeuilles
+_cache = {}                     # cle -> (date, valeur)
+_en_cours = set()               # clés en cours de rafraîchissement
+_verrou = threading.Lock()
+
+
+def _rafraichir(cle, fonction):
+    """Recalcule une valeur du cache ; en cas d'échec, l'ancienne valeur est gardée."""
+    try:
+        valeur = fonction()
+        with _verrou:
+            _cache[cle] = (time.time(), valeur)
+    except Exception as e:  # Binance injoignable, clé refusée... : on réessaiera
+        print(f"Cache {cle} : rafraîchissement impossible : {e}")
+    finally:
+        with _verrou:
+            _en_cours.discard(cle)
 
 
 def en_cache(cle, fonction):
-    """Renvoie le résultat de fonction() gardé CACHE_DUREE secondes."""
-    maintenant = time.time()
-    if cle in _cache and maintenant - _cache[cle][0] < CACHE_DUREE:
-        return _cache[cle][1]
-    valeur = fonction()
-    _cache[cle] = (maintenant, valeur)
-    return valeur
+    """Valeur en cache, sans jamais faire attendre si une valeur existe déjà.
+
+    - aucune valeur : calcul immédiat (seul cas où l'appelant attend Binance) ;
+    - valeur de plus de CACHE_DUREE s : elle est renvoyée telle quelle et un
+      rafraîchissement est lancé en arrière-plan pour l'appel suivant.
+    """
+    with _verrou:
+        present = _cache.get(cle)
+        lancer = (present is not None and time.time() - present[0] >= CACHE_DUREE
+                  and cle not in _en_cours)
+        if lancer:
+            _en_cours.add(cle)
+    if present is None:
+        valeur = fonction()
+        with _verrou:
+            _cache[cle] = (time.time(), valeur)
+        return valeur
+    if lancer:
+        threading.Thread(target=_rafraichir, args=(cle, fonction), daemon=True).start()
+    return present[1]
 
 
 def tous_les_prix():
     """Tous les prix Binance en un appel (route publique) : {"BTCEUR": 61234.5, ...}."""
     with urllib.request.urlopen(BINANCE + "/api/v3/ticker/price", timeout=10) as resp:
         return {p["symbol"]: float(p["price"]) for p in json.load(resp)}
+
+
+def prix_actuels():
+    """Liste de prix partagée (cache), ou {} si Binance est injoignable."""
+    try:
+        return en_cache("prix", tous_les_prix)
+    except (OSError, ValueError) as e:
+        print(f"Prix Binance indisponibles : {e}")
+        return {}
 
 
 def valeur_en(actif, cible, prix):
@@ -396,10 +425,9 @@ def calculer_wallets():
     if not cles:
         return {"configure": False, "comptes": [], "total_eur": 0.0, "total_usdt": 0.0, "complet": True}
     noms = {c["ID_client"]: c["nom"] for c in query("SELECT ID_client, nom FROM client")}
-    try:
-        prix = tous_les_prix()
-    except (OSError, ValueError) as e:
-        raise HTTPException(status_code=502, detail=f"Prix Binance indisponibles : {e}")
+    prix = prix_actuels()
+    if not prix:
+        raise HTTPException(status_code=502, detail="Prix Binance indisponibles")
     comptes = []
     for id_client, cle in sorted(cles.items()):
         compte = {"id_client": id_client, "nom": noms.get(id_client, f"client {id_client}"),
@@ -442,8 +470,10 @@ def wallets():
     """Portefeuilles spot des comptes ayant une clé en lecture seule configurée.
 
     Pour chaque compte : actifs (libre, bloqué dans des ordres, total) valorisés
-    en EUR et en USDT au prix Binance actuel, et totaux. Résultat gardé 60 s
-    en cache (Binance limite les appels, partagés avec le bot sur cette IP).
+    en EUR et en USDT au prix Binance actuel, et totaux. Réponse immédiate
+    depuis le cache, rafraîchi en arrière-plan toutes les 60 s au plus
+    (Binance limite les appels, partagés avec le bot sur cette IP) ; "maj"
+    donne l'heure des données. Préchargé au démarrage de l'API.
     configure=false si le fichier de clés est absent ou vide.
     """
     return en_cache("wallets", calculer_wallets)

@@ -1,5 +1,6 @@
 """Pages du front : KPI (gain du mois et ordres ouverts), grille et journal du bot."""
 import calendar
+import logging
 from datetime import datetime, timezone
 
 from django.conf import settings
@@ -7,6 +8,24 @@ from django.contrib.auth.decorators import login_required
 from django.shortcuts import render
 
 from . import api_client
+
+log = logging.getLogger(__name__)
+
+
+def bloc(erreurs, titre, fonction, *args):
+    """Exécute une partie de page ; en cas d'échec, note l'erreur et renvoie None.
+
+    Ainsi un bloc en panne (API lente, réponse inattendue...) affiche un
+    message mais n'empêche jamais le reste de la page de s'afficher.
+    """
+    try:
+        return fonction(*args)
+    except api_client.ApiError as e:
+        erreurs.append(f"{titre} : {e}")
+    except Exception as e:
+        log.exception("Bloc %s en erreur", titre)
+        erreurs.append(f"{titre} : erreur inattendue ({e.__class__.__name__})")
+    return None
 
 
 def parse_date(texte):
@@ -156,25 +175,36 @@ def portefeuilles():
     return w
 
 
+def ordres_ouverts():
+    """Stratégies actives avec leurs ordres ouverts, mis en forme."""
+    strategies = []
+    for strat in api_client.get("/strategies", actif="true"):
+        ordres = api_client.get(f"/strategies/{strat['symbol']}/open-orders")
+        for o in ordres:
+            debut = parse_date(o["date_debut"])
+            o["ouvert_le"] = debut
+            o["ouvert_depuis"] = duree(debut)
+            o["limite_txt"] = nombre(o["limite"])
+            o["montant_txt"] = nombre(o["montant"])
+        strategies.append({**strat, "ordres": ordres})
+    return strategies
+
+
 @login_required
 def kpi(request):
-    """Page KPI : gain du mois, portefeuilles Binance, puis ordres ouverts."""
-    contexte = {"erreur": None, "strategies": [], "gains": None}
-    contexte["wallets"] = portefeuilles()
-    try:
-        contexte["bot"] = etat_bot()
-        contexte["gains"] = gains_du_mois(request)
-        for strat in api_client.get("/strategies", actif="true"):
-            ordres = api_client.get(f"/strategies/{strat['symbol']}/open-orders")
-            for o in ordres:
-                debut = parse_date(o["date_debut"])
-                o["ouvert_le"] = debut
-                o["ouvert_depuis"] = duree(debut)
-                o["limite_txt"] = nombre(o["limite"])
-                o["montant_txt"] = nombre(o["montant"])
-            contexte["strategies"].append({**strat, "ordres": ordres})
-    except api_client.ApiError as e:
-        contexte["erreur"] = str(e)
+    """Page KPI : gain du mois, portefeuilles Binance, puis ordres ouverts.
+
+    Chaque bloc est indépendant : une erreur dans l'un est affichée en haut
+    de page sans empêcher les autres de s'afficher.
+    """
+    erreurs = []
+    contexte = {
+        "bot": bloc(erreurs, "Dernier ordre", etat_bot),
+        "gains": bloc(erreurs, "Gain du mois", gains_du_mois, request),
+        "wallets": bloc(erreurs, "Portefeuille", portefeuilles),
+        "strategies": bloc(erreurs, "Ordres ouverts", ordres_ouverts) or [],
+    }
+    contexte["erreur"] = " · ".join(erreurs) or None
     return render(request, "dashboard/kpi.html", contexte)
 
 

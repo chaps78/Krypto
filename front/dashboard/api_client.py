@@ -1,4 +1,5 @@
 """Client minimal de l'API du bot (lecture seule, via le tunnel SSH)."""
+import http.client
 import json
 import urllib.error
 import urllib.parse
@@ -32,5 +33,13 @@ def get(path, **params):
         except (ValueError, AttributeError):
             detail = None
         raise ApiError(f"L'API a répondu {e.code} sur {path}" + (f" : {detail}" if isinstance(detail, str) else "")) from e
-    except (urllib.error.URLError, TimeoutError, OSError) as e:
+    except TimeoutError as e:
+        raise ApiError(f"L'API n'a pas répondu en 10 s sur {path} : réessayez dans un instant") from e
+    except urllib.error.URLError as e:
+        if isinstance(e.reason, TimeoutError):
+            raise ApiError(f"L'API n'a pas répondu en 10 s sur {path} : réessayez dans un instant") from e
+        raise ApiError(f"API injoignable ({settings.KRYPTO_API_URL}) : le tunnel SSH est-il actif ?") from e
+    except (http.client.HTTPException, ValueError) as e:
+        raise ApiError(f"Réponse incomplète ou illisible de l'API sur {path}") from e
+    except OSError as e:
         raise ApiError(f"API injoignable ({settings.KRYPTO_API_URL}) : le tunnel SSH est-il actif ?") from e
