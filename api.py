@@ -38,6 +38,8 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 
+import reinjection
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.environ.get("KRYPTO_DB", os.path.join(BASE_DIR, "DB.db"))
 API_TOKEN = os.environ.get("KRYPTO_API_TOKEN")
@@ -172,6 +174,18 @@ def grid(symbol: str):
            WHERE e.symbol = ? ORDER BY e.ID""",
         (symbol,),
     )
+
+
+@app.get("/reinjection")
+def bareme_reinjection():
+    """Barèmes des parts "local" et "up" : taux (%) selon le bénéfice d'une vente.
+
+    Chaque tranche : {"jusqua": seuil exclu (None = au-delà du dernier), "taux": %}.
+    """
+    def tranches(bareme, defaut):
+        return [{"jusqua": s, "taux": t} for s, t in bareme] + [{"jusqua": None, "taux": defaut}]
+    return {"local": tranches(reinjection.BAREME_LOCAL, reinjection.DEFAUT_LOCAL),
+            "up": tranches(reinjection.BAREME_UP, reinjection.DEFAUT_UP)}
 
 
 ORDER_SQL = """

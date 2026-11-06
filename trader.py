@@ -9,6 +9,8 @@ from bininterface import binAcces
 from sqlInterface import sqlAcces
 from telegramInterface import teleAcces
 from sheetInterface import sheetAcces
+from messages import sur, quantite, montant
+import reinjection
 
 
 
@@ -72,6 +74,35 @@ class Basics():
             self.bin.new_vente(symbol,ID_ecart_last_close,ID_client)
             self.bin.new_achat(symbol,ID_ecart_last_close,ID_client)
 
+    def log_debug_sans_risque(self,emplacement,message,symbol):
+        """new_log_debug() qui ne lève jamais d'exception (message de mise au point)."""
+        try:
+            self.sql.new_log_debug(emplacement,message,symbol)
+        except Exception as inst:
+            print("log debug impossible : "+str(inst))
+
+    def unite(self,symbol):
+        """Renvoie (devise achetée, devise de cotation) d'une stratégie, ex. ("PEPE", "EUR")."""
+        devises = self.sql.get_devises_from_symbol_real(symbol)
+        return devises["devise1"], devises["devise2"]
+
+    def texte_partiel(self,symbol,ordre):
+        """Message : un ordre exécuté, l'autre seulement en partie."""
+        actif, _ = self.unite(symbol)
+        sens = "achat" if ordre["sens"] == "BUY" else "vente"
+        return ("⏳ "+symbol+" · un ordre exécuté, l'autre seulement en partie :\n"
+                +sens+" palier "+str(ordre["ID_ecart"])+", "
+                +quantite(ordre["montant_execute"])+" / "+quantite(ordre["montant"])+" "+actif+" exécutés.\n"
+                "La partie exécutée est soldée au marché, puis les ordres sont replacés.")
+
+    def texte_reinject_up(self,symbol,ID_client,total,taux_convert,ID,entier):
+        """Message : réinvestissement de la part "up" par un achat au marché."""
+        actif, cotation = self.unite(symbol)
+        qtt = int(total/taux_convert) if entier else total/taux_convert
+        return ("📈 "+symbol+" · réinvestissement de "+montant(total)+" "+cotation+"\n"
+                "Achat au marché de "+quantite(qtt)+" "+actif+" à ≈ "+quantite(taux_convert)+" "+cotation+","
+                " ajoutés au palier "+str(ID)+" · client "+str(ID_client))
+
     def verification_2_ordres_V2(self,symbol,ID_client):
         """Coeur de la boucle : détecte les exécutions et replace les ordres.
 
@@ -126,14 +157,15 @@ class Basics():
                     self.sheet.update_all_info(symbol,ID_client)
                     # un ordre ferme et un NEW
                 elif len(ordres_partial) == 1:
-                    self.tele.send_message("nouvel ordre avec un partial FILLED")
+                    self.tele.send_message(sur(lambda: self.texte_partiel(symbol,ordres_partial[0]),
+                                               "nouvel ordre avec un partial FILLED "+symbol))
                     self.sql.new_log_debug("verification_2_ordres_V2","un ordre FILLED et un PARTIALY : "+str(ordres_DB),symbol)
                     self.un_ordre_filled_autre_partial(ordres_partial,symbol,ID_client)
                     # un ordre ferme et l autre partialy FILLED
             elif len(ordres_DB) == 0 :
-                self.tele.send_message("deux ordres clos en meme temps "+symbol)
+                self.tele.send_message("🔄 "+symbol+" · achat ET vente exécutés en même temps"
+                                       " (forte variation du prix).\nLes deux ordres sont replacés.")
                 self.sql.new_log_debug("verification_2_ordres_V2","deux ordres FILLED : "+str(ordres_DB),symbol)
-                self.tele.send_message("sql OK")
                 self.deux_ordres_filled(symbol,ID_client)
                 #Deux ordres ont ete fermes
             elif len(ordres_DB) > 2 :
@@ -143,44 +175,13 @@ class Basics():
             return inst
 
     def get_taux_reinjection(self, benef):
-        """Taux (%) de la part "local" en fonction du bénéfice à redistribuer.
-
-        1000 % sous 5, 500 % sous 10, 300 % sous 15, 200 % sous 25, 150 % sous 40,
-        100 % sous 60, 50 % au-delà.
-        Attention : seuils en valeur absolue, quelle que soit la devise de cotation.
-        """
-        paliers = [
-            (5, 1000),
-            (10, 500),
-            (15, 300),
-            (25, 200),
-            (40, 150),
-            (60, 100),
-        ]
-        for seuil, taux in paliers:
-            if benef < seuil:
-                return taux
-        return 50
+        """Taux (%) de la part "local" en fonction du bénéfice : barème de reinjection.py."""
+        return reinjection.taux_local(benef)
 
     def get_taux_up(self, benef):
-        """Taux (%) de la part "up" en fonction du bénéfice à redistribuer.
+        """Taux (%) de la part "up" en fonction du bénéfice : barème de reinjection.py."""
+        return reinjection.taux_up(benef)
 
-        100 % sous 10, 50 % sous 15, 30 % sous 25, 20 % sous 40, 15 % sous 60, 10 % au-delà.
-        Attention : seuils en valeur absolue, quelle que soit la devise de cotation.
-        """
-        paliers = [
-            (10, 100),
-            (15, 50),
-            (25, 30),
-            (40, 20),
-            (60, 15),
-        ]
-        for seuil, taux in paliers:
-            if benef < seuil:
-                return taux
-        return 10
-    
-        
     def reinject_benef(self,symbol,ID_client,last_filled):
         """Redistribue le bénéfice en attente (Devises.benef_TMP) d'une stratégie.
 
@@ -204,9 +205,10 @@ class Basics():
                 debug_flag = 0
                 repart = self.sql.get_reinject_repartition(symbol)
                 debug_flag = 1
-                self.tele.send_message("Je passe dans le reinject function")
+                self.log_debug_sans_risque("reinject_benef","répartition du bénéfice en attente : "+str(benef_tmp),symbol)
                 if type(repart["local"])==str:
-                    self.tele.send_message("Je passe dans le cas du STR a la place du pourcent repart : "+str(last_filled["benefice"]))
+                    self.log_debug_sans_risque("reinject_benef","bénéfice "+str(last_filled["benefice"])
+                                               +" versé au up_TMP de "+repart["local"],symbol)
                     self.sql.add_2_up_tmp(repart["local"],last_filled["benefice"])
                 else:
                     factu = benef_tmp*repart["factu_prct"]/100
@@ -288,7 +290,8 @@ class Basics():
                 ID+=1
 
             dev_entier = self.sql.get_devises_from_symbol(symbol,ID_client)["dev_entiere"]
-            self.tele.send_message("Reinject UP "+symbol +str(total)+"\n ID "+str(ID_client))
+            self.tele.send_message(sur(lambda: self.texte_reinject_up(symbol,ID_client,total,taux_convert,ID,int(dev_entier)==1),
+                                       "Reinject UP "+symbol+" "+str(total)+"\n ID "+str(ID_client)))
             if int(dev_entier) == 1:
                 self.bin.new_market_order(symbol,int(total/taux_convert),"BUY",ID_client)
                 self.sql.add_to_ecart(symbol,ID,int(total/taux_convert))
@@ -438,10 +441,17 @@ def verrouiller():
 ###########################################################################
 #                                 MAIN                                    #
 ###########################################################################
+def texte_demarrage(devises):
+    """Message de démarrage : liste des stratégies actives ({ID_client: [symbol, ...]})."""
+    toutes = [s for liste in devises.values() for s in liste]
+    pluriel = "s" if len(toutes) > 1 else ""
+    return ("▶️ Bot démarré · "+str(len(toutes))+" stratégie"+pluriel+" active"+pluriel
+            +(" : "+", ".join(toutes) if toutes else ""))
+
 def main():
     """Boucle principale du bot.
 
-    Envoie "Bonjour 1" sur Telegram, puis jusqu'à un arrêt demandé (SIGTERM,
+    Annonce le démarrage sur Telegram (stratégies actives), puis jusqu'à un arrêt demandé (SIGTERM,
     par exemple systemctl stop, ou Ctrl+C) : pour chaque client et chaque
     stratégie active (liste lue une seule fois au démarrage), vérifie les ordres
     et les niveaux, avec une pause de 4 s entre deux stratégies.
@@ -454,7 +464,7 @@ def main():
     basic = Basics()
     DEVISES=basic.sql.get_symbols_actif()
 
-    basic.tele.send_message("Bonjour 1")
+    basic.tele.send_message(sur(lambda: texte_demarrage(DEVISES),"Bonjour 1"))
     # Pour demarrer une nouvelle paire, decommenter et adapter :
     #basic.initialise("SYMBOLE_SUFFIXE", ID_client)
 

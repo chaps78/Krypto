@@ -303,7 +303,30 @@ def grille(request):
         }
     except api_client.ApiError as e:
         contexte["erreur"] = str(e)
+    erreurs = []
+    contexte["reinjection"] = bloc(erreurs, "Barème de réinjection", bareme_reinjection)
+    contexte["erreur_reinjection"] = erreurs[0] if erreurs else None
     return render(request, "dashboard/grille.html", contexte)
+
+
+def taux_pour(tranches, benef):
+    """Taux d'un barème de l'API pour un bénéfice donné."""
+    for t in tranches:
+        if t["jusqua"] is None or benef < t["jusqua"]:
+            return t["taux"]
+    return None
+
+
+def bareme_reinjection():
+    """Barèmes local et UP fusionnés en tranches de gain : [{"de", "a", "local", "up"}]."""
+    b = api_client.get("/reinjection")
+    seuils = sorted({t["jusqua"] for t in b["local"] + b["up"] if t["jusqua"] is not None})
+    bornes = [None] + seuils + [None]
+    lignes = []
+    for de, a in zip(bornes, bornes[1:]):
+        point = de if de is not None else a - 1  # un gain représentatif de la tranche
+        lignes.append({"de": de, "a": a, "local": taux_pour(b["local"], point), "up": taux_pour(b["up"], point)})
+    return lignes
 
 
 @login_required

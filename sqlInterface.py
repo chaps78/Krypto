@@ -4,6 +4,7 @@ import sys
 import os
 
 from telegramInterface import teleAcces
+from messages import sur, quantite
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -19,7 +20,7 @@ class sqlAcces():
     def new_order(self,ID,symbol,montant,limite,status,date_debut,date_fin,montant_exec,type,sens,ID_ecart,flag_ajout,ID_client,niveau=1,benefice=0.0):
         """Enregistre un nouvel ordre dans la table Ordres.
 
-        flag_ajout contient la quantité UP incluse dans l'ordre (0 sinon).
+        flag_ajout : toujours 0 (ancien mécanisme UP, retiré ; colonne conservée).
         """
         try:
             self.cur.execute("INSERT INTO Ordres VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -294,18 +295,6 @@ class sqlAcces():
                              (qtt+epargne,symbol))
         except sqlite3.IntegrityError as inst:
             self.new_log_error("ajout_benef_paire_devise",str(inst),symbol)
-            return inst
-        retour = self.con.commit()
-        return retour
-    
-    def set_up_bet(self,symbol,ID,qtt):
-        """Fixe la quantité UP d'un palier (ajoutée au prochain achat sur ce palier)."""
-        try:
-            self.cur.execute("UPDATE ecart_bet SET UP=? WHERE symbol=? AND ID=?",
-                             (qtt,symbol,ID))
-        except sqlite3.IntegrityError as inst:
-            ordre = self.get_order_info_by_ID(ID)
-            self.new_log_error("ajout_up_bet",str(inst),ordre["symbol"])
             return inst
         retour = self.con.commit()
         return retour
@@ -599,10 +588,7 @@ class sqlAcces():
                 B1=ecart_bet[ID_ecart_filled-1][1]
                 B2=ecart_bet[ID_ecart_filled-2][1]
                 if int(B1+B2) != int(last_filled["montant"]):
-                    self.tele.send_message("probleme de montant:")
-                    self.tele.send_message("B1: "+str(B1))
-                    self.tele.send_message("B2: "+str(B2))
-                    self.tele.send_message("montant: "+str(last_filled["montant"]))
+                    self.alerte_montant(symbol,last_filled,[ID_ecart_filled-2,ID_ecart_filled-1])
                 Benef1 = B1*(ecart_bet[ID_ecart_filled+1][0]-ecart_bet[ID_ecart_filled][0])
                 Benef2 = B2*(ecart_bet[ID_ecart_filled+1][0]-ecart_bet[ID_ecart_filled-1][0])
                 self.update_order_benef(last_filled["ID"],str(Benef1+Benef2-fee_courant),symbol)
@@ -612,11 +598,7 @@ class sqlAcces():
                 B2=ecart_bet[ID_ecart_filled-2][1]
                 B3=ecart_bet[ID_ecart_filled-3][1]
                 if int(B1+B2+B3) != int(last_filled["montant"]):
-                    self.tele.send_message("probleme de montant:")
-                    self.tele.send_message("B1: "+str(B1))
-                    self.tele.send_message("B2: "+str(B2))
-                    self.tele.send_message("B3: "+str(B3))
-                    self.tele.send_message("montant: "+str(last_filled["montant"]))
+                    self.alerte_montant(symbol,last_filled,[ID_ecart_filled-3,ID_ecart_filled-2,ID_ecart_filled-1])
                 Benef1 = B1*(ecart_bet[ID_ecart_filled+1][0]-ecart_bet[ID_ecart_filled][0])
                 Benef2 = B2*(ecart_bet[ID_ecart_filled+1][0]-ecart_bet[ID_ecart_filled-1][0])
                 Benef3 = B3*(ecart_bet[ID_ecart_filled+1][0]-ecart_bet[ID_ecart_filled-2][0])
@@ -635,10 +617,7 @@ class sqlAcces():
                 B1=ecart_bet[ID_ecart_filled][1]        #B1 utilise uniquement pour la verification
                 B2=ecart_bet[ID_ecart_filled+1][1]
                 if int(B1+B2) != int(last_filled["montant"]):
-                    self.tele.send_message("probleme de montant:")
-                    self.tele.send_message("B1: "+str(B1))
-                    self.tele.send_message("B2: "+str(B2))
-                    self.tele.send_message("montant: "+str(last_filled["montant"]))
+                    self.alerte_montant(symbol,last_filled,[ID_ecart_filled,ID_ecart_filled+1])
                 Benef2 = B2 * (ecart_bet[ID_ecart_filled+1][0]-ecart_bet[ID_ecart_filled][0])
                 self.update_order_benef(last_filled["ID"],str(Benef2-fee_courant),symbol)
             
@@ -648,15 +627,28 @@ class sqlAcces():
                 B2=ecart_bet[ID_ecart_filled+1][1]
                 B3=ecart_bet[ID_ecart_filled+2][1]
                 if int(B1+B2+B3) != int(last_filled["montant"]):
-                    self.tele.send_message("probleme de montant:")
-                    self.tele.send_message("B1: "+str(B1))
-                    self.tele.send_message("B2: "+str(B2))
-                    self.tele.send_message("B3: "+str(B3))
-                    self.tele.send_message("montant: "+str(last_filled["montant"]))
+                    self.alerte_montant(symbol,last_filled,[ID_ecart_filled,ID_ecart_filled+1,ID_ecart_filled+2])
                 Benef2 = B2 * (ecart_bet[ID_ecart_filled+1][0]-ecart_bet[ID_ecart_filled][0])
                 Benef3 = B3 * (ecart_bet[ID_ecart_filled+2][0]-ecart_bet[ID_ecart_filled][0])
                 self.update_order_benef(last_filled["ID"],str(Benef2+Benef3-fee_courant),symbol)
     
+    def alerte_montant(self,symbol,last_filled,paliers):
+        """Alerte Telegram (un seul message) : la quantité de l'ordre exécuté ne
+        correspond pas à la somme actuelle des bets des paliers qu'il couvre."""
+        def texte():
+            ecart_bet = self.get_ecart_bet_from_symbol(symbol)
+            actif = self.get_devises_from_symbol_real(symbol)["devise1"]
+            attendu = sum(ecart_bet[p][1] for p in paliers)
+            sens = "Vente" if last_filled["sens"] == "SELL" else "Achat"
+            return ("⚠️ "+symbol+" · quantité inattendue\n"
+                    +sens+" niv. "+str(last_filled["niveau"])+" au palier "+str(last_filled["ID_ecart"])+" : "
+                    +quantite(last_filled["montant"])+" "+actif+" dans l'ordre, mais les paliers "
+                    +" + ".join(str(p) for p in paliers)+" totalisent aujourd'hui "
+                    +quantite(attendu)+" "+actif+".\n"
+                    "Le bénéfice enregistré pour cet ordre peut être faux.")
+        self.tele.send_message(sur(texte,"probleme de montant : "+symbol+" ordre "+str(last_filled["ID"])
+                                   +" montant "+str(last_filled["montant"])))
+
     def update_order_benef(self,ID,benef,symbol):
         """Enregistre le bénéfice d'un ordre et l'ajoute à benef_all et benef_TMP."""
         benef_round= str(round(float(benef),8))
@@ -942,31 +934,6 @@ class sqlAcces():
             return inst
         self.con.commit()
 
-    def get_ID_to_UP(self,symbol,ID_courant,ID_client):
-        """Renvoie le palier qui doit recevoir une quantité UP.
-
-        Premier palier au-dessus d'ID_courant dont 0,9 x gain théorique / prix est
-        inférieur à Devises.local + Devises.up. None si aucun.
-        """
-        devises = self.get_devises_from_symbol(symbol,ID_client)
-        local = devises["local"]
-        UP = devises["up"]
-        ec_b = self.get_ecart_bet_from_symbol(symbol)
-        for ID in range(len(ec_b)-ID_courant-1):
-            benef = self.get_calcul_benef_with_ID(symbol,ID+ID_courant+1)
-            if 0.9*benef/ec_b[ID+ID_courant+1][0] < (local + UP):
-                return ID+ID_courant+1
-            
-    def get_calcul_benef_with_ID(self,symbol,ID):
-        """Variante de calcul_benef_with_ID().
-
-        Frais comptés 2 fois au prix du palier ID (au lieu d'achat + vente).
-        """
-        FEE = 0.00075
-        ec_b = self.get_ecart_bet_from_symbol(symbol)
-        delta = ec_b[ID+1][0]-ec_b[ID][0]
-        benef = delta*ec_b[ID][1]-2*FEE*ec_b[ID][1]*ec_b[ID][0]
-        return benef
 
             #self
 

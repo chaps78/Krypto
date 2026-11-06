@@ -40,9 +40,30 @@
 </section>
 
 <section class="carte">
+  <h2>Réinjection selon le gain de la vente</h2>
+  {% if reinjection %}
+  <table class="grille bareme">
+    <thead><tr><th>Gain de la vente ({{ strat.devise2 }})</th><th class="num">Local</th><th class="num">UP</th></tr></thead>
+    <tbody>
+      {% for t in reinjection %}
+      <tr>
+        <td>{% if t.de is None %}moins de {{ t.a }}{% elif t.a is None %}{{ t.de }} et plus{% else %}de {{ t.de }} à moins de {{ t.a }}{% endif %}</td>
+        <td class="num">{{ t.local }} %</td><td class="num">{{ t.up }} %</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="muted">Pourcentage du gain de la vente réinjecté : <strong>local</strong> ajouté au palier juste sous celui
+    exécuté, <strong>UP</strong> mis de côté puis acheté au marché (dès 6 USDT) pour un palier au-dessus.
+    Seuils en valeur absolue, quelle que soit la devise.</p>
+  {% else %}
+  <p class="alerte">{{ erreur_reinjection|default:"Barème de réinjection indisponible." }}</p>
+  {% endif %}
+</section>
+
+<section class="carte">
   <p class="muted" style="margin-top:0">
-    <strong>Gain achat → vente</strong> : la quantité du palier achetée à son prix puis revendue au prix du palier
-    du dessus, moins 0,075 % de frais sur l'achat et sur la vente. <strong>Valeur cumulée</strong> : somme des valeurs
+    <strong>Valeur cumulée</strong> : somme des valeurs
     du palier et de tous ceux en dessous.<br>
     Pour chaque ordre ouvert, la case <strong>Prix</strong> de son palier est surlignée, ainsi que les paliers qui
     fournissent sa <strong>quantité</strong> : pour une vente, le palier du dessous (2 ou 3 paliers aux niveaux 3-4) ;

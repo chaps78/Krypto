@@ -32,24 +32,15 @@ class binAcces():
         """Passe un ordre limite GTC sur Binance et l'enregistre en base.
 
         Avant l'envoi :
-          - achat de niveau 1 ou 2 : ajoute la quantité UP du palier (ecart_bet.UP) ;
           - vente XRPEUR de niveau 1 ou 2 : ajoute Devises.local si le gain est trop faible ;
           - arrondit quantité et prix selon la paire (règles codées en dur).
-        La quantité UP est enregistrée dans Ordres.flag_ajout (le paramètre flag_ajout est ignoré).
+        Le paramètre flag_ajout est ignoré ; Ordres.flag_ajout est toujours enregistré à 0
+        (ancien mécanisme UP, retiré).
 
         Returns:
             orderId Binance, ou "" en cas d'erreur (loguée).
         """
         try:
-            UP = 0
-            if sens == self.client.SIDE_BUY and (niveau==1 or niveau == 2):
-                ecart_bet = self.sql.get_ecart_bet_from_symbol_and_ID(symbol,ID_ecart)
-                UP = int(ecart_bet[4])
-                if int(UP) >0:
-                    montant += UP
-                    self.sql.tele.send_message("Un ordre ouvert avec un ajout pour le UP d'un montant de : "+str(UP))
-
-
             infos_devise = self.sql.get_devises_from_symbol(symbol,ID_client)
             ajout_qtt = infos_devise["local"]
             benef = self.sql.calcul_benef_with_ID(symbol,ID_ecart,limite,montant)
@@ -91,7 +82,7 @@ class binAcces():
             self.sql.new_log_error("new_limite_order_Binance",str(inst),symbol)
             return ""
         
-        self.sql.new_order(response["orderId"],symbol,montant_call,limite,response["status"],datetime.now(timezone.utc),"",0,Client.ORDER_TYPE_LIMIT,sens,ID_ecart,UP,ID_client,niveau)
+        self.sql.new_order(response["orderId"],symbol,montant_call,limite,response["status"],datetime.now(timezone.utc),"",0,Client.ORDER_TYPE_LIMIT,sens,ID_ecart,0,ID_client,niveau)
         return response["orderId"]
     
 
@@ -441,9 +432,6 @@ class binAcces():
     def changement_status(self,symbol,ID_client):
         """Compare les ordres ouverts en base aux statuts réels sur Binance.
 
-        Si un ordre portant une quantité UP (flag_ajout > 0) a changé de statut, remet
-        le UP de son palier à 0 et reporte la quantité sur le palier donné par
-        sqlAcces.get_ID_to_UP().
         En cas d'erreur : log, pause de 60 s et liste vide.
 
         Returns:
@@ -463,15 +451,6 @@ class binAcces():
                     if ob["orderId"] == odb["ID"]:
                         if ob["status"] != odb["status"]:
                             change.append({"orderId":ob["orderId"],"status":ob["status"],"executedQty":ob["executedQty"]})
-                            if odb["flag_ajout"] > 0:
-                                self.sql.tele.send_message("un ordre avec UP a ete execute")
-                                self.sql.set_up_bet(symbol,odb["ID_ecart"],0)
-                                ID_to_UP = self.sql.get_ID_to_UP(symbol,odb["ID_ecart"],ID_client)
-                                self.sql.add_to_ajout(symbol,ID_to_UP,odb["flag_ajout"])
-                                self.sql.add_to_ecart(symbol,ID_to_UP,odb["flag_ajout"])
-
-                                #mettre UP dans ecart _ bet à 0
-                                #ajouter le UP dans le graph
 
         except Exception as inst:
             self.sql.new_log_error("changement_status_Binance",str(inst),symbol)
