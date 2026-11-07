@@ -43,78 +43,16 @@ class Clients():
                 print("# ID : " + str(order["orderId"]) + "\tSide : " + order["side"] + "\tLimite : " 
                       + str(order['price']) + "\tAmount : " + str(order['origQty']))
                 
-    def list_orders_for_dashboard(self,ID_client,symbol):
-        """Affiche les ordres ouverts sur Binance qui sont aussi NEW en base pour la stratégie."""
-        symbol_splited = symbol.split("_")[0]
-        orders = self.bin.clients[ID_client].get_all_orders(symbol=symbol_splited)
-        new_db_orders = self.sql.get_orders_status_symbol_filter("NEW",symbol,ID_client)
-        print("#########################################################################################")
-        for order in orders:
-            if order['status'] == "NEW" or order['status'] == "PARTIAL":
-                for ordre_db in new_db_orders:
-                    if order["orderId"] == ordre_db["ID"]:
-                        print("# ID : " + str(order["orderId"]) + "\tSide : " + order["side"] + "\tLimite : " 
-                            + str(order['price']) + "\tAmount : " + str(order['origQty']))
-                
     def cancel_order(self,ID_client,symbol):
         """Affiche les ordres ouverts d'une paire puis annule celui choisi."""
         self.list_orders(ID_client,symbol)
         ID = input("Select the ID of order you whant to cancel : ")
         self.bin.cancel_order(ID,ID_client)
         
-    def dashboard_client(self,ID_client):
-        """Affiche le tableau de bord d'un compte.
-
-        Wallet valorisé en USDT et en EUR, puis pour chaque stratégie active : ordres
-        ouverts, pourcentages de répartition et compteurs de gains.
-        """
-        wallet = self.bin.get_wallet(ID_client)
-        devises = self.sql.get_symbols_actif_client(ID_client)
-        devises_info = self.sql.get_devises_from_Clien_ID(ID_client)
-        print("\n#########################################################################################")
-        print("#\t\t\t\t\tWallet\t\t\t\t\t\t#")
-        print("#########################################################################################")
-        sum_usdt = 0.0
-        for crypto in wallet:
-            total = float(crypto["free"])+float(crypto["locked"])
-            print("# "+crypto["asset"]+ "\t: Free : "+ crypto["free"]+"\tlock : "+crypto["locked"]+ "\tTotal : "+str(total))
-            if crypto["asset"] != "USDT":
-                taux = self.bin.get_price(crypto["asset"]+"USDT",ID_client)
-                try:
-                    US_price = total*float(taux["price"])
-                    sum_usdt += US_price
-                    print("#\t USDT : "+str(US_price))
-                except:
-                    print("#\tNO USDT Price ")
-            else:
-                sum_usdt += total
-        us_eur_taux = self.bin.get_price("EURUSDT",ID_client)
-        sum_eur = sum_usdt/float(us_eur_taux["price"])
-        print("\n#########################################################################################")
-        print("#\t\t total USDT : "+str(sum_usdt)+"\t\t\t\t\t\t#")
-        print("#\t\t total EUR : "+str(sum_eur)+"\t\t\t\t\t\t#")
-        for devise in devises:
-            print("#########################################################################################")
-            print("#\t\t\t\t\t"+ devise+ "\t\t\t\t\t#")
-            self.list_orders_for_dashboard(ID_client,devise)
-            print("#\t\t\tPERCENTS %\t\t")
-            print("# Down : " + str(devises_info[devise]["down"]) 
-                  + "\tLocal : " + str(devises_info[devise]["local"])
-                  + "\tUP : "+ str(devises_info[devise]["up"])
-                  + "\tEpargne : "+ str(devises_info[devise]["epargne_prcent"])
-                  + "\tFactu : "+ str(devises_info[devise]["factu_percent"]))
-            print("#\t\t\t\t\tRepartition\t\t\t\t\t#")
-            print("# Gain total : " + str('%.3f' % devises_info[devise]["benef_all"])
-                  + "\tEpargne : " + str('%.3f' % devises_info[devise]["epargne"])
-                  + "\tFacturation : " + str('%.3f' % devises_info[devise]["factu"])
-                  )
-        print("#########################################################################################")
-
-
 def main():
     """Outil en ligne de commande.
 
-        python3 client.py             menu : wallet, ordres, annulation, tableau de bord
+        python3 client.py             menu : wallet, ordres, annulation
         python3 client.py new_client  ajoute un compte client
     """
     Client = Clients()
@@ -140,7 +78,7 @@ def main():
         print("\n\t#######################\n")
 
         print("What action do you whant to do?")
-        print("1 - Display Wallet\n2 - Market order\n3 - Open orders list\n4 - New limit order\n5 - Cancel order\n6 - Dashboard")
+        print("1 - Display Wallet\n2 - Market order\n3 - Open orders list\n4 - New limit order\n5 - Cancel order")
         action_selected = input("Enter your choice : ")
         if action_selected == "1":
             Client.display_wallet(client)
@@ -155,9 +93,6 @@ def main():
         elif action_selected == "5":
             symbol = input("Whith symbol : ")
             Client.cancel_order(client,symbol)
-        elif action_selected == "6":
-
-            Client.dashboard_client(client)
 
 
 

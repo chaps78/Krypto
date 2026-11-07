@@ -371,35 +371,6 @@ class sqlAcces():
             devises_ret[devise_SQL[8]].append(devise_SQL[0])
         return devises_ret
     
-    def get_devises_from_Clien_ID(self,ID_client):
-        """Renvoie les paramètres de chaque stratégie active d'un client.
-
-        Returns:
-            dict {symbol: dict de get_devises_from_symbol()}.
-        """
-        symbols = self.get_symbols_actif_client(ID_client)
-        devises_info = {}
-        for symbol in symbols:
-            devise = self.get_devises_from_symbol(symbol,ID_client)
-            devises_info[symbol] = devise
-        return devises_info
-    
-    def get_ID_client_from_symbol(self,symbol):
-        """Renvoie l'ID du client propriétaire d'une stratégie, ou "" si inconnue."""
-        try:
-            res = self.cur.execute("SELECT * FROM Devises WHERE symbol='"+str(symbol)+"'")
-
-        except sqlite3.IntegrityError as inst:
-            self.new_log_error("get_ID_client_from_symbol_SQL",str(inst),symbol)
-            return inst
-        try:
-            devises = res.fetchall()[0]
-            retour = devises[8]
-
-        except:
-            return ""
-        return retour
-
     def get_devises_from_symbol(self,symbol,ID_client):
         """Renvoie les paramètres et compteurs d'une stratégie (table Devises).
 
@@ -707,26 +678,6 @@ class sqlAcces():
         return ent
 
 
-    def get_gain_jour(self,symbol,annee,mois,jour):
-        """Somme des bénéfices des ordres clos (date_fin) un jour donné.
-
-        Returns:
-            float (0.0 si aucun ordre).
-        """
-        date = str(annee)+"-"+"%02.0f"%mois+"-"+"%02.0f"%jour
-        try:
-            res = self.cur.execute("SELECT SUM(benefice) FROM Ordres WHERE symbol='"
-                                   +str(symbol)+"' AND date_fin LIKE '"+date+"%'")
-        except sqlite3.IntegrityError as inst:
-            self.new_log_error("get_gain_jour_SQL",str(inst),symbol)
-            return ""
-        self.con.commit()
-        ordres = res.fetchall()
-        if ordres[0][0] == None:
-            return 0.0
-        else:
-            return ordres[0][0]
-    
     def get_gain_mois(self,symbol,annee,mois):
         """Somme des bénéfices des ordres ouverts (date_debut) un mois donné.
 
@@ -967,99 +918,6 @@ class sqlAcces():
             return inst
         retour = self.con.commit()
         return retour
-    
-    def set_dashboard(self,symbol,date,capital_graph,instant_price,gain_day,epargne,factu,tmp):
-        """Enregistre un relevé journalier dans la table Dashboard."""
-        try:
-            self.cur.execute("INSERT INTO Dashboard VALUES(?,?,?,?,?,?,?,?)",
-                             (symbol,date,capital_graph,instant_price,gain_day,epargne,factu,tmp))
-        except sqlite3.IntegrityError as inst:
-            self.new_log_error("set_dashboard_SQL",str(inst),symbol)
-            return inst
-        retour = self.con.commit()
-        return retour
-    
-    def get_dashboard_infos(self,symbol,date):
-        """Renvoie le relevé Dashboard d'un jour (date au format "AAAA-MM-JJ").
-
-        Returns:
-            dict {"symbol", "date", "cap_graph", "instant_price", "gain_day",
-            "epargne", "factu", "up_TMP"}, ou None si absent.
-        """
-        try:
-            res = self.cur.execute("SELECT * FROM Dashboard WHERE symbol='"+symbol+"' AND Date LIKE '"+ str(date) +"%'")
-        except sqlite3.IntegrityError as inst:
-            self.new_log_error("get_dashboard_infos_SQL",str(inst),"NA")
-            return inst
-        self.con.commit()
-        try:
-            TMP = res.fetchall()[0]
-        except:
-            return None
-        retour = {}
-        retour["symbol"]        = TMP[0]
-        retour["date"]          = TMP[1]
-        retour["cap_graph"]     = TMP[2]
-        retour["instant_price"] = TMP[3]
-        retour["gain_day"]      = TMP[4]
-        retour["epargne"]       = TMP[5]
-        retour["factu"]         = TMP[6]
-        retour["up_TMP"]         = TMP[7]
-        return retour
-
-    def get_older_dashboard_infos(self,symbol):
-        """Renvoie le plus ancien relevé Dashboard d'une stratégie (même format), ou None."""
-        try:
-            res = self.cur.execute("select * from Dashboard where symbol='"+symbol+"' AND Date=(select min(Date) from Dashboard where symbol='"+symbol+"')")
-        except sqlite3.IntegrityError as inst:
-            self.new_log_error("get_dashboard_infos_SQL",str(inst),"NA")
-            return inst
-        self.con.commit()
-        try:
-            TMP = res.fetchall()[0]
-        except:
-            return None
-        retour = {}
-        retour["symbol"]        = TMP[0]
-        retour["date"]          = TMP[1]
-        retour["cap_graph"]     = TMP[2]
-        retour["instant_price"] = TMP[3]
-        retour["gain_day"]      = TMP[4]
-        retour["epargne"]       = TMP[5]
-        retour["factu"]         = TMP[6]
-        retour["up_TMP"]         = TMP[7]
-        return retour
-
-    def get_sum_dashboard_benef(self,symbol):
-        """Somme de tous les gains journaliers (Dashboard.gain_day) d'une stratégie."""
-        try:
-            res = self.cur.execute("SELECT SUM(gain_day) FROM Dashboard WHERE symbol='"+symbol+"'")
-        except sqlite3.IntegrityError as inst:
-            self.new_log_error("get_dashboard_infos_SQL",str(inst),"NA")
-            return inst
-        self.con.commit()
-        try:
-            TMP = res.fetchall()[0]
-        except:
-            return None
-        return TMP[0]
-    
-    def get_sum_7_days_dashboard_benef(self,symbol):
-        """Somme des gains journaliers des 7 derniers jours d'une stratégie."""
-        date_7 = datetime.now() - timedelta(days=7)
-        try:
-            res = self.cur.execute("SELECT SUM(gain_day) FROM Dashboard WHERE symbol='"
-                                   +symbol+"' and Date > '"+str(date_7.year)+"-"+str(date_7.month).zfill(2)
-                                   +"-"+str(date_7.day).zfill(2)+"'")
-        except sqlite3.IntegrityError as inst:
-            self.new_log_error("get_dashboard_infos_SQL",str(inst),"NA")
-            return inst
-        self.con.commit()
-        try:
-            TMP = res.fetchall()[0]
-        except:
-            return None
-        return TMP[0]
     
     def new_client(self,client_name,API_key,secret,devise_base,telegram_chat_ID=""):
         """Ajoute un compte client (ID = plus grand ID existant + 1).

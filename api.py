@@ -540,18 +540,6 @@ def wallets():
     return en_cache("wallets", calculer_wallets)
 
 
-@app.get("/strategies/{symbol}/dashboard")
-def dashboard(symbol: str, jours: int = Query(default=30, ge=1, le=3650)):
-    """Relevés journaliers (table Dashboard) : capital, prix, gain du jour..."""
-    depuis = (datetime.now(timezone.utc) - timedelta(days=jours)).strftime("%Y-%m-%d")
-    return query(
-        """SELECT Date AS date, Capital_graph AS capital, instant_price AS prix,
-                  gain_day, epargne, Factu AS factu, tmp_UP AS up_tmp
-           FROM Dashboard WHERE symbol = ? AND Date >= ? ORDER BY Date""",
-        (symbol, depuis),
-    )
-
-
 @app.get("/logs")
 def logs(
     type: str | None = Query(default="ERREUR", pattern="^(ERREUR|DEBUG)$"),
