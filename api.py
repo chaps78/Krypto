@@ -214,13 +214,11 @@ def strategy(symbol: str):
 
 @app.get("/strategies/{symbol}/grid")
 def grid(symbol: str):
-    """Grille de la stratégie : paliers (prix, bet) et ajouts cumulés."""
+    """Grille de la stratégie : paliers (prix, bet)."""
     strategy_or_404(symbol)
     return query(
-        """SELECT e.ID AS id, e.prix, e.bet, a.ajout
-           FROM ecart_bet e
-           LEFT JOIN ajout a ON a.symbol = e.symbol AND a.ID_ecart = e.ID
-           WHERE e.symbol = ? ORDER BY e.ID""",
+        """SELECT ID AS id, prix, bet FROM ecart_bet
+           WHERE symbol = ? ORDER BY ID""",
         (symbol,),
     )
 

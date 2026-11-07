@@ -138,29 +138,9 @@ class sqlAcces():
                 tab_ligne = ligne.split(",")
                 self.cur.execute("INSERT INTO ecart_bet (ID,symbol,prix,bet) VALUES(?,?,?,?)",
                                  (tab_ligne[0],tab_ligne[1],float(tab_ligne[2]),float(tab_ligne[3])))
-                #self.cur.execute("INSERT INTO ajout VALUES(?,?,?,?)",
-                #                 (int(tab_ligne[0]),tab_ligne[1],float(0),datetime.now(timezone.utc)))
         except Exception as inst:
             self.new_log_error("set_ecart_bet_SQL",str(inst),"NA")
         self.con.commit()
-
-    def set_ajout(self,fichier_CSV):
-        """Charge les ajouts initiaux depuis un CSV dans la table ajout.
-
-        Format d'une ligne : ID_ecart,symbol,ajout.
-        """
-        file = open(fichier_CSV, "r")
-        lines = file.readlines()
-        file.close()
-        try:
-            for ligne in lines:
-                tab_ligne = ligne.split(",")
-                self.cur.execute("INSERT INTO ajout VALUES(?,?,?,?)",
-                                 (tab_ligne[0],tab_ligne[1],float(tab_ligne[2]),datetime.now(timezone.utc)))
-        except Exception as inst:
-            self.new_log_error("set_ecart_bet_SQL",str(inst),"NA")
-        self.con.commit()
-
 
     def get_ecart_bet_from_symbol(self,symbol):
         """Renvoie la grille complète d'une stratégie.
@@ -275,17 +255,6 @@ class sqlAcces():
             return inst
         self.con.commit()
 
-
-    def add_to_ajout(self,symbol,ID_ecart,valeur_to_add):
-        """Ajoute une quantité à l'historique des ajouts d'un palier (table ajout, ligne existante)."""
-        try:
-            curent_value = self.get_ajout_reel_by_ID(symbol,ID_ecart)
-            valeur_to_update = curent_value + valeur_to_add
-            self.cur.execute("UPDATE ajout SET ajout="+str(valeur_to_update)+" WHERE ID_ecart="+str(ID_ecart)+" AND symbol='"+symbol+"'")
-        except sqlite3.IntegrityError as inst:
-            self.new_log_error("add_to_ajout_SQL",str(inst),symbol)
-            return inst
-        self.con.commit()
 
     def ajout_epargne_paire_devise(self,symbol,qtt,ID_client):
         """Ajoute un montant au compteur d'épargne (Devises.epargne) d'une stratégie."""
@@ -524,28 +493,6 @@ class sqlAcces():
         reste = res.fetchall()[0]
         reste_dic = {"devise1":reste[2],"devise2":reste[3]}
         return reste_dic
-
-    def get_ajout_reel_by_ID(self,symbol,ID_ecart):
-        """Renvoie la valeur cumulée des ajouts d'un palier (table ajout)."""
-        try:
-
-            res = self.cur.execute("SELECT * FROM ajout WHERE ID_ecart="+str(ID_ecart)+" AND symbol='"+symbol+"'",)
-        except Exception as inst:
-            self.new_log_error("get_ajout_reel_by_ID_SQL",str(inst),symbol)
-        self.con.commit()
-        reste = res.fetchall()
-        return reste[0][2]
-
-    def get_ajout(self,symbol):
-        """Renvoie toutes les lignes de la table ajout d'une stratégie (tuples)."""
-        try:
-            res = self.cur.execute("SELECT * FROM ajout WHERE symbol='"+symbol+"'")
-        except sqlite3.IntegrityError as inst:
-            self.new_log_error("get_ajout_SQL",str(inst),symbol)
-            return inst
-        self.con.commit()
-        ajout = res.fetchall()
-        return ajout
 
     #Pour un double achat on recupere le montant entre les deux ordres
     def get_montant_entre_ordres(self,symbol,ID_bas,ID_haut):

@@ -18,7 +18,7 @@ class sheetAcces():
         self.sql = sqlAcces()
     
     def update_values(self,symbol):
-        """Ecrit la grille (A2 : ID, prix, bet) et les ajouts (D2) dans l'onglet de la stratégie."""
+        """Ecrit la grille (A2 : ID, prix, bet) dans l'onglet de la stratégie (la colonne D n'est plus mise à jour)."""
         ecart = self.sql.get_ecart_bet_from_symbol(symbol)
         wsheet = self.sheet.worksheet(symbol)
         keys = ecart.keys()
@@ -26,11 +26,6 @@ class sheetAcces():
         for key in keys:
             ecart_tab.append([key,ecart[key][0],ecart[key][1]])
         wsheet.update('A2', ecart_tab)
-        ajouts = self.sql.get_ajout(symbol)
-        ajout_to_sheet = []
-        for ajout in ajouts:
-            ajout_to_sheet.append([ajout[2]])
-        wsheet.update('D2', ajout_to_sheet)
     
     def update_reste(self,symbol):
         """Ecrit le dernier relevé de la table reste en I3."""

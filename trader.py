@@ -306,12 +306,11 @@ class Basics():
     def reinject_local(self,symbol,last_filled,qtt):
         """Renforce le palier juste sous le dernier exécuté (ID_ecart-1).
 
-        Ajoute qtt/prix au bet de ce palier et trace l'ajout dans la table ajout.
+        Ajoute qtt/prix au bet de ce palier.
         """
         current_bet = self.sql.get_ecart_bet_from_symbol_and_ID(symbol,float(last_filled["ID_ecart"])-1)[3]
         prix = float(self.sql.get_ecart_bet_from_symbol_and_ID(symbol,int(last_filled["ID_ecart"])-1)[2])
         self.sql.update_bet_with_ID(symbol,int(last_filled["ID_ecart"])-1,float(current_bet)+qtt/prix)
-        self.sql.add_to_ajout(symbol,int(last_filled["ID_ecart"])-1,qtt/prix)
 
     def un_ordre_filled_autre_new(self,ordres_ouvert,symbol,ID_client):
         """Cas normal : un ordre exécuté, l'autre encore ouvert.
