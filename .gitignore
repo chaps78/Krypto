@@ -140,5 +140,6 @@ cred.json
 *.swp
 bot.heartbeat
 bot.lock
+bot.ecriture.lock
 trader.out
 cles_lecture.json

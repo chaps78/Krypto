@@ -1,6 +1,8 @@
 """API HTTP du bot, destinée au front (accès via tunnel SSH).
 
-Lecture seule sur DB.db. Seule action possible : arrêter ou démarrer le
+Lecture seule sur DB.db, sauf via base_en_ecriture() : toute écriture passe
+par le verrou partagé avec le bot (verrou_ecriture.py), donc uniquement entre
+deux stratégies, bot en pause. Autre action possible : arrêter ou démarrer le
 service krypto-bot (POST /bot/arreter et /bot/demarrer), via sudo limité à
 ces deux commandes (deploy/krypto-bot.sudoers).
 
@@ -37,12 +39,13 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 
 import reinjection
+import verrou_ecriture
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.environ.get("KRYPTO_DB", os.path.join(BASE_DIR, "DB.db"))
@@ -90,6 +93,40 @@ def query(sql, params=()):
         con.close()
 
 
+ATTENTE_VERROU = int(os.environ.get("KRYPTO_ATTENTE_VERROU", "20"))
+
+
+@contextmanager
+def base_en_ecriture(attente=ATTENTE_VERROU):
+    """Connexion en écriture à DB.db, bot en pause, dans une transaction.
+
+    1. Prend le verrou d'écriture : attend que le bot ait fini la stratégie en
+       cours (au plus `attente` secondes, sinon erreur 503 « bot occupé ») ;
+       tant que le verrou est tenu, le bot reste en pause.
+    2. Ouvre une transaction (BEGIN IMMEDIATE) : tout est validé à la fin du
+       bloc, ou tout est annulé en cas d'erreur.
+    3. Relâche le verrou : le bot repart en relisant la base.
+
+    Usage :  with base_en_ecriture() as con: con.execute("UPDATE ...", (...))
+    """
+    try:
+        with verrou_ecriture.tenir(attente=attente):
+            con = sqlite3.connect(DB_PATH, timeout=10, isolation_level=None)
+            try:
+                con.execute("BEGIN IMMEDIATE")
+                try:
+                    yield con
+                except BaseException:
+                    con.execute("ROLLBACK")
+                    raise
+                con.execute("COMMIT")
+            finally:
+                con.close()
+    except verrou_ecriture.VerrouOccupe:
+        raise HTTPException(status_code=503,
+                            detail=f"Bot occupé depuis plus de {attente} s (traitement en cours) : réessayez")
+
+
 def strategy_or_404(symbol):
     """Renvoie la ligne Devises d'une stratégie, ou une erreur 404."""
     rows = query(STRATEGY_SQL + " WHERE symbol = ?", (symbol,))
@@ -122,6 +159,8 @@ def bot():
     KRYPTO_BOT_DELAI secondes. service donne l'état systemd de krypto-bot
     ("active", "inactive", "failed"... ou null si inconnu) : un service
     "active" sans battement récent signifie que le bot est figé.
+    verrou_ecriture : "pris" pendant le traitement d'une stratégie (ou une
+    écriture de l'API), "libre" entre deux stratégies.
     """
     try:
         dernier = datetime.fromtimestamp(os.path.getmtime(HEARTBEAT), timezone.utc)
@@ -134,6 +173,7 @@ def bot():
     except (OSError, subprocess.SubprocessError):
         service = None
     return {
+        "verrou_ecriture": "pris" if verrou_ecriture.est_pris() else "libre",
         "en_marche": age is not None and age < BOT_DELAI,
         "dernier_battement": dernier.isoformat() if dernier else None,
         "age_secondes": age,

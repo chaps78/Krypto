@@ -11,6 +11,7 @@ from telegramInterface import teleAcces
 from sheetInterface import sheetAcces
 from messages import sur, quantite, montant
 import reinjection
+import verrou_ecriture
 
 
 
@@ -453,7 +454,9 @@ def main():
     Annonce le démarrage sur Telegram (stratégies actives), puis jusqu'à un arrêt demandé (SIGTERM,
     par exemple systemctl stop, ou Ctrl+C) : pour chaque client et chaque
     stratégie active (liste lue une seule fois au démarrage), vérifie les ordres
-    et les niveaux, avec une pause de 4 s entre deux stratégies.
+    et les niveaux, avec une pause de 4 s entre deux stratégies. Chaque
+    stratégie est traitée sous le verrou d'écriture partagé avec l'API
+    (verrou_ecriture.py) : l'API n'écrit qu'entre deux stratégies.
     L'arrêt n'interrompt jamais une stratégie en cours de traitement.
     """
     verrou = verrouiller()
@@ -472,8 +475,12 @@ def main():
             for DEVISE in DEVISES[user_ID]:
                 if arret_demande:
                     break
-                basic.verification_2_ordres_V2(DEVISE,user_ID)
-                basic.verification_niveau_VS_timer(DEVISE,user_ID)
+                # Verrou d'écriture tenu pendant tout le traitement de la stratégie :
+                # l'API ne peut écrire dans la base qu'entre deux stratégies, et
+                # tant qu'elle écrit le bot attend ici (pause). Voir verrou_ecriture.py.
+                with verrou_ecriture.tenir():
+                    basic.verification_2_ordres_V2(DEVISE,user_ID)
+                    basic.verification_niveau_VS_timer(DEVISE,user_ID)
                 battement()
                 time.sleep(4)
 
