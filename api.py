@@ -1,4 +1,8 @@
-"""API HTTP en lecture seule sur DB.db, destinée au front (accès via tunnel SSH).
+"""API HTTP du bot, destinée au front (accès via tunnel SSH).
+
+Lecture seule sur DB.db. Seule action possible : arrêter ou démarrer le
+service krypto-bot (POST /bot/arreter et /bot/demarrer), via sudo limité à
+ces deux commandes (deploy/krypto-bot.sudoers).
 
 Lancement sur le serveur du bot :
     uvicorn api:app --host 127.0.0.1 --port 8000
@@ -135,6 +139,51 @@ def bot():
         "age_secondes": age,
         "service": service,
     }
+
+
+SYSTEMCTL = "/usr/bin/systemctl"
+
+
+def piloter_bot(action):
+    """Lance "systemctl --no-block <action> krypto-bot" via sudo sans mot de passe.
+
+    --no-block : la commande rend la main tout de suite ; l'arrêt propre du bot
+    (fin de la stratégie en cours) peut ensuite prendre jusqu'à 2 min.
+    """
+    try:
+        r = subprocess.run(["sudo", "-n", SYSTEMCTL, "--no-block", action, "krypto-bot"],
+                           capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError) as e:
+        raise HTTPException(status_code=500, detail=f"Commande impossible : {e}")
+    if r.returncode != 0:
+        erreur = (r.stderr or r.stdout).strip()
+        if "password" in erreur or "mot de passe" in erreur:
+            erreur = ("droits sudo manquants sur le serveur du bot : "
+                      "installer la règle avec deploy/krypto-bot.sh (choix 10)")
+        raise HTTPException(status_code=500, detail=f"{action} impossible : {erreur}")
+
+
+@app.post("/bot/arreter", status_code=202)
+def arreter_bot():
+    """Demande l'arrêt propre du bot (service krypto-bot)."""
+    etat = bot()
+    if etat["service"] not in ("active", "activating", "reloading"):
+        raise HTTPException(status_code=409, detail="Le service krypto-bot n'est pas en marche"
+                            + (" (bot lancé à la main ?)" if etat["en_marche"] else ""))
+    piloter_bot("stop")
+    return {"demande": "arret"}
+
+
+@app.post("/bot/demarrer", status_code=202)
+def demarrer_bot():
+    """Démarre le bot (service krypto-bot), s'il ne tourne pas déjà."""
+    etat = bot()
+    if etat["service"] in ("active", "activating", "reloading", "deactivating"):
+        raise HTTPException(status_code=409, detail=f"Le service krypto-bot est déjà « {etat['service']} »")
+    if etat["en_marche"]:
+        raise HTTPException(status_code=409, detail="Un bot tourne déjà hors du service (lancé à la main)")
+    piloter_bot("start")
+    return {"demande": "demarrage"}
 
 
 @app.get("/clients")

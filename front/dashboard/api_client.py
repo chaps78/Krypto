@@ -1,4 +1,4 @@
-"""Client minimal de l'API du bot (lecture seule, via le tunnel SSH)."""
+"""Client minimal de l'API du bot (via le tunnel SSH)."""
 import http.client
 import json
 import urllib.error
@@ -21,7 +21,16 @@ def get(path, **params):
     url = settings.KRYPTO_API_URL + path
     if params:
         url += "?" + urllib.parse.urlencode(params)
-    req = urllib.request.Request(url)
+    return appeler(urllib.request.Request(url), path)
+
+
+def post(path):
+    """Appelle POST {KRYPTO_API_URL}{path} (sans corps) et renvoie le JSON décodé."""
+    return appeler(urllib.request.Request(settings.KRYPTO_API_URL + path, data=b"", method="POST"), path)
+
+
+def appeler(req, path):
+    """Envoie la requête (avec le token éventuel) ; lève ApiError en cas de problème."""
     if settings.KRYPTO_API_TOKEN:
         req.add_header("Authorization", f"Bearer {settings.KRYPTO_API_TOKEN}")
     try:

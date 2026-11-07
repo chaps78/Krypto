@@ -15,6 +15,8 @@ BOT_DIR="$(dirname "$DEPLOY_DIR")"
 UNIT_SRC="$DEPLOY_DIR/krypto-bot.service"
 UNIT_DST="/etc/systemd/system/${SERVICE}.service"
 HEARTBEAT="$BOT_DIR/bot.heartbeat"
+SUDOERS_SRC="$DEPLOY_DIR/krypto-bot.sudoers"
+SUDOERS_DST="/etc/sudoers.d/krypto-bot"
 
 pause() { [ -n "$MENU" ] && { echo; read -rp "Entrée pour revenir au menu..." _; }; }
 
@@ -87,6 +89,7 @@ while true; do
     echo " 7 - Installer / mettre à jour le service et l'activer au démarrage"
     echo " 8 - Ne plus lancer au démarrage"
     echo " 9 - Arrêter un trader.py lancé à la main"
+    echo "10 - Autoriser le front à arrêter / démarrer le bot (règle sudo)"
     echo " q - Quitter"
     echo "------------------------------------------"
     read -rp "Choix : " choix
@@ -117,6 +120,15 @@ while true; do
                fi
            fi
            pause ;;
+        10) if sudo visudo -cf "$SUDOERS_SRC" && sudo install -m 440 -o root -g root "$SUDOERS_SRC" "$SUDOERS_DST"; then
+                sudo -k  # oublie le mot de passe : le test ci-dessous doit passer sans
+                if sudo -n -l /usr/bin/systemctl --no-block stop krypto-bot >/dev/null 2>&1; then
+                    echo "Règle installée : le front peut arrêter / démarrer le bot."
+                else
+                    echo "Règle installée mais inactive : vérifier $SUDOERS_DST (utilisateur, chemin de systemctl)."
+                fi
+            fi
+            pause ;;
         q|Q) exit 0 ;;
         *) echo "Choix inconnu."; pause ;;
     esac

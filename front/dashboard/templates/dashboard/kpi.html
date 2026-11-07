@@ -1,5 +1,10 @@
 {% extends "dashboard/base.html" %}
-{% block head %}<meta http-equiv="refresh" content="60">{% endblock %}
+{% block head %}<script>
+  // Rechargement toutes les 60 s, reporté tant qu'une fenêtre de confirmation est ouverte
+  setTimeout(function recharger() {
+    if (document.querySelector("dialog[open]")) setTimeout(recharger, 5000); else location.reload();
+  }, 60000);
+</script>{% endblock %}
 {% block title %}KPI{% endblock %}
 {% block content %}
 <h1>KPI</h1>

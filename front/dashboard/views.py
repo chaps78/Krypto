@@ -5,7 +5,10 @@ from datetime import datetime, timezone
 
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
-from django.shortcuts import render
+from django.contrib import messages
+from django.shortcuts import redirect, render
+from django.utils.http import url_has_allowed_host_and_scheme
+from django.views.decorators.http import require_POST
 
 from . import api_client
 
@@ -351,3 +354,22 @@ def logs(request):
     except api_client.ApiError as e:
         contexte["erreur"] = str(e)
     return render(request, "dashboard/logs.html", contexte)
+
+
+@login_required
+@require_POST
+def piloter_bot(request, action):
+    """Arrête ou démarre le bot (service krypto-bot) via l'API, puis revient à la page d'origine."""
+    try:
+        if action == "arreter":
+            api_client.post("/bot/arreter")
+            messages.success(request, "Arrêt demandé : le bot termine la stratégie en cours puis s'arrête (jusqu'à 2 min).")
+        else:
+            api_client.post("/bot/demarrer")
+            messages.success(request, "Démarrage demandé : la pastille passe au vert au premier battement.")
+    except api_client.ApiError as e:
+        messages.error(request, str(e))
+    suite = request.POST.get("suite", "")
+    if not url_has_allowed_host_and_scheme(suite, allowed_hosts={request.get_host()}):
+        suite = "/"
+    return redirect(suite)

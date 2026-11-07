@@ -1,0 +1,5 @@
+# Autorise l'API (utilisateur chaps) à arrêter / démarrer le bot depuis le front,
+# sans mot de passe, et UNIQUEMENT ces deux commandes exactes.
+# Installation : ./deploy/krypto-bot.sh, choix 10 (copie dans /etc/sudoers.d/krypto-bot
+# après vérification par visudo).
+chaps ALL=(root) NOPASSWD: /usr/bin/systemctl --no-block stop krypto-bot, /usr/bin/systemctl --no-block start krypto-bot

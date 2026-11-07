@@ -48,6 +48,17 @@
     .pastille::before { content:""; width:.7rem; height:.7rem; border-radius:50%; background:#9aa3b5; }
     .pastille.marche::before { background:#22a55a; box-shadow:0 0 0 3px rgba(34,165,90,.2); }
     .pastille.arrete::before, .pastille.fige::before { background:#d92d20; box-shadow:0 0 0 3px rgba(217,45,32,.2); }
+    .pastille.arret_en_cours::before, .pastille.demarrage::before { background:#e8a317; box-shadow:0 0 0 3px rgba(232,163,23,.25); }
+    nav form.pilotage { margin:0; }
+    nav button.eteindre { color:#d92d20; border-color:#d92d20; }
+    nav button.demarrer { color:#22a55a; border-color:#22a55a; }
+    dialog.confirmation { border:1px solid var(--line); border-radius:10px; background:var(--card); color:var(--txt); padding:1.2rem 1.4rem; max-width:26rem; }
+    dialog.confirmation::backdrop { background:rgba(0,0,0,.45); }
+    dialog.confirmation h2 { margin:0 0 .6rem; font-size:1.1rem; }
+    dialog.confirmation .boutons { display:flex; justify-content:flex-end; gap:.6rem; margin-top:1rem; }
+    dialog.confirmation button { border-radius:6px; padding:.4rem .9rem; cursor:pointer; border:1px solid var(--line); background:none; color:var(--txt); }
+    dialog.confirmation button.danger { background:#d92d20; border-color:#d92d20; color:#fff; }
+    .message-ok { background:rgba(34,165,90,.12); border-radius:8px; padding:.7rem 1rem; margin-bottom:1rem; }
     .tuiles { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:.8rem; }
     .tuile { border:1px solid var(--line); border-radius:8px; padding:.7rem .9rem; }
     .tuile .valeur { font-size:1.5rem; font-weight:700; font-variant-numeric:tabular-nums; margin:.1rem 0 .4rem; }
@@ -97,7 +108,15 @@
   {% if user.is_authenticated %}
   <nav>
     <span class="logo">Krypto</span>
-    <span class="pastille {{ bot_etat }}" title="{{ bot_info }}">{% if bot_etat == "marche" %}Bot en marche{% elif bot_etat == "fige" %}Bot figé{% elif bot_etat == "arrete" %}Bot arrêté{% else %}Bot ?{% endif %}</span>
+    <span class="pastille {{ bot_etat }}" title="{{ bot_info }}">{% if bot_etat == "marche" %}Bot en marche{% elif bot_etat == "fige" %}Bot figé{% elif bot_etat == "arrete" %}Bot arrêté{% elif bot_etat == "arret_en_cours" %}Arrêt en cours…{% elif bot_etat == "demarrage" %}Démarrage…{% else %}Bot ?{% endif %}</span>
+    {% if bot_action == "arreter" %}
+    <button type="button" class="eteindre" onclick="document.getElementById('confirmer-arret').showModal()">Éteindre</button>
+    {% elif bot_action == "demarrer" %}
+    <form method="post" action="{% url 'piloter_bot' 'demarrer' %}" class="pilotage">{% csrf_token %}
+      <input type="hidden" name="suite" value="{{ request.get_full_path }}">
+      <button type="submit" class="demarrer">Démarrer</button>
+    </form>
+    {% endif %}
     <a href="{% url 'kpi' %}" class="{% if request.resolver_match.url_name == 'kpi' %}actif{% endif %}">KPI</a>
     <a href="{% url 'grille' %}" class="{% if request.resolver_match.url_name == 'grille' %}actif{% endif %}">Grille</a>
     <a href="{% url 'logs' %}" class="{% if request.resolver_match.url_name == 'logs' %}actif{% endif %}">Logs</a>
@@ -106,8 +125,24 @@
       <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button type="submit">Déconnexion</button></form>
     </div>
   </nav>
+  {% if bot_action == "arreter" %}
+  <dialog id="confirmer-arret" class="confirmation">
+    <form method="post" action="{% url 'piloter_bot' 'arreter' %}">{% csrf_token %}
+      <input type="hidden" name="suite" value="{{ request.get_full_path }}">
+      <h2>Êtes-vous sûr de vouloir éteindre le bot ?</h2>
+      <p class="muted">Il termine la stratégie en cours puis s'arrête (jusqu'à 2 min).
+        Les ordres déjà posés restent ouverts sur Binance, mais plus aucun ordre ne sera replacé
+        tant que le bot n'est pas redémarré.</p>
+      <div class="boutons">
+        <button type="button" onclick="this.closest('dialog').close()" autofocus>Annuler</button>
+        <button type="submit" class="danger">Éteindre le bot</button>
+      </div>
+    </form>
+  </dialog>
+  {% endif %}
   {% endif %}
   <main>
+    {% for m in messages %}<div class="{% if m.level_tag == 'success' %}message-ok{% else %}alerte{% endif %}">{{ m }}</div>{% endfor %}
     {% if erreur %}<div class="alerte">{{ erreur }}</div>{% endif %}
     {% block content %}{% endblock %}
   </main>
