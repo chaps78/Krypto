@@ -128,7 +128,7 @@ class sqlAcces():
     def set_ecart_bet(self,fichier_CSV):
         """Charge une grille depuis un CSV dans ecart_bet.
 
-        Format d'une ligne : ID,symbol,prix,bet (UP initialisé à 0).
+        Format d'une ligne : ID,symbol,prix,bet.
         """
         file = open(fichier_CSV, "r")
         lines = file.readlines()
@@ -136,8 +136,8 @@ class sqlAcces():
         try:
             for ligne in lines:
                 tab_ligne = ligne.split(",")
-                self.cur.execute("INSERT INTO ecart_bet VALUES(?,?,?,?,?)",
-                                 (tab_ligne[0],tab_ligne[1],float(tab_ligne[2]),float(tab_ligne[3]),0))
+                self.cur.execute("INSERT INTO ecart_bet (ID,symbol,prix,bet) VALUES(?,?,?,?)",
+                                 (tab_ligne[0],tab_ligne[1],float(tab_ligne[2]),float(tab_ligne[3])))
                 #self.cur.execute("INSERT INTO ajout VALUES(?,?,?,?)",
                 #                 (int(tab_ligne[0]),tab_ligne[1],float(0),datetime.now(timezone.utc)))
         except Exception as inst:
@@ -188,7 +188,7 @@ class sqlAcces():
         """Renvoie un palier de la grille.
 
         Returns:
-            tuple (ID, symbol, prix, bet, UP) : [2] = prix, [3] = bet, [4] = UP.
+            tuple (ID, symbol, prix, bet) : [2] = prix, [3] = bet.
             IndexError si le palier n'existe pas.
         """
         try:
