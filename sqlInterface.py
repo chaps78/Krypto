@@ -883,6 +883,35 @@ class sqlAcces():
         up_TMP = res.fetchall()[0][0]
         return up_TMP
     
+    def suivre_reinjection(self,symbol,ID_ecart,qtt_benefice,qtt_capital,prix):
+        """Trace une réinjection sur un palier (colonnes de suivi, sans effet sur le trading).
+
+        reinj_benefice += qtt_benefice, reinj_capital += qtt_capital, et
+        prix_moyen_capital = moyenne pondérée de l'ancien prix moyen (sur
+        l'ancienne quantité capital) et de prix (sur qtt_capital).
+        """
+        self.cur.execute(
+            """UPDATE ecart_bet SET
+                 prix_moyen_capital = CASE WHEN :qc > 0
+                     THEN (COALESCE(prix_moyen_capital,0)*COALESCE(reinj_capital,0) + :qc*:prix)
+                          / (COALESCE(reinj_capital,0) + :qc)
+                     ELSE prix_moyen_capital END,
+                 reinj_benefice = COALESCE(reinj_benefice,0) + :qb,
+                 reinj_capital  = COALESCE(reinj_capital,0) + :qc
+               WHERE symbol = :symbol AND ID = :id""",
+            {"qb":float(qtt_benefice),"qc":float(qtt_capital),"prix":float(prix),"symbol":symbol,"id":int(ID_ecart)})
+        self.con.commit()
+
+    def get_up_tmp_capital(self,symbol):
+        """Part de Devises.up_TMP venant du capital (au-delà de 100 % du bénéfice)."""
+        res = self.cur.execute("SELECT up_TMP_capital FROM Devises WHERE symbol=?",(symbol,)).fetchone()
+        return float(res[0] or 0.0) if res else 0.0
+
+    def set_up_tmp_capital(self,symbol,montant):
+        """Fixe la part capital de Devises.up_TMP (jamais négative)."""
+        self.cur.execute("UPDATE Devises SET up_TMP_capital=? WHERE symbol=?",(max(float(montant),0.0),symbol))
+        self.con.commit()
+
     def add_2_up_tmp(self,symbol,qtt):
         """Ajoute un montant à Devises.up_TMP (part de 0 si la valeur est illisible)."""
         try:
@@ -894,7 +923,9 @@ class sqlAcces():
     def configure_new_symbol(self,symbol,devise_1,devise_2,perc_down,perc_local,perc_up,ID_client,perc_factu,perc_epargne,dev_entiere,obj_gain):
         """Crée une stratégie dans Devises : active, compteurs à 0, e_dyn à 0."""
         try:
-            self.cur.execute("INSERT INTO Devises VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            self.cur.execute("INSERT INTO Devises (symbol,DEVISE1,DEVISE2,down,local,up,epargne,actif,client,"
+                             "benef_all,benef_TMP,factu_percent,factu,up_TMP,epargne_percent,dev_entiere,Obj_gain,e_dyn) "
+                             "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                              (symbol,
                               devise_1,
                               devise_2,

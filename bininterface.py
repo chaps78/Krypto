@@ -319,11 +319,13 @@ class binAcces():
                                 ID_client)
 
 
-    def new_market_order(self,symbol,montant,sens,ID_client):
+    def new_market_order(self,symbol,montant,sens,ID_client,detail=False):
         """Passe un ordre au marché et l'enregistre en base (sans palier).
 
         Returns:
             orderId Binance, ou "" en cas d'erreur (loguée).
+            Avec detail=True : (orderId, prix moyen d'exécution), le prix valant
+            None s'il est inconnu (erreur ou ordre non exécuté).
         """
 
         try:
@@ -338,9 +340,15 @@ class binAcces():
                                         quantity=montant_call)
         except Exception as inst:
             self.sql.new_log_error("new_market_order_Binance",str(inst),symbol)
-            return ""
+            return ("", None) if detail else ""
         
         self.sql.new_order(response["orderId"],symbol,montant,"",response["status"],datetime.now(timezone.utc),"",0,Client.ORDER_TYPE_MARKET,sens,0,0,ID_client)
+        if detail:
+            try:
+                prix_moyen = float(response["cummulativeQuoteQty"])/float(response["executedQty"])
+            except (KeyError, TypeError, ValueError, ZeroDivisionError):
+                prix_moyen = None
+            return response["orderId"], prix_moyen
         return response["orderId"]
     
     def get_order_info_with_ID(self,symbol,ID_client,ID_partial,ID_market,ID_limit):
