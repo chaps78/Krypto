@@ -269,6 +269,14 @@ def grille(request):
             p["bet_txt"] = nombre(round(p["bet"]))
             p["valeur"] = p["prix"] * p["bet"]
             p["valeur_txt"] = montant(p["valeur"])
+            # Suivi des réinjections (None tant que la migration n'est pas faite)
+            p["reinj_benefice"] = p.get("reinj_benefice") or 0.0
+            p["reinj_capital"] = p.get("reinj_capital") or 0.0
+            p["prix_moyen_capital"] = p.get("prix_moyen_capital")
+            p["reinj_benefice_txt"] = nombre(round(p["reinj_benefice"])) if p["reinj_benefice"] else ""
+            p["reinj_capital_txt"] = nombre(round(p["reinj_capital"])) if p["reinj_capital"] else ""
+            p["prix_moyen_capital_txt"] = (nombre(p["prix_moyen_capital"])
+                                           if p["reinj_capital"] and p["prix_moyen_capital"] else "")
         cumul = 0.0
         for p in paliers:  # du palier le plus bas au plus haut (ordre de l'API)
             cumul += p["valeur"]
@@ -299,6 +307,8 @@ def grille(request):
         contexte["graphe"] = {
             "devise1": strat["devise1"], "devise2": strat["devise2"],
             "paliers": [{"id": p["id"], "prix": p["prix"] or 0, "bet": p["bet"] or 0, "gain": p["gain"],
+                         "reinj_benefice": p["reinj_benefice"], "reinj_capital": p["reinj_capital"],
+                         "prix_moyen_capital": p["prix_moyen_capital"],
                          "prix_de": p["prix_de"], "quantite_de": p["quantite_de"]}
                         for p in paliers],
             "ordres": [{"sens": o["sens"], "id_ecart": o["id_ecart"], "niveau": o["niveau"],

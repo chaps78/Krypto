@@ -26,6 +26,8 @@
       <span><i class="pastille-achat"></i>quantité de l'achat ouvert</span>
       <span><i class="pastille-vente"></i>quantité de la vente ouverte</span>
       <span><i class="pastille-palier"></i>autres paliers</span>
+      <span><i class="pastille-benefice"></i>réinjecté par le bénéfice</span>
+      <span><i class="pastille-capital"></i>réinjecté par le capital</span>
       <span><i class="trait-prix"></i>prix d'un ordre ouvert</span>
     </div>
     <div class="zoom" role="group" aria-label="Plage affichée">
@@ -65,6 +67,9 @@
   <p class="muted" style="margin-top:0">
     <strong>Valeur cumulée</strong> : somme des valeurs
     du palier et de tous ceux en dessous.<br>
+    <strong>Réinjecté</strong> : quantité ajoutée au palier par la réinjection des ventes, payée par le
+    <strong>bénéfice</strong> ou, au-delà de 100 % du bénéfice, par le <strong>capital</strong> ;
+    <strong>prix moyen capital</strong> : prix d'achat moyen de la part capital.<br>
     Pour chaque ordre ouvert, la case <strong>Prix</strong> de son palier est surlignée, ainsi que les paliers qui
     fournissent sa <strong>quantité</strong> : pour une vente, le palier du dessous (2 ou 3 paliers aux niveaux 3-4) ;
     pour un achat, son propre palier (et ceux du dessus aux niveaux 3-4).
@@ -73,6 +78,9 @@
     <thead>
       <tr>
         <th class="num">Palier</th><th class="num">Prix</th><th class="num">Quantité (bet)</th>
+        <th class="num" title="Quantité ajoutée au palier par la réinjection, payée par le bénéfice des ventes">Réinjecté bénéfice</th>
+        <th class="num" title="Quantité ajoutée au palier par la réinjection, payée par le capital (au-delà de 100 % du bénéfice)">Réinjecté capital</th>
+        <th class="num" title="Prix d'achat moyen, pondéré par les quantités, de la part réinjectée par le capital">Prix moyen capital</th>
         <th class="num">Valeur</th>
         <th class="num" title="Somme des valeurs de ce palier et de tous ceux en dessous">Valeur cumulée</th>
         <th class="num" title="Achat de la quantité au prix du palier, vente au prix du palier du dessus, moins 0,075 % de frais sur chacun des deux ordres">Gain achat → vente</th>
@@ -85,6 +93,9 @@
         <td class="num">{{ p.id }}</td>
         <td class="num prix{% if p.prix_de %} p-{{ p.prix_de }}{% endif %}">{{ p.prix_txt }} {{ strat.devise2 }}</td>
         <td class="num">{{ p.bet_txt }} {{ strat.devise1 }}</td>
+        <td class="num">{% if p.reinj_benefice_txt %}{{ p.reinj_benefice_txt }} {{ strat.devise1 }}{% endif %}</td>
+        <td class="num">{% if p.reinj_capital_txt %}{{ p.reinj_capital_txt }} {{ strat.devise1 }}{% endif %}</td>
+        <td class="num">{% if p.prix_moyen_capital_txt %}{{ p.prix_moyen_capital_txt }} {{ strat.devise2 }}{% endif %}</td>
         <td class="num">{{ p.valeur_txt }} {{ strat.devise2 }}</td>
         <td class="num">{{ p.cumul_txt }} {{ strat.devise2 }}</td>
         <td class="num{% if p.gain is not None and p.gain < 0 %} negatif{% endif %}">{% if p.gain_txt %}{{ p.gain_txt }} {{ strat.devise2 }}{% endif %}</td>
@@ -144,6 +155,11 @@
     const L = zone.clientWidth, H = 300, m = {h: 28, d: 12, b: 34, g: 56};
     const l = L - m.g - m.d, h = H - m.h - m.b;
     const svg = el("svg", {width: L, height: H, role: "img"}, zone);
+    // Hachures à 45° de la part capital : reconnaissable même sans distinguer les couleurs
+    const motif = el("pattern", {id: "hachures-capital", width: 5, height: 5, patternUnits: "userSpaceOnUse",
+                                 patternTransform: "rotate(45)"}, el("defs", {}, svg));
+    el("rect", {width: 5, height: 5, class: "hachure-fond"}, motif);
+    el("line", {x1: 0, y1: 0, x2: 0, y2: 5, class: "hachure-trait"}, motif);
     const max = Math.max(...P.map(p => p.bet)) || 1;
     const pas = pasRond(max, 4), haut = Math.ceil(max / pas) * pas;
     const y = v => m.h + h - (v / haut) * h;
@@ -164,15 +180,31 @@
     });
     el("text", {x: L - m.d, y: H - 4, "text-anchor": "end", class: "graduation"}, svg).textContent = "prix (" + D.devise2 + ")";
 
-    // Barres : extrémité haute arrondie, base carrée
+    // Barres empilées, de bas en haut : quantité d'origine (couleur de l'ordre ouvert),
+    // part réinjectée par le bénéfice, part réinjectée par le capital.
+    // Seul le segment du haut a l'extrémité arrondie ; 2 px d'écart entre segments.
     const r = Math.min(4, larg / 2);
+    function segment(x0, bas, haut, cls, arrondi) {
+      const hb = bas - haut;
+      if (hb <= 0) return;
+      const rr = arrondi ? Math.min(r, hb) : 0;
+      el("path", {class: cls, d: rr ?
+        `M${x0},${bas}V${haut + rr}Q${x0},${haut} ${x0 + rr},${haut}H${x0 + larg - rr}Q${x0 + larg},${haut} ${x0 + larg},${haut + rr}V${bas}Z`
+        : `M${x0},${bas}V${haut}H${x0 + larg}V${bas}Z`}, svg);
+    }
     P.forEach((p, i) => {
-      const x0 = x(i), y0 = y(p.bet), base = y(0);
+      const x0 = x(i);
       const cls = p.quantite_de === "BUY" ? "barre achat" : p.quantite_de === "SELL" ? "barre vente" : "barre";
-      const hb = base - y0;
-      const rr = Math.min(r, hb);
-      el("path", {class: cls, d: hb <= 0 ? "" :
-        `M${x0},${base}V${y0 + rr}Q${x0},${y0} ${x0 + rr},${y0}H${x0 + larg - rr}Q${x0 + larg},${y0} ${x0 + larg},${y0 + rr}V${base}Z`}, svg);
+      const benef = Math.min(Math.max(p.reinj_benefice, 0), p.bet);
+      const cap = Math.min(Math.max(p.reinj_capital, 0), p.bet - benef);
+      const parts = [[p.bet - benef - cap, cls], [benef, "barre benefice"], [cap, "barre capital"]].filter(t => t[0] > 0);
+      let cumul = 0;
+      parts.forEach(([q, c], k) => {
+        let bas = y(cumul), haut = y(cumul + q);
+        if (k > 0 && bas - haut > 3) bas -= 2;  // écart avec le segment du dessous
+        segment(x0, bas, haut, c, k === parts.length - 1);
+        cumul += q;
+      });
     });
 
     // Prix des ordres ouverts : trait vertical + libellé direct
@@ -198,6 +230,9 @@
       `<strong>Palier ${p.id}</strong>`,
       `Prix : ${prixTxt(p.prix)} ${D.devise2}`,
       `Quantité : ${entierTxt(p.bet)} ${D.devise1}`,
+      `Réinjecté bénéfice : ${entierTxt(p.reinj_benefice)} ${D.devise1}`,
+      `Réinjecté capital : ${entierTxt(p.reinj_capital)} ${D.devise1}`
+        + (p.reinj_capital > 0 && p.prix_moyen_capital ? ` à ${prixTxt(p.prix_moyen_capital)} ${D.devise2} en moyenne` : ""),
       `Valeur : ${(p.prix * p.bet).toLocaleString("fr-FR", {minimumFractionDigits: 2, maximumFractionDigits: 2})} ${D.devise2}`,
     ];
     if (p.gain !== null) lignes.push(`Gain achat → vente : ${p.gain.toLocaleString("fr-FR", {minimumFractionDigits: 2, maximumFractionDigits: 2})} ${D.devise2}`);

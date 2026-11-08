@@ -8,11 +8,11 @@
   <style>
     :root { --bg:#f6f7f9; --card:#fff; --txt:#1d2330; --muted:#6b7385; --line:#e3e6ec;
             --buy:#1a7f4b; --sell:#b42318; --accent:#2f5bd3; --warn:#fff4e5; --warn-txt:#8a4b00;
-            --achat:#2a78d6; --vente:#eb6834; --palier:#c3c8d2; }
+            --achat:#2a78d6; --vente:#eb6834; --palier:#c3c8d2; --benefice:#1baf7a; --capital:#6250d6; }
     @media (prefers-color-scheme: dark) {
       :root { --bg:#14171d; --card:#1c2029; --txt:#e6e9ef; --muted:#9aa3b5; --line:#2c3240;
               --buy:#4cc38a; --sell:#f97066; --accent:#7b9cff; --warn:#3a2a12; --warn-txt:#ffd08a;
-              --achat:#3987e5; --vente:#d95926; --palier:#3d4454; }
+              --achat:#3987e5; --vente:#d95926; --palier:#3d4454; --benefice:#199e70; --capital:#9085e9; }
     }
     * { box-sizing: border-box; }
     body { margin:0; font:15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--txt); }
@@ -86,6 +86,7 @@
     .legende span { display:inline-flex; align-items:center; gap:.35rem; }
     .legende i { display:inline-block; width:.75rem; height:.75rem; border-radius:3px; }
     .pastille-achat { background:var(--achat); } .pastille-vente { background:var(--vente); } .pastille-palier { background:var(--palier); }
+    .pastille-benefice { background:var(--benefice); } .pastille-capital { background:repeating-linear-gradient(45deg, var(--capital) 0 3px, color-mix(in srgb, var(--capital) 45%, var(--card)) 3px 5px); }
     .legende i.trait-prix { width:0; height:.9rem; border-left:2px dashed var(--txt); border-radius:0; }
     .zoom { margin-left:auto; display:flex; gap:.3rem; }
     .zoom button { font:inherit; font-size:.82rem; padding:.2rem .6rem; border:1px solid var(--line); border-radius:6px; background:var(--card); color:var(--muted); cursor:pointer; }
@@ -93,6 +94,8 @@
     .graphe { width:100%; }
     .graphe svg { display:block; overflow:visible; }
     .graphe .barre { fill:var(--palier); } .graphe .barre.achat { fill:var(--achat); } .graphe .barre.vente { fill:var(--vente); }
+    .graphe .barre.benefice { fill:var(--benefice); } .graphe .barre.capital { fill:url(#hachures-capital); }
+    .graphe .hachure-fond { fill:var(--capital); } .graphe .hachure-trait { stroke:color-mix(in srgb, var(--capital) 45%, var(--card)); stroke-width:2; }
     .graphe .quadrillage { stroke:var(--line); stroke-width:1; } .graphe .axe { stroke:var(--muted); stroke-width:1; }
     .graphe .graduation { fill:var(--muted); font-size:11px; font-variant-numeric:tabular-nums; }
     .graphe .etiquette { fill:var(--txt); font-size:12px; font-weight:600; }

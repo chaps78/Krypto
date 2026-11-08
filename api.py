@@ -254,13 +254,30 @@ def strategy(symbol: str):
 
 @app.get("/strategies/{symbol}/grid")
 def grid(symbol: str):
-    """Grille de la stratégie : paliers (prix, bet)."""
+    """Grille de la stratégie : paliers (prix, bet) et suivi des réinjections.
+
+    reinj_benefice / reinj_capital : quantité ajoutée au palier par la
+    réinjection, payée par le bénéfice des ventes ou par le capital ;
+    prix_moyen_capital : prix d'achat moyen (pondéré) de la part capital.
+    Si la base n'a pas encore ces colonnes (migration
+    deploy/ajouter_colonnes_reinjection.py non lancée), elles valent None.
+    """
     strategy_or_404(symbol)
-    return query(
-        """SELECT ID AS id, prix, bet FROM ecart_bet
-           WHERE symbol = ? ORDER BY ID""",
-        (symbol,),
-    )
+    try:
+        return query(
+            """SELECT ID AS id, prix, bet, reinj_benefice, reinj_capital, prix_moyen_capital
+               FROM ecart_bet WHERE symbol = ? ORDER BY ID""",
+            (symbol,),
+        )
+    except sqlite3.OperationalError as e:
+        if "no such column" not in str(e):
+            raise
+        return query(
+            """SELECT ID AS id, prix, bet, NULL AS reinj_benefice, NULL AS reinj_capital,
+                      NULL AS prix_moyen_capital
+               FROM ecart_bet WHERE symbol = ? ORDER BY ID""",
+            (symbol,),
+        )
 
 
 @app.get("/reinjection")
