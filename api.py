@@ -43,6 +43,7 @@ from contextlib import asynccontextmanager, contextmanager
 from datetime import datetime, timedelta, timezone
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from pydantic import BaseModel, Field
 
 import reinjection
 import verrou_ecriture
@@ -278,6 +279,113 @@ def grid(symbol: str):
                FROM ecart_bet WHERE symbol = ? ORDER BY ID""",
             (symbol,),
         )
+
+
+FRAIS_BROKER = 0.00075   # 0,075 % de frais Binance sur chaque ordre (achat et vente)
+VALEUR_MINI = 6.0        # en devise de cotation : en dessous, Binance refuserait l'ordre
+
+
+def paliers_ordres_ouverts(lire, symbol):
+    """Paliers utilisés par les ordres ouverts : palier du prix + paliers de la quantité.
+
+    Même règle que bininterface : la quantité d'une vente vient des 1/2/3 paliers
+    sous son prix (niveaux 1-2 / 3 / 4), celle d'un achat de son palier et des
+    suivants. Modifier leur bet ferait diverger la quantité de l'ordre déjà posé.
+    """
+    ids = set()
+    for sens, s, niveau in lire(
+            "SELECT sens, ID_ecart, niveau FROM Ordres WHERE symbol = ? "
+            "AND status IN ('NEW', 'PARTIALLY_FILLED')", (symbol,)):
+        if s is None:
+            continue
+        n = int(niveau or 1)
+        k = 1 if n <= 2 else (2 if n == 3 else 3)
+        ids.add(int(s))
+        ids.update(range(s - k, s) if sens == "SELL" else range(s, s + k))
+    return ids
+
+
+def calculer_reduction(lire, symbol, gain, de, a):
+    """Nouveaux bets pour qu'un aller-retour (achat au palier, vente au palier du
+    dessus, frais compris) rapporte `gain` sur les paliers de..a.
+
+    gain = bet × (prix_dessus − prix) − FRAIS × bet × (prix + prix_dessus)
+    d'où bet = gain / (prix_dessus − prix − FRAIS × (prix + prix_dessus)).
+    Le bet n'est jamais augmenté. lire(sql, params) -> liste de tuples.
+    """
+    devise = lire("SELECT dev_entiere FROM Devises WHERE symbol = ?", (symbol,))
+    entier = bool(devise and devise[0][0] and int(devise[0][0]) == 1)
+    prix_de = dict(lire("SELECT ID, prix FROM ecart_bet WHERE symbol = ?", (symbol,)))
+    occupes = paliers_ordres_ouverts(lire, symbol)
+    lignes = []
+    for i, prix, bet in lire("SELECT ID, prix, bet FROM ecart_bet WHERE symbol = ? AND ID BETWEEN ? AND ? "
+                             "ORDER BY ID", (symbol, de, a)):
+        ligne = {"id": i, "prix": prix, "bet": bet, "nouveau_bet": None, "statut": "modifie"}
+        dessus = prix_de.get(i + 1)
+        ecart = None if dessus is None or prix is None else dessus - prix - FRAIS_BROKER * (prix + dessus)
+        if ecart is None or ecart <= 0:
+            ligne["statut"] = "sans_palier_dessus" if dessus is None else "gain_impossible"
+        elif i in occupes:
+            ligne["statut"] = "ordre_ouvert"
+        else:
+            cible = gain / ecart
+            if entier:
+                cible = float(int(cible))
+            if cible >= (bet or 0):
+                ligne["statut"] = "deja_inferieur"
+            elif cible * prix < VALEUR_MINI:
+                ligne["statut"] = "valeur_trop_faible"
+            else:
+                ligne["nouveau_bet"] = cible
+        lignes.append(ligne)
+    return lignes
+
+
+class Reduction(BaseModel):
+    gain: float = Field(gt=0)
+    de: int
+    a: int
+
+
+def verifier_reduction(symbol, gain, de, a):
+    strategy_or_404(symbol)
+    if de > a:
+        raise HTTPException(status_code=422, detail="Plage de paliers vide : « de » doit être ≤ « à »")
+    if not gain > 0:
+        raise HTTPException(status_code=422, detail="Le gain doit être strictement positif")
+
+
+@app.get("/strategies/{symbol}/grid/reduction")
+def apercu_reduction(symbol: str, gain: float, de: int, a: int):
+    """Aperçu (sans écriture) de la réduction des bets pour un gain achat → vente visé."""
+    verifier_reduction(symbol, gain, de, a)
+    con = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True, timeout=10)
+    try:
+        return calculer_reduction(lambda sql, p: con.execute(sql, p).fetchall(), symbol, gain, de, a)
+    finally:
+        con.close()
+
+
+@app.post("/strategies/{symbol}/grid/reduction")
+def appliquer_reduction(symbol: str, r: Reduction):
+    """Réduit les bets (bot en pause, une seule transaction) et trace l'opération dans Log.
+
+    Le calcul est refait sous verrou, sur les valeurs à jour : ce qui est écrit
+    peut donc différer légèrement de l'aperçu si le bot a tradé entre-temps.
+    """
+    verifier_reduction(symbol, r.gain, r.de, r.a)
+    with base_en_ecriture() as con:
+        lignes = calculer_reduction(lambda sql, p: con.execute(sql, p).fetchall(), symbol, r.gain, r.de, r.a)
+        modifies = [l for l in lignes if l["nouveau_bet"] is not None]
+        for l in modifies:
+            con.execute("UPDATE ecart_bet SET bet = ? WHERE symbol = ? AND ID = ?", (l["nouveau_bet"], symbol, l["id"]))
+        if modifies:
+            detail = "; ".join(f"{l['id']}: {l['bet']:.8g} -> {l['nouveau_bet']:.8g}" for l in modifies)
+            con.execute("INSERT INTO Log (date, emplacement, erreur, type, symbol) VALUES (?, ?, ?, ?, ?)",
+                        (str(datetime.now(timezone.utc)), "Front : réduction des bets",
+                         f"gain visé {r.gain} sur les paliers {r.de}-{r.a}, {len(modifies)} modifiés : {detail}",
+                         "DEBUG", symbol))
+    return {"modifies": len(modifies), "lignes": lignes}
 
 
 @app.get("/reinjection")

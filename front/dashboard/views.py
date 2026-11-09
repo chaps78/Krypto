@@ -65,6 +65,30 @@ def nombre(x):
     return f"{x:.10f}".rstrip("0")
 
 
+def prix_txt(x):
+    """Prix lisible : les très petits prix (PEPE) en ×10⁻⁶ avec 3 chiffres significatifs."""
+    try:
+        x = float(x)
+    except (TypeError, ValueError):
+        return x
+    if x != 0 and abs(x) < 1e-3:
+        return f"{x * 1e6:#.3g}".rstrip(".") + " ×10⁻⁶"
+    return nombre(x)
+
+
+def quantite_txt(x):
+    """Quantité lisible : en millions (M) avec 4 chiffres significatifs au-delà du million."""
+    try:
+        x = float(x)
+    except (TypeError, ValueError):
+        return x
+    if abs(x) >= 1e6:
+        m = x / 1e6
+        decimales = max(0, 4 - len(str(int(abs(m)))))
+        return f"{m:.{decimales}f}".replace(",", " ") + " M"
+    return nombre(round(x))
+
+
 def etat_bot():
     """Infos /health de l'API : date du dernier ordre et ancienneté."""
     sante = api_client.get("/health")
@@ -265,17 +289,17 @@ def grille(request):
         paliers = api_client.get(f"/strategies/{symbol}/grid")
         par_id = {p["id"]: p for p in paliers}
         for p in paliers:
-            p["prix_txt"] = nombre(p["prix"])
-            p["bet_txt"] = nombre(round(p["bet"]))
+            p["prix_txt"] = prix_txt(p["prix"])
+            p["bet_txt"] = quantite_txt(p["bet"])
             p["valeur"] = p["prix"] * p["bet"]
             p["valeur_txt"] = montant(p["valeur"])
             # Suivi des réinjections (None tant que la migration n'est pas faite)
             p["reinj_benefice"] = p.get("reinj_benefice") or 0.0
             p["reinj_capital"] = p.get("reinj_capital") or 0.0
             p["prix_moyen_capital"] = p.get("prix_moyen_capital")
-            p["reinj_benefice_txt"] = nombre(round(p["reinj_benefice"])) if p["reinj_benefice"] else ""
-            p["reinj_capital_txt"] = nombre(round(p["reinj_capital"])) if p["reinj_capital"] else ""
-            p["prix_moyen_capital_txt"] = (nombre(p["prix_moyen_capital"])
+            p["reinj_benefice_txt"] = quantite_txt(p["reinj_benefice"]) if p["reinj_benefice"] else ""
+            p["reinj_capital_txt"] = quantite_txt(p["reinj_capital"]) if p["reinj_capital"] else ""
+            p["prix_moyen_capital_txt"] = (prix_txt(p["prix_moyen_capital"])
                                            if p["reinj_capital"] and p["prix_moyen_capital"] else "")
         cumul = 0.0
         for p in paliers:  # du palier le plus bas au plus haut (ordre de l'API)
@@ -287,8 +311,8 @@ def grille(request):
             p["prix_de"] = p["quantite_de"] = p["ordre"] = None
             p["suite"] = False
         for o in ouverts:
-            o["montant_txt"] = nombre(o["montant"])
-            o["prix_txt"] = nombre(o["limite"])
+            o["montant_txt"] = quantite_txt(o["montant"])
+            o["prix_txt"] = prix_txt(o["limite"])
             if o["id_ecart"] in par_id:
                 par_id[o["id_ecart"]]["prix_de"] = o["sens"]
             ids = [i for i in paliers_quantite(o) if i in par_id]
@@ -316,10 +340,84 @@ def grille(request):
         }
     except api_client.ApiError as e:
         contexte["erreur"] = str(e)
+    if contexte["paliers"]:
+        apercu_reduction(request, symbol, contexte)
     erreurs = []
     contexte["reinjection"] = bloc(erreurs, "Barème de réinjection", bareme_reinjection)
     contexte["erreur_reinjection"] = erreurs[0] if erreurs else None
     return render(request, "dashboard/grille.html", contexte)
+
+
+STATUTS_REDUCTION = {
+    "modifie": "réduit",
+    "deja_inferieur": "inchangé : bet déjà inférieur ou égal",
+    "ordre_ouvert": "inchangé : palier utilisé par un ordre ouvert",
+    "valeur_trop_faible": "inchangé : valeur sous 6, Binance refuserait l'ordre",
+    "sans_palier_dessus": "inchangé : pas de palier au-dessus",
+    "gain_impossible": "inchangé : écart de prix trop faible face aux frais",
+}
+
+
+def lire_reduction(source):
+    """Lit gain / de / a (formulaire de réduction des bets). Renvoie un dict ou lève ValueError."""
+    try:
+        gain = float(source.get("gain", "").replace(",", ".").strip())
+        de, a = int(source.get("de", "")), int(source.get("a", ""))
+    except ValueError:
+        raise ValueError("gain (nombre) et paliers (entiers) obligatoires") from None
+    if not gain > 0:
+        raise ValueError("le gain doit être strictement positif")
+    if de > a:
+        raise ValueError("le palier de début doit être inférieur ou égal au palier de fin")
+    return {"gain": gain, "de": de, "a": a}
+
+
+def apercu_reduction(request, symbol, contexte):
+    """Remplit le contexte avec l'aperçu de la réduction des bets si le formulaire est rempli."""
+    contexte["reduction"] = {"gain": request.GET.get("gain", ""), "de": request.GET.get("de", ""),
+                             "a": request.GET.get("a", "")}
+    if not request.GET.get("gain"):
+        return
+    try:
+        params = lire_reduction(request.GET)
+    except ValueError as e:
+        contexte["erreur_reduction"] = f"Paramètres invalides : {e}"
+        return
+    try:
+        lignes = api_client.get(f"/strategies/{symbol}/grid/reduction", **params)
+    except api_client.ApiError as e:
+        contexte["erreur_reduction"] = str(e)
+        return
+    for l in lignes:
+        l["prix_txt"] = prix_txt(l["prix"])
+        l["bet_txt"] = quantite_txt(l["bet"])
+        l["nouveau_bet_txt"] = quantite_txt(l["nouveau_bet"]) if l["nouveau_bet"] is not None else ""
+        l["statut_txt"] = STATUTS_REDUCTION.get(l["statut"], l["statut"])
+    contexte["apercu"] = lignes
+    contexte["apercu_params"] = params
+    contexte["nb_reduits"] = sum(1 for l in lignes if l["nouveau_bet"] is not None)
+
+
+@login_required
+@require_POST
+def reduire_bets(request):
+    """Applique la réduction des bets via l'API (bot mis en pause le temps de l'écriture)."""
+    symbol = request.POST.get("symbol")
+    suite = "/grille/"
+    if symbol in settings.KRYPTO_GRILLE_SYMBOLS:
+        suite += "?symbol=" + symbol
+        try:
+            params = lire_reduction(request.POST)
+            r = api_client.post(f"/strategies/{symbol}/grid/reduction", params, timeout=40)
+            messages.success(request, f"{r['modifies']} bet(s) réduit(s) sur les paliers {params['de']} à "
+                                      f"{params['a']} (détail dans le journal DEBUG).")
+        except ValueError as e:
+            messages.error(request, f"Paramètres invalides : {e}")
+        except api_client.ApiError as e:
+            messages.error(request, str(e))
+    else:
+        messages.error(request, "Stratégie non autorisée.")
+    return redirect(suite)
 
 
 def taux_pour(tranches, benef):

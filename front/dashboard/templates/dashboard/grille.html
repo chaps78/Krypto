@@ -41,6 +41,60 @@
   <div id="bulle" class="bulle" hidden></div>
 </section>
 
+<section class="carte" id="reduire-bets">
+  <h2>Réduire les bets</h2>
+  <p class="muted" style="margin-top:0">Ramène le bet de chaque palier de la plage au niveau qui donne le
+    <strong>gain achat → vente</strong> visé (frais compris). Un bet n'est jamais augmenté ; les paliers des ordres
+    ouverts ne sont pas touchés. Au-dessus du prix, la quantité retirée reste dans le portefeuille mais n'est plus
+    gérée par la grille.</p>
+  <form class="filtres" method="get" action="#reduire-bets">
+    <input type="hidden" name="symbol" value="{{ symbol }}">
+    <label>Gain visé ({{ strat.devise2 }})<input name="gain" inputmode="decimal" required value="{{ reduction.gain }}" size="8"></label>
+    <label>Du palier<input name="de" type="number" required value="{{ reduction.de }}" style="width:6rem"></label>
+    <label>Au palier<input name="a" type="number" required value="{{ reduction.a }}" style="width:6rem"></label>
+    <button class="bouton" type="submit" style="align-self:flex-end">Aperçu</button>
+  </form>
+  {% if erreur_reduction %}<p class="alerte">{{ erreur_reduction }}</p>{% endif %}
+  {% if apercu is not None %}
+  {% if apercu %}
+  <table class="grille">
+    <thead><tr><th class="num">Palier</th><th class="num">Prix ({{ strat.devise2 }})</th><th class="num">Bet actuel</th>
+      <th class="num">Nouveau bet</th><th>Résultat</th></tr></thead>
+    <tbody>
+      {% for l in apercu %}
+      <tr><td class="num">{{ l.id }}</td><td class="num">{{ l.prix_txt }}</td><td class="num">{{ l.bet_txt }}</td>
+        <td class="num">{% if l.nouveau_bet_txt %}<strong>{{ l.nouveau_bet_txt }}</strong>{% endif %}</td>
+        <td class="{% if l.statut != 'modifie' %}muted{% endif %}">{{ l.statut_txt }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if nb_reduits %}
+  <form method="post" action="{% url 'reduire_bets' %}" id="form-reduction">
+    {% csrf_token %}
+    <input type="hidden" name="symbol" value="{{ symbol }}">
+    <input type="hidden" name="gain" value="{{ apercu_params.gain }}">
+    <input type="hidden" name="de" value="{{ apercu_params.de }}">
+    <input type="hidden" name="a" value="{{ apercu_params.a }}">
+    <p><button class="bouton" type="button" onclick="document.getElementById('confirmer-reduction').showModal()">Appliquer ({{ nb_reduits }} palier{{ nb_reduits|pluralize }})</button></p>
+  </form>
+  <dialog id="confirmer-reduction" class="confirmation">
+    <h2>Réduire {{ nb_reduits }} bet{{ nb_reduits|pluralize }} ?</h2>
+    <p>Paliers {{ apercu_params.de }} à {{ apercu_params.a }} de {{ symbol }}, gain visé {{ apercu_params.gain }} {{ strat.devise2 }}.
+      Le bot est mis en pause le temps de l'écriture. Les anciennes valeurs sont notées dans le journal DEBUG.</p>
+    <div class="boutons">
+      <button type="button" onclick="this.closest('dialog').close()" autofocus>Annuler</button>
+      <button type="submit" form="form-reduction" class="danger">Réduire</button>
+    </div>
+  </dialog>
+  {% else %}
+  <p class="muted">Aucun bet à réduire avec ces paramètres.</p>
+  {% endif %}
+  {% else %}
+  <p class="muted">Aucun palier dans cette plage.</p>
+  {% endif %}
+  {% endif %}
+</section>
+
 <section class="carte">
   <h2>Réinjection selon le gain de la vente</h2>
   {% if reinjection %}
@@ -120,8 +174,14 @@
   let plage = "ordres";
 
   // 0.00000419 plutôt que 4.19e-6 ; 1 234 567 avec espaces
-  const prixTxt = x => x.toFixed(Math.max(0, 2 - Math.floor(Math.log10(Math.abs(x) || 1)) + 1)).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
-  const entierTxt = x => Math.round(x).toLocaleString("fr-FR");
+  // Très petits prix (PEPE) en ×10⁻⁶ avec 3 chiffres significatifs ; quantités en M (4 chiffres significatifs)
+  const petit = x => x !== 0 && Math.abs(x) < 1e-3;
+  const mantisse = x => (x * 1e6).toPrecision(3);
+  const prixTxt = x => petit(x) ? mantisse(x) + " ×10⁻⁶"
+    : x.toFixed(Math.max(0, 2 - Math.floor(Math.log10(Math.abs(x) || 1)) + 1)).replace(/(\.\d*?)0+$/, "$1").replace(/\.$/, "");
+  const qteTxt = x => Math.abs(x) >= 1e6
+    ? (x / 1e6).toFixed(Math.max(0, 4 - String(Math.trunc(Math.abs(x / 1e6))).length)) + " M"
+    : Math.round(x).toLocaleString("fr-FR");
   const compact = x => x >= 1e9 ? (x / 1e9).toLocaleString("fr-FR", {maximumFractionDigits: 1}) + " G"
                      : x >= 1e6 ? (x / 1e6).toLocaleString("fr-FR", {maximumFractionDigits: 1}) + " M"
                      : x >= 1e3 ? (x / 1e3).toLocaleString("fr-FR", {maximumFractionDigits: 1}) + " k"
@@ -172,13 +232,16 @@
       el("line", {x1: m.g, x2: L - m.d, y1: y(v), y2: y(v), class: v === 0 ? "axe" : "quadrillage"}, svg);
       el("text", {x: m.g - 6, y: y(v) + 4, "text-anchor": "end", class: "graduation"}, svg).textContent = compact(v);
     }
-    // Graduations de prix (environ 6)
+    // Graduations de prix (environ 6) ; en ×10⁻⁶ si tous les prix sont minuscules
+    const enMicro = P.every(p => petit(p.prix));
     const tous = Math.max(1, Math.round(P.length / 6));
     P.forEach((p, i) => {
       if (i % tous) return;
-      el("text", {x: x(i) + larg / 2, y: H - m.b + 16, "text-anchor": "middle", class: "graduation"}, svg).textContent = prixTxt(p.prix);
+      el("text", {x: x(i) + larg / 2, y: H - m.b + 16, "text-anchor": "middle", class: "graduation"}, svg).textContent =
+        enMicro ? mantisse(p.prix) : prixTxt(p.prix);
     });
-    el("text", {x: L - m.d, y: H - 4, "text-anchor": "end", class: "graduation"}, svg).textContent = "prix (" + D.devise2 + ")";
+    el("text", {x: L - m.d, y: H - 4, "text-anchor": "end", class: "graduation"}, svg).textContent =
+      "prix (" + (enMicro ? "×10⁻⁶ " : "") + D.devise2 + ")";
 
     // Barres empilées, de bas en haut : quantité d'origine (couleur de l'ordre ouvert),
     // part réinjectée par le bénéfice, part réinjectée par le capital.
@@ -229,9 +292,9 @@
     const lignes = [
       `<strong>Palier ${p.id}</strong>`,
       `Prix : ${prixTxt(p.prix)} ${D.devise2}`,
-      `Quantité : ${entierTxt(p.bet)} ${D.devise1}`,
-      `Réinjecté bénéfice : ${entierTxt(p.reinj_benefice)} ${D.devise1}`,
-      `Réinjecté capital : ${entierTxt(p.reinj_capital)} ${D.devise1}`
+      `Quantité : ${qteTxt(p.bet)} ${D.devise1}`,
+      `Réinjecté bénéfice : ${qteTxt(p.reinj_benefice)} ${D.devise1}`,
+      `Réinjecté capital : ${qteTxt(p.reinj_capital)} ${D.devise1}`
         + (p.reinj_capital > 0 && p.prix_moyen_capital ? ` à ${prixTxt(p.prix_moyen_capital)} ${D.devise2} en moyenne` : ""),
       `Valeur : ${(p.prix * p.bet).toLocaleString("fr-FR", {minimumFractionDigits: 2, maximumFractionDigits: 2})} ${D.devise2}`,
     ];

@@ -24,17 +24,25 @@ def get(path, **params):
     return appeler(urllib.request.Request(url), path)
 
 
-def post(path):
-    """Appelle POST {KRYPTO_API_URL}{path} (sans corps) et renvoie le JSON décodé."""
-    return appeler(urllib.request.Request(settings.KRYPTO_API_URL + path, data=b"", method="POST"), path)
+def post(path, donnees=None, timeout=10):
+    """Appelle POST {KRYPTO_API_URL}{path} (corps JSON facultatif) et renvoie le JSON décodé.
+
+    Pour une écriture en base, prévoir un timeout supérieur à l'attente du
+    verrou côté API (20 s) : l'API peut attendre que le bot se mette en pause.
+    """
+    corps = b"" if donnees is None else json.dumps(donnees).encode()
+    req = urllib.request.Request(settings.KRYPTO_API_URL + path, data=corps, method="POST")
+    if donnees is not None:
+        req.add_header("Content-Type", "application/json")
+    return appeler(req, path, timeout)
 
 
-def appeler(req, path):
+def appeler(req, path, timeout=10):
     """Envoie la requête (avec le token éventuel) ; lève ApiError en cas de problème."""
     if settings.KRYPTO_API_TOKEN:
         req.add_header("Authorization", f"Bearer {settings.KRYPTO_API_TOKEN}")
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.load(resp)
     except urllib.error.HTTPError as e:
         try:
@@ -43,10 +51,10 @@ def appeler(req, path):
             detail = None
         raise ApiError(f"L'API a répondu {e.code} sur {path}" + (f" : {detail}" if isinstance(detail, str) else "")) from e
     except TimeoutError as e:
-        raise ApiError(f"L'API n'a pas répondu en 10 s sur {path} : réessayez dans un instant") from e
+        raise ApiError(f"L'API n'a pas répondu en {timeout} s sur {path} : réessayez dans un instant") from e
     except urllib.error.URLError as e:
         if isinstance(e.reason, TimeoutError):
-            raise ApiError(f"L'API n'a pas répondu en 10 s sur {path} : réessayez dans un instant") from e
+            raise ApiError(f"L'API n'a pas répondu en {timeout} s sur {path} : réessayez dans un instant") from e
         raise ApiError(f"API injoignable ({settings.KRYPTO_API_URL}) : le tunnel SSH est-il actif ?") from e
     except (http.client.HTTPException, ValueError) as e:
         raise ApiError(f"Réponse incomplète ou illisible de l'API sur {path}") from e
