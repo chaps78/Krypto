@@ -28,23 +28,3 @@ def taux_local(benef):
 def taux_up(benef):
     """Taux (%) de la part "up" en fonction du bénéfice à redistribuer."""
     return _taux(BAREME_UP, DEFAUT_UP, benef)
-
-
-def repartir(benefice, parts):
-    """Répartit chaque part réinjectée entre bénéfice et capital.
-
-    Les 100 % du bénéfice sont attribués aux parts dans l'ordre donné
-    (local, puis up, puis down) ; ce qui dépasse vient du capital.
-
-    parts : liste de (nom, montant) dans l'ordre de priorité.
-    Returns:
-        dict {nom: (montant venant du bénéfice, montant venant du capital)}.
-    """
-    reste = max(float(benefice), 0.0)
-    resultat = {}
-    for nom, montant in parts:
-        montant = max(float(montant), 0.0)
-        du_benefice = min(montant, reste)
-        reste -= du_benefice
-        resultat[nom] = (du_benefice, montant - du_benefice)
-    return resultat

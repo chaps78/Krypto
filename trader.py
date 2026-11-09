@@ -93,10 +93,10 @@ class Basics():
                 print("suivi_reinjection "+etape+" : "+str(inst))
             return None
 
-    def suivre_sans_risque(self,symbol,ID_ecart,qtt_benefice,qtt_capital,prix):
-        """Trace une réinjection sur un palier (reinj_benefice, reinj_capital, prix_moyen_capital)."""
+    def suivre_sans_risque(self,symbol,ID_ecart,qtt,prix):
+        """Trace une réinjection sur un palier (reinj_quantite, prix_moyen_reinj)."""
         self.sans_risque("palier "+str(ID_ecart),symbol,
-                         lambda: self.sql.suivre_reinjection(symbol,ID_ecart,qtt_benefice,qtt_capital,prix))
+                         lambda: self.sql.suivre_reinjection(symbol,ID_ecart,qtt,prix))
 
     def unite(self,symbol):
         """Renvoie (devise achetée, devise de cotation) d'une stratégie, ex. ("PEPE", "EUR")."""
@@ -240,18 +240,19 @@ class Basics():
                     up_tmp = self.get_taux_up(benef_tmp)
                     up = benef_tmp*up_tmp/100
                     debug_flag = 6
-                    # Suivi seulement : part de chaque réinjection venant du bénéfice
-                    # (100 % du bénéfice, priorité local > up > down) ou du capital.
-                    parts = reinjection.repartir(benef_tmp,[("local",local),("up",up),("down",down)])
-                    self.reinject_local(symbol,last_filled,local,capital=parts["local"][1])
+                    self.reinject_local(symbol,last_filled,local)
                     debug_flag = 7
                     if down>0:
-                        self.reinject_down(symbol,ID_client,down,last_filled,capital=parts["down"][1])
+                        self.reinject_down(symbol,ID_client,down,last_filled)
                     debug_flag = 8
                     self.sql.ajout_epargne_paire_devise(symbol,epargne,ID_client)
                     debug_flag = 9
-                    self.reinject_up(symbol,ID_client,up,last_filled,capital=parts["up"][1])
+                    self.reinject_up(symbol,ID_client,up,last_filled)
                     debug_flag = 10
+                    # Suivi seulement : ce qui est réinjecté au-delà du bénéfice vient du capital
+                    capital = local+up+down-benef_tmp
+                    if capital > 0:
+                        self.sans_risque("capital_injecte",symbol,lambda: self.sql.add_capital_injecte(symbol,capital))
                     self.sql.add_to_factu_from_symbol(symbol,factu)
                     debug_flag = 11
                     self.sql.add_to_benef_TMP(symbol,-benef_tmp)
@@ -262,7 +263,7 @@ class Basics():
                 return inst
             
 
-    def reinject_down(self,symbol,ID_client,down,last_filled,capital=0.0):
+    def reinject_down(self,symbol,ID_client,down,last_filled):
         """Ajoute la part "down" à un palier situé sous le dernier palier exécuté.
 
         Descend depuis ID_ecart-1 jusqu'au premier palier dont le gain théorique
@@ -279,10 +280,10 @@ class Basics():
             ID-=1
         prix = float(self.sql.get_ecart_bet_from_symbol_and_ID(symbol,ID)[2])
         self.sql.add_to_ecart(symbol,ID,down/prix)
-        self.suivre_sans_risque(symbol,ID,(down-capital)/prix,capital/prix,prix)
+        self.suivre_sans_risque(symbol,ID,down/prix,prix)
         return ID
     
-    def reinject_up(self,symbol,ID_client,qtt,last_filled,capital=0.0):
+    def reinject_up(self,symbol,ID_client,qtt,last_filled):
         """Accumule la part "up" et l'investit quand le montant est suffisant.
 
         La quantité est ajoutée à Devises.up_TMP. Dès que up_TMP vaut plus de 6 USDT,
@@ -290,13 +291,10 @@ class Basics():
         dernier exécuté dont le gain théorique est inférieur à Obj_gain, puis
         décrémente up_TMP.
 
-        Suivi (sans effet sur le trading) : la part capital de qtt s'accumule dans
-        Devises.up_TMP_capital ; à l'achat, la quantité est répartie entre
-        bénéfice et capital au prorata, au prix moyen d'exécution de l'ordre.
+        Suivi (sans effet sur le trading) : la quantité achetée est tracée sur le
+        palier au prix moyen d'exécution de l'ordre market.
         """
         self.sql.add_2_up_tmp(symbol,qtt)
-        self.sans_risque("up_TMP_capital",symbol,
-                         lambda: self.sql.set_up_tmp_capital(symbol,self.sql.get_up_tmp_capital(symbol)+capital))
         total = float(self.sql.get_up_tmp(symbol))
         devise_base = self.sql.get_devises_from_symbol(symbol,ID_client)["devise2"]
         if devise_base == "USDT":
@@ -319,35 +317,29 @@ class Basics():
             dev_entier = self.sql.get_devises_from_symbol(symbol,ID_client)["dev_entiere"]
             self.tele.send_message(sur(lambda: self.texte_reinject_up(symbol,ID_client,total,taux_convert,ID,int(dev_entier)==1),
                                        "Reinject UP "+symbol+" "+str(total)+"\n ID "+str(ID_client)))
-            cap_avant = self.sans_risque("up_TMP_capital",symbol,lambda: self.sql.get_up_tmp_capital(symbol)) or 0.0
             if int(dev_entier) == 1:
                 _, prix_exec = self.bin.new_market_order(symbol,int(total/taux_convert),"BUY",ID_client,detail=True)
                 self.sql.add_to_ecart(symbol,ID,int(total/taux_convert))
                 self.sql.add_2_up_tmp(symbol,-int(total/taux_convert)*taux_convert)
-                achete, depense = int(total/taux_convert), int(total/taux_convert)*taux_convert
+                achete = int(total/taux_convert)
             else:
                 _, prix_exec = self.bin.new_market_order(symbol,total/taux_convert,"BUY",ID_client,detail=True)
                 self.sql.add_to_ecart(symbol,ID,total/taux_convert)
                 self.sql.add_2_up_tmp(symbol,-total)
-                achete, depense = total/taux_convert, total
-            fraction = min(max(cap_avant/total,0.0),1.0) if total > 0 else 0.0
-            self.suivre_sans_risque(symbol,ID,achete*(1-fraction),achete*fraction,
-                                    prix_exec if prix_exec else taux_convert)
-            self.sans_risque("up_TMP_capital",symbol,
-                             lambda: self.sql.set_up_tmp_capital(symbol,cap_avant-fraction*depense))
+                achete = total/taux_convert
+            self.suivre_sans_risque(symbol,ID,achete,prix_exec if prix_exec else taux_convert)
         
 
 
-    def reinject_local(self,symbol,last_filled,qtt,capital=0.0):
+    def reinject_local(self,symbol,last_filled,qtt):
         """Renforce le palier juste sous le dernier exécuté (ID_ecart-1).
 
-        Ajoute qtt/prix au bet de ce palier. capital : part du montant qtt venant
-        du capital (suivi dans ecart_bet, sans effet sur le trading).
+        Ajoute qtt/prix au bet de ce palier (et le trace dans le suivi des réinjections).
         """
         current_bet = self.sql.get_ecart_bet_from_symbol_and_ID(symbol,float(last_filled["ID_ecart"])-1)[3]
         prix = float(self.sql.get_ecart_bet_from_symbol_and_ID(symbol,int(last_filled["ID_ecart"])-1)[2])
         self.sql.update_bet_with_ID(symbol,int(last_filled["ID_ecart"])-1,float(current_bet)+qtt/prix)
-        self.suivre_sans_risque(symbol,int(last_filled["ID_ecart"])-1,(qtt-capital)/prix,capital/prix,prix)
+        self.suivre_sans_risque(symbol,int(last_filled["ID_ecart"])-1,qtt/prix,prix)
 
     def un_ordre_filled_autre_new(self,ordres_ouvert,symbol,ID_client):
         """Cas normal : un ordre exécuté, l'autre encore ouvert.

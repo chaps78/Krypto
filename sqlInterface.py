@@ -883,33 +883,27 @@ class sqlAcces():
         up_TMP = res.fetchall()[0][0]
         return up_TMP
     
-    def suivre_reinjection(self,symbol,ID_ecart,qtt_benefice,qtt_capital,prix):
+    def suivre_reinjection(self,symbol,ID_ecart,qtt,prix):
         """Trace une réinjection sur un palier (colonnes de suivi, sans effet sur le trading).
 
-        reinj_benefice += qtt_benefice, reinj_capital += qtt_capital, et
-        prix_moyen_capital = moyenne pondérée de l'ancien prix moyen (sur
-        l'ancienne quantité capital) et de prix (sur qtt_capital).
+        reinj_quantite += qtt, et prix_moyen_reinj = moyenne pondérée de l'ancien
+        prix moyen (sur l'ancienne quantité) et de prix (sur qtt).
         """
         self.cur.execute(
             """UPDATE ecart_bet SET
-                 prix_moyen_capital = CASE WHEN :qc > 0
-                     THEN (COALESCE(prix_moyen_capital,0)*COALESCE(reinj_capital,0) + :qc*:prix)
-                          / (COALESCE(reinj_capital,0) + :qc)
-                     ELSE prix_moyen_capital END,
-                 reinj_benefice = COALESCE(reinj_benefice,0) + :qb,
-                 reinj_capital  = COALESCE(reinj_capital,0) + :qc
+                 prix_moyen_reinj = CASE WHEN :q > 0
+                     THEN (COALESCE(prix_moyen_reinj,0)*COALESCE(reinj_quantite,0) + :q*:prix)
+                          / (COALESCE(reinj_quantite,0) + :q)
+                     ELSE prix_moyen_reinj END,
+                 reinj_quantite = COALESCE(reinj_quantite,0) + :q
                WHERE symbol = :symbol AND ID = :id""",
-            {"qb":float(qtt_benefice),"qc":float(qtt_capital),"prix":float(prix),"symbol":symbol,"id":int(ID_ecart)})
+            {"q":float(qtt),"prix":float(prix),"symbol":symbol,"id":int(ID_ecart)})
         self.con.commit()
 
-    def get_up_tmp_capital(self,symbol):
-        """Part de Devises.up_TMP venant du capital (au-delà de 100 % du bénéfice)."""
-        res = self.cur.execute("SELECT up_TMP_capital FROM Devises WHERE symbol=?",(symbol,)).fetchone()
-        return float(res[0] or 0.0) if res else 0.0
-
-    def set_up_tmp_capital(self,symbol,montant):
-        """Fixe la part capital de Devises.up_TMP (jamais négative)."""
-        self.cur.execute("UPDATE Devises SET up_TMP_capital=? WHERE symbol=?",(max(float(montant),0.0),symbol))
+    def add_capital_injecte(self,symbol,montant):
+        """Ajoute au compteur Devises.capital_injecte (part réinjectée au-delà du bénéfice)."""
+        self.cur.execute("UPDATE Devises SET capital_injecte=COALESCE(capital_injecte,0)+? WHERE symbol=?",
+                         (float(montant),symbol))
         self.con.commit()
 
     def add_2_up_tmp(self,symbol,qtt):

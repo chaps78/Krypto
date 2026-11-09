@@ -285,6 +285,8 @@ def grille(request):
         return render(request, "dashboard/grille.html", contexte)
     try:
         strat = contexte["strat"] = api_client.get(f"/strategies/{symbol}")
+        if strat.get("capital_injecte") is not None:
+            strat["capital_injecte_txt"] = montant(strat["capital_injecte"])
         ouverts = api_client.get(f"/strategies/{symbol}/open-orders")
         paliers = api_client.get(f"/strategies/{symbol}/grid")
         par_id = {p["id"]: p for p in paliers}
@@ -294,13 +296,11 @@ def grille(request):
             p["valeur"] = p["prix"] * p["bet"]
             p["valeur_txt"] = montant(p["valeur"])
             # Suivi des réinjections (None tant que la migration n'est pas faite)
-            p["reinj_benefice"] = p.get("reinj_benefice") or 0.0
-            p["reinj_capital"] = p.get("reinj_capital") or 0.0
-            p["prix_moyen_capital"] = p.get("prix_moyen_capital")
-            p["reinj_benefice_txt"] = quantite_txt(p["reinj_benefice"]) if p["reinj_benefice"] else ""
-            p["reinj_capital_txt"] = quantite_txt(p["reinj_capital"]) if p["reinj_capital"] else ""
-            p["prix_moyen_capital_txt"] = (prix_txt(p["prix_moyen_capital"])
-                                           if p["reinj_capital"] and p["prix_moyen_capital"] else "")
+            p["reinj_quantite"] = p.get("reinj_quantite") or 0.0
+            p["prix_moyen_reinj"] = p.get("prix_moyen_reinj")
+            p["reinj_txt"] = quantite_txt(p["reinj_quantite"]) if p["reinj_quantite"] else ""
+            p["prix_moyen_reinj_txt"] = (prix_txt(p["prix_moyen_reinj"])
+                                         if p["reinj_quantite"] and p["prix_moyen_reinj"] else "")
         cumul = 0.0
         for p in paliers:  # du palier le plus bas au plus haut (ordre de l'API)
             cumul += p["valeur"]
@@ -331,8 +331,7 @@ def grille(request):
         contexte["graphe"] = {
             "devise1": strat["devise1"], "devise2": strat["devise2"],
             "paliers": [{"id": p["id"], "prix": p["prix"] or 0, "bet": p["bet"] or 0, "gain": p["gain"],
-                         "reinj_benefice": p["reinj_benefice"], "reinj_capital": p["reinj_capital"],
-                         "prix_moyen_capital": p["prix_moyen_capital"],
+                         "reinj_quantite": p["reinj_quantite"], "prix_moyen_reinj": p["prix_moyen_reinj"],
                          "prix_de": p["prix_de"], "quantite_de": p["quantite_de"]}
                         for p in paliers],
             "ordres": [{"sens": o["sens"], "id_ecart": o["id_ecart"], "niveau": o["niveau"],

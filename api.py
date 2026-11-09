@@ -249,24 +249,32 @@ def strategies(actif: bool | None = None, id_client: int | None = None):
 
 @app.get("/strategies/{symbol}")
 def strategy(symbol: str):
-    """Paramètres et compteurs d'une stratégie."""
-    return strategy_or_404(symbol)
+    """Paramètres et compteurs d'une stratégie.
+
+    capital_injecte : total réinjecté au-delà du bénéfice des ventes (None si la
+    migration deploy/simplifier_suivi_reinjection.py n'est pas encore faite).
+    """
+    s = strategy_or_404(symbol)
+    try:
+        s["capital_injecte"] = query("SELECT capital_injecte FROM Devises WHERE symbol = ?", (symbol,))[0]["capital_injecte"]
+    except sqlite3.OperationalError:
+        s["capital_injecte"] = None
+    return s
 
 
 @app.get("/strategies/{symbol}/grid")
 def grid(symbol: str):
     """Grille de la stratégie : paliers (prix, bet) et suivi des réinjections.
 
-    reinj_benefice / reinj_capital : quantité ajoutée au palier par la
-    réinjection, payée par le bénéfice des ventes ou par le capital ;
-    prix_moyen_capital : prix d'achat moyen (pondéré) de la part capital.
+    reinj_quantite : quantité ajoutée au palier par la réinjection des ventes ;
+    prix_moyen_reinj : son prix d'achat moyen (pondéré par les quantités).
     Si la base n'a pas encore ces colonnes (migration
-    deploy/ajouter_colonnes_reinjection.py non lancée), elles valent None.
+    deploy/simplifier_suivi_reinjection.py non lancée), elles valent None.
     """
     strategy_or_404(symbol)
     try:
         return query(
-            """SELECT ID AS id, prix, bet, reinj_benefice, reinj_capital, prix_moyen_capital
+            """SELECT ID AS id, prix, bet, reinj_quantite, prix_moyen_reinj
                FROM ecart_bet WHERE symbol = ? ORDER BY ID""",
             (symbol,),
         )
@@ -274,8 +282,7 @@ def grid(symbol: str):
         if "no such column" not in str(e):
             raise
         return query(
-            """SELECT ID AS id, prix, bet, NULL AS reinj_benefice, NULL AS reinj_capital,
-                      NULL AS prix_moyen_capital
+            """SELECT ID AS id, prix, bet, NULL AS reinj_quantite, NULL AS prix_moyen_reinj
                FROM ecart_bet WHERE symbol = ? ORDER BY ID""",
             (symbol,),
         )
