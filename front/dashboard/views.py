@@ -217,9 +217,34 @@ def ordres_ouverts():
     return strategies
 
 
+def reserves_strategies():
+    """Réserves hors grille et moyennes mobiles 1h des stratégies actives, mises en forme."""
+    resultats = []
+    for strat in api_client.get("/strategies", actif="true"):
+        d = api_client.get(f"/strategies/{strat['symbol']}/reserves")
+        r, m = d["reserves"], d["moyennes"]
+        r["seuil_txt"] = montant(r.get("seuil"))
+        if not r.get("erreur"):
+            r["wallet_cotation_txt"] = montant(r["wallet_cotation"])
+            r["grille_cotation_txt"] = montant(r["grille_cotation"])
+            r["reserve_cotation_txt"] = montant(r["reserve_cotation"])
+            r["wallet_actif_txt"] = quantite_txt(r["wallet_actif"])
+            r["grille_actif_txt"] = quantite_txt(r["grille_actif"])
+            r["reserve_actif_txt"] = quantite_txt(r["reserve_actif"])
+            r["reserve_actif_valeur_txt"] = montant(r["reserve_actif_valeur"])
+            r["prix_txt"] = prix_txt(r["prix"])
+            r["maj_dt"] = parse_date(r.get("maj"))
+        v = m.get("valeurs")
+        if v:
+            v["ma7_txt"], v["ma25_txt"] = prix_txt(v["ma7"]), prix_txt(v["ma25"])
+            v["ouverture_dt"] = parse_date(v["ouverture"])
+        resultats.append({**strat, "reserves": r, "moyennes": m})
+    return resultats
+
+
 @login_required
 def kpi(request):
-    """Page KPI : gain du mois, portefeuilles Binance, puis ordres ouverts.
+    """Page KPI : gain du mois, portefeuilles Binance, réserves et moyennes mobiles, ordres ouverts.
 
     Chaque bloc est indépendant : une erreur dans l'un est affichée en haut
     de page sans empêcher les autres de s'afficher.
@@ -229,6 +254,7 @@ def kpi(request):
         "bot": bloc(erreurs, "Dernier ordre", etat_bot),
         "gains": bloc(erreurs, "Gain du mois", gains_du_mois, request),
         "wallets": bloc(erreurs, "Portefeuille", portefeuilles),
+        "reserves": bloc(erreurs, "Réserves", reserves_strategies) or [],
         "strategies": bloc(erreurs, "Ordres ouverts", ordres_ouverts) or [],
     }
     contexte["erreur"] = " · ".join(erreurs) or None

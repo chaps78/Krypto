@@ -61,6 +61,11 @@
     .message-ok { background:rgba(34,165,90,.12); border-radius:8px; padding:.7rem 1rem; margin-bottom:1rem; }
     .tuiles { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:.8rem; }
     .tuile { border:1px solid var(--line); border-radius:8px; padding:.7rem .9rem; }
+    .tuile.reserve-bas { background:var(--warn); border-color:var(--warn-txt); }
+    .tuile.reserve-negatif { background:var(--warn); border:2px solid var(--sell); }
+    .etat-reserve { font-weight:600; margin:.1rem 0 .3rem; }
+    .reserve-bas .etat-reserve { color:var(--warn-txt); }
+    .reserve-negatif .etat-reserve { color:var(--sell); }
     .tuile .valeur { font-size:1.5rem; font-weight:700; font-variant-numeric:tabular-nums; margin:.1rem 0 .4rem; }
     .entete-gains { display:flex; flex-wrap:wrap; align-items:center; gap:.6rem 1.5rem; margin-bottom:.8rem; }
     .entete-gains h2 { margin:0; }

@@ -122,6 +122,51 @@
 </section>
 {% endif %}
 
+{% for s in reserves %}
+<section class="carte">
+  <div class="entete-gains">
+    <h2>Réserves et tendance <span class="muted">· {{ s.symbol }}</span></h2>
+    {% if s.reserves.maj_dt %}<span class="muted" style="margin-left:auto">soldes du {{ s.reserves.maj_dt|date:"d/m/Y H:i:s" }} · palier {{ s.reserves.palier }} · prix {{ s.reserves.prix_txt }} {{ s.reserves.cotation }}</span>{% endif %}
+  </div>
+  {% with r=s.reserves m=s.moyennes %}
+  <div class="tuiles">
+    {% if r.erreur %}
+    <div class="tuile"><div class="muted">Réserves</div><p class="alerte" style="margin:.3rem 0 0">Indisponibles : {{ r.erreur }}</p></div>
+    {% else %}
+    <div class="tuile reserve-{{ r.alerte_cotation }}">
+      <div class="muted">Réserve {{ r.cotation }} <span title="Ce qu'il resterait si le prix descendait jusqu'au dernier palier et que tous les achats étaient exécutés">ⓘ</span></div>
+      <div class="valeur">{{ r.reserve_cotation_txt }} {{ r.cotation }}</div>
+      {% if r.alerte_cotation == "negatif" %}<div class="etat-reserve">⛔ Négative : la grille d'achat n'est pas couverte</div>
+      {% elif r.alerte_cotation == "bas" %}<div class="etat-reserve">⚠ Sous le seuil de {{ r.seuil_txt }} {{ r.cotation }}</div>{% endif %}
+      <div class="muted">solde {{ r.wallet_cotation_txt }} − achats de la grille {{ r.grille_cotation_txt }}</div>
+    </div>
+    <div class="tuile reserve-{{ r.alerte_actif }}">
+      <div class="muted">Réserve {{ r.actif }} <span title="Ce qu'il resterait si le prix montait jusqu'au dernier palier et que toutes les ventes étaient exécutées">ⓘ</span></div>
+      <div class="valeur">{{ r.reserve_actif_txt }} {{ r.actif }}</div>
+      <div class="muted">≈ {{ r.reserve_actif_valeur_txt }} {{ r.cotation }} au prix actuel</div>
+      {% if r.alerte_actif == "negatif" %}<div class="etat-reserve">⛔ Négative : la grille de vente n'est pas couverte</div>
+      {% elif r.alerte_actif == "bas" %}<div class="etat-reserve">⚠ Sous le seuil de {{ r.seuil_txt }} {{ r.cotation }}</div>{% endif %}
+      <div class="muted">solde {{ r.wallet_actif_txt }} − ventes de la grille {{ r.grille_actif_txt }}</div>
+    </div>
+    {% endif %}
+    <div class="tuile">
+      <div class="muted">Moyennes mobiles 1h <span class="muted">(bougies terminées)</span></div>
+      {% if m.valeurs %}
+      <div class="valeur">{{ m.signal }}</div>
+      <div><span class="muted">MA7</span> {{ m.valeurs.ma7_txt }} · <span class="muted">MA25</span> {{ m.valeurs.ma25_txt }}</div>
+      <div class="muted">réserve indiquée (étape suivante, non utilisée) : {% if m.reserve_indiquee == "actif" %}{{ r.actif|default:"actif" }}{% else %}{{ r.cotation|default:"cotation" }}{% endif %}</div>
+      <div class="muted">bougie de {{ m.valeurs.ouverture_dt|date:"d/m H:i" }}</div>
+      {% else %}
+      <div class="valeur">—</div>
+      {% endif %}
+      {% if not m.a_jour %}<div class="etat-reserve">⚠ Non à jour{% if m.erreur %} : {{ m.erreur }}{% endif %}</div>{% endif %}
+    </div>
+  </div>
+  {% if r.partage_avec %}<p class="alerte" style="margin:.8rem 0 0">Solde attribué en entier à {{ s.symbol }}, mais d'autres stratégies actives utilisent les mêmes devises : {{ r.partage_avec|join:", " }}. Le partage du solde n'est pas encore géré.</p>{% endif %}
+  {% endwith %}
+</section>
+{% endfor %}
+
 <h2 style="margin-top:1.5rem">Ordres ouverts</h2>
 {% for strat in strategies %}
 <section class="carte">

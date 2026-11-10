@@ -1,8 +1,9 @@
 """API HTTP du bot, destinée au front (accès via tunnel SSH).
 
-Lecture seule sur DB.db, sauf via base_en_ecriture() : toute écriture passe
-par le verrou partagé avec le bot (verrou_ecriture.py), donc uniquement entre
-deux stratégies, bot en pause. Autre action possible : arrêter ou démarrer le
+Lecture seule sur DB.db, sauf via base_en_ecriture() et la tâche horaire de
+suivi (tables reserves et moyennes_mobiles, que le bot ne lit pas) : toute
+écriture passe par le verrou partagé avec le bot (verrou_ecriture.py), donc
+uniquement entre deux stratégies, bot en pause. Autre action possible : arrêter ou démarrer le
 service krypto-bot (POST /bot/arreter et /bot/demarrer), via sudo limité à
 ces deux commandes (deploy/krypto-bot.sudoers).
 
@@ -25,6 +26,10 @@ Variables d'environnement (optionnelles) :
                       pour /wallets (défaut : cles_lecture.json à côté).
                       Jamais les clés de trading du bot : voir
                       deploy/cles_lecture.json.example.
+    KRYPTO_SEUIL_RESERVE  seuil d'alerte des réserves, en devise de cotation
+                      (défaut : 300)
+    KRYPTO_SUIVI_HORAIRE  0 pour ne pas lancer la tâche horaire (réserves,
+                      MA7/MA25) ; défaut : 1
 
 Documentation interactive : http://127.0.0.1:8000/docs
 """
@@ -64,7 +69,7 @@ def check_token(authorization: str | None = Header(default=None)):
 
 @asynccontextmanager
 async def demarrage(app):
-    """Précharge prix et portefeuilles en arrière-plan dès le démarrage de l'API."""
+    """Précharge prix et portefeuilles, et lance la tâche horaire (réserves, MA7/MA25)."""
     def precharger():
         try:
             prix_actuels()
@@ -72,6 +77,8 @@ async def demarrage(app):
         except Exception as e:
             print(f"Préchargement des portefeuilles impossible : {e}")
     threading.Thread(target=precharger, daemon=True).start()
+    if SUIVI_HORAIRE:
+        threading.Thread(target=tache_horaire, daemon=True, name="suivi-horaire").start()
     yield
 
 
@@ -710,6 +717,280 @@ def wallets():
     configure=false si le fichier de clés est absent ou vide.
     """
     return en_cache("wallets", calculer_wallets)
+
+
+###########################################################################
+#   RÉSERVES ET MOYENNES MOBILES (suivi seul : aucun effet sur le trading) #
+###########################################################################
+# Tout est calculé ici, dans l'API : le bot (trader.py) n'est pas modifié et
+# sa boucle n'est jamais ralentie. Une tâche de fond (un thread) se réveille
+# juste après la clôture de chaque bougie 1h, calcule MA7/MA25 et les réserves
+# des stratégies actives, et les enregistre (tables créées par
+# deploy/ajouter_tables_reserves_ma.py). L'écriture prend le verrou partagé
+# avec le bot : quelques millisecondes, entre deux stratégies.
+SEUIL_RESERVE = float(os.environ.get("KRYPTO_SEUIL_RESERVE", "300"))  # en devise de cotation (EUR)
+SUIVI_HORAIRE = os.environ.get("KRYPTO_SUIVI_HORAIRE", "1") != "0"    # 0 : pas de tâche de fond (tests)
+MA_COURTE, MA_LONGUE = 7, 25
+INTERVALLE_MA = "1h"
+DELAI_APRES_CLOTURE = 20     # s après la clôture de la bougie avant de lire les klines
+REESSAI = 300                # s avant de réessayer après un échec (Binance injoignable...)
+_etat_ma = {}                # paire -> {"valeurs": {...} ou None, "maj": iso, "erreur": str ou None}
+
+
+def paire_binance(symbol):
+    """Paire Binance d'une stratégie : « PEPEEUR_N91 » -> « PEPEEUR »."""
+    return symbol.split("_")[0]
+
+
+def palier_courant(symbol):
+    """Palier du dernier ordre LIMIT exécuté (même règle que le bot : get_last_filled)."""
+    r = query("SELECT ID_ecart FROM Ordres WHERE status = 'FILLED' AND type = 'LIMIT' AND symbol = ? "
+              "ORDER BY date_debut DESC LIMIT 1", (symbol,))
+    return int(r[0]["ID_ecart"]) if r and r[0]["ID_ecart"] is not None else None
+
+
+def besoins_grille(symbol, palier):
+    """Ce que la grille engage de chaque côté du palier courant.
+
+    Vente au palier p+1 de bet[p], achat au palier p de bet[p] : les paliers
+    >= palier courant sont détenus en actif (à vendre en montant), ceux en
+    dessous en devise de cotation (à acheter en descendant).
+    Renvoie (cotation nécessaire = somme bet × prix sous le palier,
+             actif nécessaire = somme des bets à partir du palier).
+    """
+    cotation = actif = 0.0
+    for p in query("SELECT ID, prix, bet FROM ecart_bet WHERE symbol = ?", (symbol,)):
+        bet, prix = float(p["bet"] or 0), float(p["prix"] or 0)
+        if p["ID"] < palier:
+            cotation += bet * prix
+        else:
+            actif += bet
+    return cotation, actif
+
+
+def niveau_alerte(valeur, seuil=None):
+    """« negatif » sous 0, « bas » sous le seuil, sinon « ok » (None si inconnu)."""
+    if valeur is None:
+        return None
+    seuil = SEUIL_RESERVE if seuil is None else seuil
+    return "negatif" if valeur < 0 else ("bas" if valeur < seuil else "ok")
+
+
+def calculer_reserves(symbol, wallets=None):
+    """Réserves d'une stratégie : ce qui reste hors grille, en devise de cotation et en actif.
+
+      réserve cotation = solde cotation (libre + bloqué) − Σ bet × prix des paliers sous le palier courant
+      réserve actif    = solde actif (libre + bloqué)    − Σ bet des paliers à partir du palier courant
+
+    Le solde du compte est entièrement attribué à la stratégie (une seule
+    stratégie active par devise aujourd'hui) ; "partage_avec" liste les autres
+    stratégies actives du même client sur les mêmes devises, qui devraient
+    alors se partager le solde (non géré pour l'instant).
+    Lève RuntimeError si un élément manque (clé, solde, prix, palier).
+    """
+    s = strategy_or_404(symbol)
+    actif_nom, cotation_nom, client = s["devise1"], s["devise2"], int(s["id_client"])
+    if wallets is None:
+        wallets = en_cache("wallets", calculer_wallets)
+    compte = next((c for c in wallets.get("comptes", []) if c["id_client"] == client), None)
+    if compte is None:
+        raise RuntimeError(f"pas de clé en lecture seule pour le client {client} (cles_lecture.json)")
+    if compte.get("erreur"):
+        raise RuntimeError(f"solde Binance indisponible : {compte['erreur']}")
+    soldes = {a["actif"]: a["total"] for a in compte["actifs"]}
+    paire = paire_binance(symbol)
+    prix = prix_actuels().get(paire)
+    if not prix:
+        raise RuntimeError(f"prix {paire} indisponible")
+    palier = palier_courant(symbol)
+    if palier is None:
+        raise RuntimeError("aucun ordre exécuté : palier courant inconnu")
+    grille_cotation, grille_actif = besoins_grille(symbol, palier)
+    wallet_cotation, wallet_actif = soldes.get(cotation_nom, 0.0), soldes.get(actif_nom, 0.0)
+    reserve_cotation = wallet_cotation - grille_cotation
+    reserve_actif = wallet_actif - grille_actif
+    partage = [r["symbol"] for r in query(
+        "SELECT symbol FROM Devises WHERE actif = 1 AND client = ? AND symbol != ? "
+        "AND (DEVISE1 IN (?, ?) OR DEVISE2 IN (?, ?))",
+        (client, symbol, actif_nom, cotation_nom, actif_nom, cotation_nom))]
+    return {
+        "symbol": symbol, "paire": paire, "actif": actif_nom, "cotation": cotation_nom,
+        "maj": wallets.get("maj"), "prix": prix, "palier": palier,
+        "wallet_cotation": wallet_cotation, "grille_cotation": grille_cotation,
+        "reserve_cotation": reserve_cotation,
+        "wallet_actif": wallet_actif, "grille_actif": grille_actif,
+        "reserve_actif": reserve_actif, "reserve_actif_valeur": reserve_actif * prix,
+        "seuil": SEUIL_RESERVE,
+        "alerte_cotation": niveau_alerte(reserve_cotation),
+        "alerte_actif": niveau_alerte(reserve_actif * prix),
+        "partage_avec": partage,
+    }
+
+
+def klines(paire, limite):
+    """Bougies 1h publiques Binance : [[ouverture_ms, o, h, l, clôture, v, fermeture_ms, ...], ...]."""
+    url = f"{BINANCE}/api/v3/klines?" + urllib.parse.urlencode(
+        {"symbol": paire, "interval": INTERVALLE_MA, "limit": limite})
+    with urllib.request.urlopen(url, timeout=10) as resp:
+        return json.load(resp)
+
+
+def moyennes_mobiles(paire, nb=MA_LONGUE):
+    """MA7 et MA25 sur les clôtures des bougies 1h TERMINÉES (bougie en cours exclue).
+
+    Renvoie les nb dernières valeurs horaires, de la plus ancienne à la plus
+    récente : [{"ouverture": iso, "cloture", "ma7", "ma25"}, ...].
+    """
+    maintenant_ms = time.time() * 1000
+    bougies = [(int(k[0]), float(k[4])) for k in klines(paire, MA_LONGUE + nb + 1)
+               if int(k[6]) < maintenant_ms]
+    valeurs = []
+    for i in range(MA_LONGUE - 1, len(bougies)):
+        clotures = [c for _, c in bougies[i - MA_LONGUE + 1:i + 1]]
+        valeurs.append({
+            "ouverture": datetime.fromtimestamp(bougies[i][0] / 1000, timezone.utc).isoformat(),
+            "cloture": bougies[i][1],
+            "ma7": sum(clotures[-MA_COURTE:]) / MA_COURTE,
+            "ma25": sum(clotures) / MA_LONGUE,
+        })
+    return valeurs[-nb:]
+
+
+def derniere_bougie_attendue():
+    """Ouverture (UTC) de la dernière bougie 1h terminée."""
+    return datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0) - timedelta(hours=1)
+
+
+def etat_moyennes(paire):
+    """Dernières MA7/MA25 connues d'une paire, et si elles sont à jour.
+
+    Source : la tâche horaire (mémoire), sinon la dernière valeur enregistrée
+    en base (après un redémarrage de l'API avec Binance injoignable).
+    """
+    etat = dict(_etat_ma.get(paire) or {"valeurs": None, "maj": None, "erreur": None})
+    if etat["valeurs"] is None:
+        try:
+            r = query("SELECT ouverture, cloture, ma7, ma25 FROM moyennes_mobiles WHERE paire = ? "
+                      "AND intervalle = ? ORDER BY ouverture DESC LIMIT 1", (paire, INTERVALLE_MA))
+            etat["valeurs"] = r[0] if r else None
+        except sqlite3.OperationalError:
+            pass
+    v = etat["valeurs"]
+    etat["a_jour"] = bool(v) and datetime.fromisoformat(v["ouverture"]) >= derniere_bougie_attendue()
+    if v:
+        etat["signal"] = "MA7 > MA25" if v["ma7"] > v["ma25"] else "MA7 < MA25"
+        etat["reserve_indiquee"] = "actif" if v["ma7"] > v["ma25"] else "cotation"
+    else:
+        etat["signal"] = etat["reserve_indiquee"] = None
+    return etat
+
+
+def enregistrer_suivi(lignes_ma, lignes_reserves):
+    """Enregistre MA (sans doublon) et réserves, sous le verrou partagé avec le bot."""
+    with verrou_ecriture.tenir(attente=120):
+        con = sqlite3.connect(DB_PATH, timeout=10)
+        try:
+            maintenant = datetime.now(timezone.utc).isoformat()
+            con.executemany(
+                "INSERT OR IGNORE INTO moyennes_mobiles (paire, intervalle, ouverture, cloture, ma7, ma25, calcule_le) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                [(paire, INTERVALLE_MA, v["ouverture"], v["cloture"], v["ma7"], v["ma25"], maintenant)
+                 for paire, v in lignes_ma])
+            con.executemany(
+                "INSERT INTO reserves (date, symbol, prix, palier, wallet_devise2, grille_devise2, reserve_devise2, "
+                "wallet_devise1, grille_devise1, reserve_devise1, reserve_devise1_valeur) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [(maintenant, r["symbol"], r["prix"], r["palier"], r["wallet_cotation"], r["grille_cotation"],
+                  r["reserve_cotation"], r["wallet_actif"], r["grille_actif"], r["reserve_actif"],
+                  r["reserve_actif_valeur"]) for r in lignes_reserves])
+            con.commit()
+        finally:
+            con.close()
+
+
+def executer_suivi():
+    """Un passage de la tâche horaire. Renvoie True si tout a réussi."""
+    ok = True
+    strategies_actives = query("SELECT symbol FROM Devises WHERE actif = 1")
+    lignes_ma, lignes_reserves = [], []
+    for paire in sorted({paire_binance(s["symbol"]) for s in strategies_actives}):
+        precedent = _etat_ma.get(paire) or {"valeurs": None}
+        try:
+            valeurs = moyennes_mobiles(paire)
+            if not valeurs:
+                raise RuntimeError("pas assez de bougies")
+            _etat_ma[paire] = {"valeurs": valeurs[-1], "maj": datetime.now(timezone.utc).isoformat(), "erreur": None}
+            lignes_ma += [(paire, v) for v in valeurs]
+        except Exception as e:  # on garde la dernière valeur, signalée comme non à jour
+            ok = False
+            _etat_ma[paire] = {**precedent, "erreur": str(e)}
+            print(f"Suivi : moyennes mobiles {paire} impossibles : {e}")
+    if strategies_actives:
+        try:
+            wallets = calculer_wallets()
+            with _verrou:
+                _cache["wallets"] = (time.time(), wallets)
+            for s in strategies_actives:
+                try:
+                    lignes_reserves.append(calculer_reserves(s["symbol"], wallets))
+                except Exception as e:
+                    ok = False
+                    print(f"Suivi : réserves {s['symbol']} impossibles : {e}")
+        except Exception as e:
+            ok = False
+            print(f"Suivi : portefeuilles indisponibles : {e}")
+    if lignes_ma or lignes_reserves:
+        try:
+            enregistrer_suivi(lignes_ma, lignes_reserves)
+        except sqlite3.OperationalError as e:
+            ok = False
+            print(f"Suivi : enregistrement impossible ({e}) : lancer deploy/ajouter_tables_reserves_ma.py ?")
+        except Exception as e:
+            ok = False
+            print(f"Suivi : enregistrement impossible : {e}")
+    return ok
+
+
+def tache_horaire():
+    """Boucle de fond : un passage au démarrage, puis juste après chaque clôture de bougie 1h."""
+    while True:
+        try:
+            ok = executer_suivi()
+        except Exception as e:  # ne jamais laisser mourir le thread
+            ok = False
+            print(f"Suivi : erreur inattendue : {e}")
+        maintenant = time.time()
+        prochaine = (maintenant // 3600 + 1) * 3600 + DELAI_APRES_CLOTURE - maintenant
+        time.sleep(prochaine if ok else min(REESSAI, prochaine))
+
+
+@app.get("/strategies/{symbol}/reserves")
+def reserves(symbol: str):
+    """Réserves (hors grille) et moyennes mobiles horaires d'une stratégie. Lecture seule.
+
+    reserves : calcul en direct sur les soldes en cache (60 s au plus), ou
+    "erreur" si un élément manque. moyennes : MA7/MA25 des bougies 1h
+    terminées, "a_jour" faux si la dernière bougie close manque (Binance
+    injoignable : dernière valeur gardée). signal « MA7 > MA25 » désignera
+    plus tard la réserve en actif, « MA7 < MA25 » celle en cotation : aucune
+    décision de trading n'en dépend aujourd'hui.
+    """
+    strategy_or_404(symbol)
+    try:
+        r = calculer_reserves(symbol)
+    except (RuntimeError, HTTPException) as e:
+        r = {"erreur": getattr(e, "detail", None) or str(e), "seuil": SEUIL_RESERVE}
+    return {"reserves": r, "moyennes": etat_moyennes(paire_binance(symbol))}
+
+
+@app.get("/strategies/{symbol}/reserves/historique")
+def historique_reserves(symbol: str, limit: int = Query(default=168, ge=1, le=10000)):
+    """Réserves enregistrées chaque heure (les plus récentes d'abord). [] si la table n'existe pas."""
+    strategy_or_404(symbol)
+    try:
+        return query("SELECT * FROM reserves WHERE symbol = ? ORDER BY date DESC LIMIT ?", (symbol, limit))
+    except sqlite3.OperationalError:
+        return []
 
 
 @app.get("/logs")

@@ -12,6 +12,8 @@ User=chaps
 WorkingDirectory=/home/chaps/binance/Krypto
 # Optionnel : token exige par l'API (en plus du tunnel SSH)
 #Environment=KRYPTO_API_TOKEN=change-moi
+# Optionnel : seuil d'alerte des réserves (EUR), 300 par défaut
+#Environment=KRYPTO_SEUIL_RESERVE=300
 ExecStart=/home/chaps/binance/Krypto/venv-api/bin/uvicorn api:app --host 127.0.0.1 --port 8000 --workers 1
 Restart=always
 RestartSec=5
