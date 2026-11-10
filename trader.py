@@ -240,7 +240,7 @@ class Basics():
                     up_tmp = self.get_taux_up(benef_tmp)
                     up = benef_tmp*up_tmp/100
                     debug_flag = 6
-                    self.reinject_local(symbol,last_filled,local)
+                    self.reinject_local(symbol,last_filled,local,benef_tmp)
                     debug_flag = 7
                     if down>0:
                         self.reinject_down(symbol,ID_client,down,last_filled)
@@ -331,15 +331,21 @@ class Basics():
         
 
 
-    def reinject_local(self,symbol,last_filled,qtt):
+    def reinject_local(self,symbol,last_filled,qtt,benef=0):
         """Renforce le palier juste sous le dernier exécuté (ID_ecart-1).
 
         Ajoute qtt/prix au bet de ce palier (et le trace dans le suivi des réinjections).
+
+        Suivi : le bénéfice finance le local en premier, seule la part capital a un
+        coût. Le prix tracé est donc prix × (1 − min(benef, qtt)/qtt), soit
+        prix × (1 − min(1, 100/taux_local)) : 0,9 × prix à 1000 %, 0 à 100 % ou moins.
         """
         current_bet = self.sql.get_ecart_bet_from_symbol_and_ID(symbol,float(last_filled["ID_ecart"])-1)[3]
         prix = float(self.sql.get_ecart_bet_from_symbol_and_ID(symbol,int(last_filled["ID_ecart"])-1)[2])
         self.sql.update_bet_with_ID(symbol,int(last_filled["ID_ecart"])-1,float(current_bet)+qtt/prix)
-        self.suivre_sans_risque(symbol,int(last_filled["ID_ecart"])-1,qtt/prix,prix)
+        part_benef = min(max(float(benef),0.0),qtt) if qtt > 0 else 0.0
+        prix_suivi = prix*(1-part_benef/qtt) if qtt > 0 else prix
+        self.suivre_sans_risque(symbol,int(last_filled["ID_ecart"])-1,qtt/prix,prix_suivi)
 
     def un_ordre_filled_autre_new(self,ordres_ouvert,symbol,ID_client):
         """Cas normal : un ordre exécuté, l'autre encore ouvert.
