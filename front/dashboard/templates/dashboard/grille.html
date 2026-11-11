@@ -27,7 +27,6 @@
       <span><i class="pastille-achat"></i>quantité de l'achat ouvert</span>
       <span><i class="pastille-vente"></i>quantité de la vente ouverte</span>
       <span><i class="pastille-palier"></i>autres paliers</span>
-      <span><i class="pastille-reinj"></i>quantité réinjectée</span>
       <span><i class="trait-prix"></i>prix d'un ordre ouvert</span>
     </div>
     <div class="zoom" role="group" aria-label="Plage affichée">
@@ -121,8 +120,6 @@
   <p class="muted" style="margin-top:0">
     <strong>Valeur cumulée</strong> : somme des valeurs
     du palier et de tous ceux en dessous.<br>
-    <strong>Réinjecté</strong> : quantité ajoutée au palier par la réinjection des ventes (local, UP, down) ;
-    <strong>prix moyen réinj.</strong> : son prix d'achat moyen, pondéré par les quantités.<br>
     Pour chaque ordre ouvert, la case <strong>Prix</strong> de son palier est surlignée, ainsi que les paliers qui
     fournissent sa <strong>quantité</strong> : pour une vente, le palier du dessous (2 ou 3 paliers aux niveaux 3-4) ;
     pour un achat, son propre palier (et ceux du dessus aux niveaux 3-4).
@@ -131,8 +128,6 @@
     <thead>
       <tr>
         <th class="num">Palier</th><th class="num">Prix</th><th class="num">Quantité (bet)</th>
-        <th class="num" title="Quantité ajoutée au palier par la réinjection des ventes (local, UP, down)">Réinjecté</th>
-        <th class="num" title="Prix d'achat moyen de la quantité réinjectée, pondéré par les quantités">Prix moyen réinj.</th>
         <th class="num">Valeur</th>
         <th class="num" title="Somme des valeurs de ce palier et de tous ceux en dessous">Valeur cumulée</th>
         <th class="num" title="Achat de la quantité au prix du palier, vente au prix du palier du dessus, moins 0,075 % de frais sur chacun des deux ordres">Gain achat → vente</th>
@@ -145,8 +140,6 @@
         <td class="num">{{ p.id }}</td>
         <td class="num prix{% if p.prix_de %} p-{{ p.prix_de }}{% endif %}">{{ p.prix_txt }} {{ strat.devise2 }}</td>
         <td class="num">{{ p.bet_txt }} {{ strat.devise1 }}</td>
-        <td class="num">{% if p.reinj_txt %}{{ p.reinj_txt }} {{ strat.devise1 }}{% endif %}</td>
-        <td class="num">{% if p.prix_moyen_reinj_txt %}{{ p.prix_moyen_reinj_txt }} {{ strat.devise2 }}{% endif %}</td>
         <td class="num">{{ p.valeur_txt }} {{ strat.devise2 }}</td>
         <td class="num">{{ p.cumul_txt }} {{ strat.devise2 }}</td>
         <td class="num{% if p.gain is not None and p.gain < 0 %} negatif{% endif %}">{% if p.gain_txt %}{{ p.gain_txt }} {{ strat.devise2 }}{% endif %}</td>
@@ -237,7 +230,7 @@
 
     // Barres empilées, de bas en haut : quantité d'origine (couleur de l'ordre ouvert),
     // puis quantité réinjectée.
-    // Seul le segment du haut a l'extrémité arrondie ; 2 px d'écart entre segments.
+    // Barre à extrémité haute arrondie.
     const r = Math.min(4, larg / 2);
     function segment(x0, bas, haut, cls, arrondi) {
       const hb = bas - haut;
@@ -250,15 +243,7 @@
     P.forEach((p, i) => {
       const x0 = x(i);
       const cls = p.quantite_de === "BUY" ? "barre achat" : p.quantite_de === "SELL" ? "barre vente" : "barre";
-      const reinj = Math.min(Math.max(p.reinj_quantite, 0), p.bet);
-      const parts = [[p.bet - reinj, cls], [reinj, "barre reinj"]].filter(t => t[0] > 0);
-      let cumul = 0;
-      parts.forEach(([q, c], k) => {
-        let bas = y(cumul), haut = y(cumul + q);
-        if (k > 0 && bas - haut > 3) bas -= 2;  // écart avec le segment du dessous
-        segment(x0, bas, haut, c, k === parts.length - 1);
-        cumul += q;
-      });
+      if (p.bet > 0) segment(x0, y(0), y(p.bet), cls, true);
     });
 
     // Prix des ordres ouverts : trait vertical + libellé direct
@@ -284,8 +269,6 @@
       `<strong>Palier ${p.id}</strong>`,
       `Prix : ${prixTxt(p.prix)} ${D.devise2}`,
       `Quantité : ${qteTxt(p.bet)} ${D.devise1}`,
-      `Réinjecté : ${qteTxt(p.reinj_quantite)} ${D.devise1}`
-        + (p.reinj_quantite > 0 && p.prix_moyen_reinj ? ` à ${prixTxt(p.prix_moyen_reinj)} ${D.devise2} en moyenne` : ""),
       `Valeur : ${(p.prix * p.bet).toLocaleString("fr-FR", {minimumFractionDigits: 2, maximumFractionDigits: 2})} ${D.devise2}`,
     ];
     if (p.gain !== null) lignes.push(`Gain achat → vente : ${p.gain.toLocaleString("fr-FR", {minimumFractionDigits: 2, maximumFractionDigits: 2})} ${D.devise2}`);

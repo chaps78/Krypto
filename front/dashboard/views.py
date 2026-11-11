@@ -1,4 +1,4 @@
-"""Pages du front : KPI (gain du mois et ordres ouverts), grille et journal du bot."""
+"""Pages du front : KPI (gain du mois et ordres ouverts), grille, journal (wallet, réinjections) et logs du bot."""
 import calendar
 import logging
 from datetime import datetime, timezone
@@ -238,6 +238,12 @@ def reserves_strategies():
         if v:
             v["ma7_txt"], v["ma25_txt"] = prix_txt(v["ma7"]), prix_txt(v["ma25"])
             v["ouverture_dt"] = parse_date(v["ouverture"])
+        try:
+            p = api_client.get(f"/strategies/{strat['symbol']}")
+            strat["source_reinjection"] = p.get("source_reinjection")
+            strat["suspendue_dt"] = parse_date(p.get("reinjection_suspendue"))
+        except api_client.ApiError:
+            pass
         resultats.append({**strat, "reserves": r, "moyennes": m})
     return resultats
 
@@ -321,12 +327,6 @@ def grille(request):
             p["bet_txt"] = quantite_txt(p["bet"])
             p["valeur"] = p["prix"] * p["bet"]
             p["valeur_txt"] = montant(p["valeur"])
-            # Suivi des réinjections (None tant que la migration n'est pas faite)
-            p["reinj_quantite"] = p.get("reinj_quantite") or 0.0
-            p["prix_moyen_reinj"] = p.get("prix_moyen_reinj")
-            p["reinj_txt"] = quantite_txt(p["reinj_quantite"]) if p["reinj_quantite"] else ""
-            p["prix_moyen_reinj_txt"] = (prix_txt(p["prix_moyen_reinj"])
-                                         if p["reinj_quantite"] and p["prix_moyen_reinj"] else "")
         cumul = 0.0
         for p in paliers:  # du palier le plus bas au plus haut (ordre de l'API)
             cumul += p["valeur"]
@@ -357,7 +357,6 @@ def grille(request):
         contexte["graphe"] = {
             "devise1": strat["devise1"], "devise2": strat["devise2"],
             "paliers": [{"id": p["id"], "prix": p["prix"] or 0, "bet": p["bet"] or 0, "gain": p["gain"],
-                         "reinj_quantite": p["reinj_quantite"], "prix_moyen_reinj": p["prix_moyen_reinj"],
                          "prix_de": p["prix_de"], "quantite_de": p["quantite_de"]}
                         for p in paliers],
             "ordres": [{"sens": o["sens"], "id_ecart": o["id_ecart"], "niveau": o["niveau"],
@@ -443,6 +442,135 @@ def reduire_bets(request):
     else:
         messages.error(request, "Stratégie non autorisée.")
     return redirect(suite)
+
+
+MODES_REINJECTION = {"EUR": "EUR (comportement historique)",
+                     "observation": "observation (EUR, décision auto simulée dans le journal)",
+                     "auto": "auto (PEPE si MA7 > MA25, selon les réserves)"}
+CHOIX_INSUFFISANT = {"suspendre": "laisser suspendu", "eur_negatif": "reprendre en EUR même en négatif"}
+MOTIFS = {"grille": "grille", "up": "up", "financement": "financement réinj.", "solde partiel": "solde partiel"}
+
+
+def symbole_autorise(request, source):
+    """Stratégie demandée si elle est dans KRYPTO_GRILLE_SYMBOLS, sinon la première (ou None)."""
+    autorises = settings.KRYPTO_GRILLE_SYMBOLS
+    symbol = source.get("symbol")
+    if symbol not in autorises:
+        symbol = autorises[0] if autorises else None
+    return symbol, autorises
+
+
+def nombre_saisi(texte):
+    """Nombre saisi dans un formulaire (virgule acceptée), ou None si vide. ValueError si illisible."""
+    texte = (texte or "").strip().replace(",", ".").replace(" ", "")
+    return float(texte) if texte else None
+
+
+def lignes_journal_wallet(lignes):
+    """Mise en forme du journal du wallet ; Δ valeur = écart avec la ligne affichée juste en dessous."""
+    for k, l in enumerate(lignes):
+        l["date_dt"] = parse_date(l["date"])
+        l["motif_txt"] = MOTIFS.get(l["motif"], l["motif"] or "")
+        l["prix_execution_txt"] = prix_txt(l["prix_execution"]) if l["prix_execution"] is not None else ""
+        l["quantite_txt"] = quantite_txt(l["quantite"]) if l["quantite"] is not None else ""
+        l["prix_marche_txt"] = prix_txt(l["prix_marche"]) if l["prix_marche"] is not None else ""
+        for c in ("wallet_devise2", "valeur_wallet", "reserve_devise2"):
+            l[c + "_txt"] = montant(l[c]) if l[c] is not None else ""
+        for c in ("wallet_devise1", "reserve_devise1"):
+            l[c + "_txt"] = quantite_txt(l[c]) if l[c] is not None else ""
+        suivante = lignes[k + 1] if k + 1 < len(lignes) else None
+        if suivante and l["valeur_wallet"] is not None and suivante["valeur_wallet"] is not None:
+            l["delta"] = l["valeur_wallet"] - suivante["valeur_wallet"]
+            l["delta_txt"] = ("+" if l["delta"] >= 0 else "") + montant(l["delta"])
+    return lignes
+
+
+def lignes_journal_reinjection(lignes):
+    """Mise en forme du journal des réinjections."""
+    for l in lignes:
+        l["date_dt"] = parse_date(l["date"])
+        for c in ("benefice", "local", "up", "down", "capital_injecte", "reserve_devise2"):
+            l[c + "_txt"] = montant(l[c]) if l.get(c) is not None else ""
+        for c in ("qte_local", "qte_devise1_vendue", "reserve_devise1"):
+            l[c + "_txt"] = quantite_txt(l[c]) if l.get(c) else ""
+        l["ma_txt"] = (f"{prix_txt(l['ma7'])} / {prix_txt(l['ma25'])}"
+                       if l.get("ma7") is not None and l.get("ma25") is not None else "")
+        l["taux_txt"] = " / ".join(f"{float(t):g} %" for t in (l.get("taux_local"), l.get("taux_up"), l.get("taux_down"))
+                                   if t is not None)
+    return lignes
+
+
+@login_required
+def journal(request):
+    """Journal : source de la réinjection (réglage), journal des réinjections et journal du wallet.
+
+    Tout est lu dans la base via l'API (jamais Binance). Le filtre de prix ne
+    garde que les lignes du wallet enregistrées à ± tolérance % d'un prix, pour
+    comparer la valeur du wallet entre deux passages au même prix.
+    """
+    symbol, autorises = symbole_autorise(request, request.GET)
+    contexte = {"erreur": None, "symbols": autorises, "symbol": symbol, "modes": MODES_REINJECTION,
+                "choix_insuffisant": CHOIX_INSUFFISANT, "filtre": {"prix": request.GET.get("prix", ""),
+                                                                   "tolerance": request.GET.get("tolerance", "1")}}
+    if symbol is None:
+        contexte["erreur"] = "Aucune stratégie configurée (KRYPTO_GRILLE_SYMBOLS)."
+        return render(request, "dashboard/journal.html", contexte)
+    erreurs = []
+    try:
+        prix = nombre_saisi(contexte["filtre"]["prix"])
+        tolerance = nombre_saisi(contexte["filtre"]["tolerance"]) or 1.0
+        if prix is not None and prix >= 1e-3:
+            prix = prix * 1e-6  # saisi en ×10⁻⁶ comme affiché
+    except ValueError:
+        prix, tolerance = None, 1.0
+        erreurs.append("Filtre de prix illisible : ignoré")
+    contexte["filtre"]["actif"] = prix is not None
+    contexte["filtre"]["prix_txt"] = prix_txt(prix) if prix is not None else ""
+    strat = contexte["strat"] = bloc(erreurs, "Stratégie", api_client.get, f"/strategies/{symbol}")
+    if strat:
+        strat["mode_txt"] = MODES_REINJECTION.get(strat.get("source_reinjection"), strat.get("source_reinjection"))
+        strat["choix_txt"] = CHOIX_INSUFFISANT.get(strat.get("si_reserves_insuffisantes"), "")
+        strat["suspendue_dt"] = parse_date(strat.get("reinjection_suspendue"))
+    contexte["reinjections"] = lignes_journal_reinjection(
+        bloc(erreurs, "Journal des réinjections", api_client.get, f"/strategies/{symbol}/journal-reinjection",
+             ) or [])
+    contexte["wallet"] = lignes_journal_wallet(
+        bloc(erreurs, "Journal du wallet", lambda: api_client.get(
+            f"/strategies/{symbol}/journal-wallet", prix=prix, tolerance=tolerance if prix else None)) or [])
+    contexte["erreur"] = " · ".join(erreurs) or None
+    return render(request, "dashboard/journal.html", contexte)
+
+
+@login_required
+@require_POST
+def modifier_reinjection(request):
+    """Enregistre la source de réinjection (et le choix en cas de réserves insuffisantes) via l'API."""
+    symbol, _ = symbole_autorise(request, request.POST)
+    if symbol is None or request.POST.get("symbol") != symbol:
+        messages.error(request, "Stratégie non autorisée.")
+        return redirect("/journal/")
+    params = {}
+    if request.POST.get("source_reinjection") in MODES_REINJECTION:
+        params["source_reinjection"] = request.POST["source_reinjection"]
+    if request.POST.get("si_reserves_insuffisantes") in CHOIX_INSUFFISANT:
+        params["si_reserves_insuffisantes"] = request.POST["si_reserves_insuffisantes"]
+    try:
+        ecart = nombre_saisi(request.POST.get("ecart_min_ma"))
+        if ecart is not None:
+            if not 0 <= ecart <= 50:
+                raise ValueError("l'écart doit être entre 0 et 50 %")
+            params["ecart_min_ma"] = ecart
+        if not params:
+            raise ValueError("aucun paramètre")
+        r = api_client.post(f"/strategies/{symbol}/reinjection", params, timeout=40)
+        messages.success(request, f"Réinjection : source {r['source_reinjection']}, écart MA {r['ecart_min_ma']:g} %, "
+                                  f"si réserves insuffisantes : {CHOIX_INSUFFISANT.get(r['si_reserves_insuffisantes'])}. "
+                                  "Effet à la prochaine vente.")
+    except ValueError as e:
+        messages.error(request, f"Paramètres invalides : {e}")
+    except api_client.ApiError as e:
+        messages.error(request, str(e))
+    return redirect(f"/journal/?symbol={symbol}")
 
 
 def taux_pour(tranches, benef):

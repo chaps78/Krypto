@@ -162,6 +162,8 @@
       {% if not m.a_jour %}<div class="etat-reserve">⚠ Non à jour{% if m.erreur %} : {{ m.erreur }}{% endif %}</div>{% endif %}
     </div>
   </div>
+  {% if s.source_reinjection %}<p class="muted" style="margin:.6rem 0 0">Source de la réinjection : <strong>{{ s.source_reinjection }}</strong> · <a href="{% url 'journal' %}?symbol={{ s.symbol }}">régler et voir le journal</a></p>{% endif %}
+  {% if s.suspendue_dt %}<p class="alerte" style="margin:.8rem 0 0">⚠ Réinjection suspendue depuis le {{ s.suspendue_dt|date:"d/m/Y H:i" }} : réserves insuffisantes. <a href="{% url 'journal' %}?symbol={{ s.symbol }}">Choisir quoi faire</a>.</p>{% endif %}
   {% if r.partage_avec %}<p class="alerte" style="margin:.8rem 0 0">Solde attribué en entier à {{ s.symbol }}, mais d'autres stratégies actives utilisent les mêmes devises : {{ r.partage_avec|join:", " }}. Le partage du solde n'est pas encore géré.</p>{% endif %}
   {% endwith %}
 </section>

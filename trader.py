@@ -11,6 +11,7 @@ from telegramInterface import teleAcces
 from sheetInterface import sheetAcces
 from messages import sur, quantite, montant
 import reinjection
+import reserves as calcul_reserves
 import verrou_ecriture
 
 
@@ -88,15 +89,67 @@ class Basics():
             return fonction()
         except Exception as inst:
             try:
-                self.sql.new_log_error("suivi_reinjection "+etape,str(inst),symbol)
+                self.sql.new_log_error("suivi "+etape,str(inst),symbol)
             except Exception:
-                print("suivi_reinjection "+etape+" : "+str(inst))
+                print("suivi "+etape+" : "+str(inst))
             return None
 
-    def suivre_sans_risque(self,symbol,ID_ecart,qtt,prix):
-        """Trace une réinjection sur un palier (reinj_quantite, prix_moyen_reinj)."""
-        self.sans_risque("palier "+str(ID_ecart),symbol,
-                         lambda: self.sql.suivre_reinjection(symbol,ID_ecart,qtt,prix))
+    def lire_etat_wallet(self,symbol,ID_client):
+        """Soldes actif/cotation (libres + bloqués) lus sur Binance, prix du marché et réserves.
+
+        Un appel de solde et un appel de prix. Lève une exception en cas d'échec.
+        """
+        actif, cotation = self.unite(symbol)
+        compte = self.bin.clients[ID_client].get_account()
+        soldes = {b["asset"]: float(b["free"])+float(b["locked"]) for b in compte["balances"]}
+        prix = float(self.bin.clients[ID_client].get_symbol_ticker(symbol=symbol.split("_")[0])["price"])
+        last = self.sql.get_last_filled(symbol,ID_client)
+        paliers = [(i,v[0],v[1]) for i,v in self.sql.get_ecart_bet_from_symbol(symbol).items()]
+        etat = calcul_reserves.calculer(soldes.get(cotation,0.0),soldes.get(actif,0.0),paliers,int(last["ID_ecart"]),prix)
+        etat["valeur_wallet"] = etat["wallet_cotation"]+etat["wallet_actif"]*prix
+        return etat
+
+    def journaliser_ordre(self,symbol,ID_client,ordre_id,sens,type_ordre,motif,palier,prix_exec,qte):
+        """Ajoute une ligne au journal du wallet après un ordre exécuté (consigne étape 2.1).
+
+        Lit le wallet sur Binance ; en cas d'échec la ligne est quand même
+        enregistrée, champs du wallet vides et erreur renseignée. Ne lève jamais.
+
+        Returns:
+            l'état lu (soldes, prix, réserves) ou None si la lecture a échoué.
+        """
+        etat, erreur = None, None
+        try:
+            etat = self.lire_etat_wallet(symbol,ID_client)
+        except Exception as inst:
+            erreur = str(inst)[:500]
+        def nombre(x):
+            try:
+                return float(x)
+            except (TypeError, ValueError):
+                return None
+        e = etat or {}
+        ligne = {"date":datetime.now(timezone.utc).isoformat(),"symbol":symbol,"id_client":ID_client,
+                 "ordre_id":str(ordre_id),"sens":sens,"type_ordre":type_ordre,"motif":motif,
+                 "palier":int(palier) if palier is not None else None,
+                 "prix_execution":nombre(prix_exec),"quantite":nombre(qte),
+                 "prix_marche":e.get("prix"),"wallet_devise2":e.get("wallet_cotation"),
+                 "wallet_devise1":e.get("wallet_actif"),"valeur_wallet":e.get("valeur_wallet"),
+                 "reserve_devise2":e.get("reserve_cotation"),"reserve_devise1":e.get("reserve_actif"),
+                 "erreur":erreur}
+        self.sans_risque("journal_wallet",symbol,lambda: self.sql.inserer("journal_wallet",ligne))
+        return etat
+
+    def journaliser_limite(self,symbol,ID_client,ordre):
+        """Journal du wallet pour un ordre LIMIT de la grille exécuté (dict de la table Ordres)."""
+        if not ordre:
+            return None
+        try:
+            qte = float(ordre["montant_execute"]) or float(ordre["montant"])
+        except (TypeError, ValueError, KeyError):
+            qte = ordre.get("montant")
+        return self.journaliser_ordre(symbol,ID_client,ordre.get("ID"),ordre.get("sens"),"LIMIT","grille",
+                                      ordre.get("ID_ecart"),ordre.get("limite"),qte)
 
     def unite(self,symbol):
         """Renvoie (devise achetée, devise de cotation) d'une stratégie, ex. ("PEPE", "EUR")."""
@@ -155,7 +208,8 @@ class Basics():
                     #               Ajouter ici la nouvelle fonction pour le calcul de benef    #
                     #                                                                           #
                     #############################################################################
-                    self.reinject_benef(symbol,ID_client,last_filled)
+                    etat = self.journaliser_limite(symbol,ID_client,last_filled)
+                    self.reinject_benef(symbol,ID_client,last_filled,etat)
 
 
                     clients = self.sql.get_clients_infos()
@@ -199,15 +253,25 @@ class Basics():
         """Taux (%) de la part "up" en fonction du bénéfice : barème de reinjection.py."""
         return reinjection.taux_up(benef)
 
-    def reinject_benef(self,symbol,ID_client,last_filled):
+    def reinject_benef(self,symbol,ID_client,last_filled,etat=None):
         """Redistribue le bénéfice en attente (Devises.benef_TMP) d'une stratégie.
 
           - local    : taux get_taux_reinjection() -> reinject_local()
-          - up       : taux get_taux_up()          -> reinject_up()
+          - up       : taux get_taux_up()          -> reinject_up() (toujours en cotation)
           - down     : % Devises.down              -> reinject_down()
           - épargne  : % Devises.epargne_percent   -> compteur Devises.epargne
           - facture  : % Devises.factu_percent     -> compteur Devises.factu
         puis remet benef_TMP à zéro.
+
+        Source de la part capital du local et du down (Devises.source_reinjection) :
+          - "EUR"         : cotation, comportement historique (défaut) ;
+          - "observation" : cotation, et le journal note aussi la décision qu'aurait
+                            prise le mode auto (ligne « simulée ») ;
+          - "auto"        : règle reserves.decider_source() : vente au marché de
+                            PEPE (réserve d'actif) si MA7 > MA25, bascule si une
+                            réserve manque, suspension si les deux manquent.
+        Les bets sont augmentés exactement comme avant, quelle que soit la source.
+        etat : soldes et réserves lus juste après la vente (journaliser_ordre), ou None.
 
         Si Devises.local contient du texte, c'est le nom d'une autre stratégie : le
         bénéfice de l'ordre est alors versé dans le up_TMP de celle-ci (et benef_TMP
@@ -240,19 +304,78 @@ class Basics():
                     up_tmp = self.get_taux_up(benef_tmp)
                     up = benef_tmp*up_tmp/100
                     debug_flag = 6
-                    self.reinject_local(symbol,last_filled,local,benef_tmp)
+                    params = self.sans_risque("parametres_reinjection",symbol,
+                                              lambda: self.sql.get_parametres_reinjection(symbol)) or {}
+                    mode = params.get("source_reinjection","EUR")
+                    decision = None
+                    if mode in ("observation","auto"):
+                        decision = self.sans_risque("decision_reinjection",symbol,
+                            lambda: self.decider_reinjection(symbol,ID_client,benef_tmp,local,up,down,params,etat))
+                    journal = {"date":datetime.now(timezone.utc).isoformat(),"symbol":symbol,
+                               "ordre_vente":str(last_filled.get("ID")),"benefice":benef_tmp,
+                               "taux_local":taux_local,"taux_up":up_tmp,"taux_down":repart["down"],
+                               "local":local,"up":up,"down":down,"mode":mode,"simulee":0,
+                               "prix_marche":(etat or {}).get("prix"),
+                               "reserve_devise2":(etat or {}).get("reserve_cotation"),
+                               "reserve_devise1":(etat or {}).get("reserve_actif"),
+                               "up_tmp_avant":self.sans_risque("up_tmp",symbol,lambda: float(self.sql.get_up_tmp(symbol)))}
+                    if decision:
+                        journal.update({"ma7":decision["ma7"],"ma25":decision["ma25"],"ma_bougie":decision["ma_bougie"]})
+                    if mode == "observation" and decision:
+                        simulee = dict(journal, simulee=1, source=decision["source"], raison=decision["raison"],
+                                       qte_devise1_vendue=decision["a_vendre"], capital_injecte=decision["capital"])
+                        self.sans_risque("journal_reinjection",symbol,lambda: self.sql.inserer("journal_reinjection",simulee))
+
+                    if mode == "auto" and decision and decision["source"] == "SUSPENDU":
+                        # Réinjection suspendue : bets et up_TMP inchangés, le bénéfice reste en cotation
+                        journal.update({"source":"SUSPENDU","raison":decision["raison"],"capital_injecte":0.0})
+                        self.sans_risque("journal_reinjection",symbol,lambda: self.sql.inserer("journal_reinjection",journal))
+                        self.sans_risque("suspension",symbol,lambda: self.sql.set_reinjection_suspendue(
+                            symbol,datetime.now(timezone.utc).isoformat()))
+                        self.tele.send_message("⏸ "+symbol+" · réinjection suspendue : réserves insuffisantes.\n"
+                                               "Le bénéfice de "+montant(benef_tmp)+" reste disponible. Choix à faire dans le front (page Journal).")
+                        self.sql.ajout_epargne_paire_devise(symbol,epargne,ID_client)
+                        self.sql.add_to_factu_from_symbol(symbol,factu)
+                        self.sql.add_to_benef_TMP(symbol,-benef_tmp)
+                        return None
+
+                    vente = None
+                    if mode == "auto" and decision and decision["source"] == "PEPE":
+                        vente = self.vendre_pour_financer(symbol,ID_client,decision)
+                    debug_flag = 61
+                    palier_local, qte_local = self.reinject_local(symbol,last_filled,local)
                     debug_flag = 7
+                    palier_down = qte_down = None
                     if down>0:
-                        self.reinject_down(symbol,ID_client,down,last_filled)
+                        palier_down, qte_down = self.reinject_down(symbol,ID_client,down,last_filled)
                     debug_flag = 8
                     self.sql.ajout_epargne_paire_devise(symbol,epargne,ID_client)
                     debug_flag = 9
                     self.reinject_up(symbol,ID_client,up,last_filled)
                     debug_flag = 10
-                    # Suivi seulement : ce qui est réinjecté au-delà du bénéfice vient du capital
+                    # Ce qui est réinjecté au-delà du bénéfice vient du capital ; une part
+                    # financée en actif compte pour sa valeur au prix d'exécution de la vente
                     capital = local+up+down-benef_tmp
+                    if vente:
+                        capital += vente["qte"]*vente["prix"]-decision["valeur_vente"]
                     if capital > 0:
                         self.sans_risque("capital_injecte",symbol,lambda: self.sql.add_capital_injecte(symbol,capital))
+                    if mode == "auto":
+                        source, raison = ("PEPE", decision["raison"]) if vente else ("EUR", (decision or {}).get("raison","décision impossible : EUR"))
+                        if decision and decision["source"] == "PEPE" and not vente:
+                            raison += " ; vente de financement échouée : EUR"
+                    else:
+                        source, raison = "EUR", "mode "+mode
+                    journal.update({"source":source,"raison":raison,"palier_local":palier_local,"qte_local":qte_local,
+                                    "palier_down":palier_down,"qte_down":qte_down,
+                                    "qte_devise1_vendue":vente["qte"] if vente else None,
+                                    "prix_financement":vente["prix"] if vente else None,
+                                    "ordre_financement":str(vente["ordre"]) if vente else None,
+                                    "capital_injecte":max(capital,0.0),
+                                    "up_tmp_apres":self.sans_risque("up_tmp",symbol,lambda: float(self.sql.get_up_tmp(symbol)))})
+                    self.sans_risque("journal_reinjection",symbol,lambda: self.sql.inserer("journal_reinjection",journal))
+                    if params.get("reinjection_suspendue"):
+                        self.sans_risque("suspension",symbol,lambda: self.sql.set_reinjection_suspendue(symbol,None))
                     self.sql.add_to_factu_from_symbol(symbol,factu)
                     debug_flag = 11
                     self.sql.add_to_benef_TMP(symbol,-benef_tmp)
@@ -261,7 +384,37 @@ class Basics():
                 self.sql.new_log_debug("Ordres V2"+ " Flag = "+str(debug_flag),str(inst) ,symbol)
                 self.tele.send_message("Erreur dans les fonctions Flag = "+ str(debug_flag))
                 return inst
-            
+
+    def decider_reinjection(self,symbol,ID_client,benef,local,up,down,params,etat):
+        """Décision du mode auto (reserves.decider_source) avec les MA7/MA25 de la base."""
+        ma = self.sql.get_derniere_moyenne(symbol.split("_")[0])
+        dev_entier = self.sql.get_devises_from_symbol(symbol,ID_client)["dev_entiere"]
+        d = calcul_reserves.decider_source(benef,local,up,down,ma,params.get("ecart_min_ma",0.0),etat,
+                                           float(self.sql.get_up_tmp(symbol) or 0),
+                                           params.get("si_reserves_insuffisantes","suspendre"),
+                                           entier=int(dev_entier)==1)
+        d["ma7"], d["ma25"], d["ma_bougie"] = (ma or {}).get("ma7"), (ma or {}).get("ma25"), (ma or {}).get("ouverture")
+        return d
+
+    def vendre_pour_financer(self,symbol,ID_client,decision):
+        """Vend au marché la quantité d'actif décidée pour financer la part capital.
+
+        Returns:
+            {"ordre", "prix", "qte"} si la vente est passée, sinon None (financement en cotation).
+        """
+        qte = decision["a_vendre"]
+        if qte <= 0:
+            return None
+        ordre_id, prix_exec = self.bin.new_market_order(symbol,qte,"SELL",ID_client,detail=True)
+        if not ordre_id:
+            return None
+        prix = prix_exec if prix_exec else decision["valeur_vente"]/qte
+        self.journaliser_ordre(symbol,ID_client,ordre_id,"SELL","MARKET","financement",None,prix,qte)
+        actif, cotation = self.unite(symbol)
+        self.tele.send_message(sur(lambda: "💱 "+symbol+" · réinjection financée en "+actif+" : vente au marché de "
+                                   +quantite(qte)+" "+actif+" à ≈ "+quantite(prix)+" "+cotation,
+                                   "Financement réinjection "+symbol))
+        return {"ordre":ordre_id,"prix":prix,"qte":qte}
 
     def reinject_down(self,symbol,ID_client,down,last_filled):
         """Ajoute la part "down" à un palier situé sous le dernier palier exécuté.
@@ -270,7 +423,7 @@ class Basics():
         (calcul_benef_with_ID) est inférieur à Obj_gain, et y ajoute down/prix au bet.
 
         Returns:
-            int: ID du palier renforcé.
+            (ID du palier renforcé, quantité ajoutée).
         """
         ID = int(last_filled["ID_ecart"])-1
         obj = float(self.sql.get_devises_from_symbol(symbol,ID_client)["obj_gain"])
@@ -280,8 +433,7 @@ class Basics():
             ID-=1
         prix = float(self.sql.get_ecart_bet_from_symbol_and_ID(symbol,ID)[2])
         self.sql.add_to_ecart(symbol,ID,down/prix)
-        self.suivre_sans_risque(symbol,ID,down/prix,prix)
-        return ID
+        return ID, down/prix
     
     def reinject_up(self,symbol,ID_client,qtt,last_filled):
         """Accumule la part "up" et l'investit quand le montant est suffisant.
@@ -291,8 +443,7 @@ class Basics():
         dernier exécuté dont le gain théorique est inférieur à Obj_gain, puis
         décrémente up_TMP.
 
-        Suivi (sans effet sur le trading) : la quantité achetée est tracée sur le
-        palier au prix moyen d'exécution de l'ordre market.
+        L'achat au marché est ajouté au journal du wallet (motif "up").
         """
         self.sql.add_2_up_tmp(symbol,qtt)
         total = float(self.sql.get_up_tmp(symbol))
@@ -318,34 +469,31 @@ class Basics():
             self.tele.send_message(sur(lambda: self.texte_reinject_up(symbol,ID_client,total,taux_convert,ID,int(dev_entier)==1),
                                        "Reinject UP "+symbol+" "+str(total)+"\n ID "+str(ID_client)))
             if int(dev_entier) == 1:
-                _, prix_exec = self.bin.new_market_order(symbol,int(total/taux_convert),"BUY",ID_client,detail=True)
+                ordre_id, prix_exec = self.bin.new_market_order(symbol,int(total/taux_convert),"BUY",ID_client,detail=True)
                 self.sql.add_to_ecart(symbol,ID,int(total/taux_convert))
                 self.sql.add_2_up_tmp(symbol,-int(total/taux_convert)*taux_convert)
                 achete = int(total/taux_convert)
             else:
-                _, prix_exec = self.bin.new_market_order(symbol,total/taux_convert,"BUY",ID_client,detail=True)
+                ordre_id, prix_exec = self.bin.new_market_order(symbol,total/taux_convert,"BUY",ID_client,detail=True)
                 self.sql.add_to_ecart(symbol,ID,total/taux_convert)
                 self.sql.add_2_up_tmp(symbol,-total)
                 achete = total/taux_convert
-            self.suivre_sans_risque(symbol,ID,achete,prix_exec if prix_exec else taux_convert)
+            if ordre_id:
+                self.journaliser_ordre(symbol,ID_client,ordre_id,"BUY","MARKET","up",ID,
+                                       prix_exec if prix_exec else taux_convert,achete)
         
 
 
-    def reinject_local(self,symbol,last_filled,qtt,benef=0):
-        """Renforce le palier juste sous le dernier exécuté (ID_ecart-1).
+    def reinject_local(self,symbol,last_filled,qtt):
+        """Renforce le palier juste sous le dernier exécuté (ID_ecart-1) : bet += qtt/prix.
 
-        Ajoute qtt/prix au bet de ce palier (et le trace dans le suivi des réinjections).
-
-        Suivi : le bénéfice finance le local en premier, seule la part capital a un
-        coût. Le prix tracé est donc prix × (1 − min(benef, qtt)/qtt), soit
-        prix × (1 − min(1, 100/taux_local)) : 0,9 × prix à 1000 %, 0 à 100 % ou moins.
+        Returns:
+            (ID du palier renforcé, quantité ajoutée).
         """
         current_bet = self.sql.get_ecart_bet_from_symbol_and_ID(symbol,float(last_filled["ID_ecart"])-1)[3]
         prix = float(self.sql.get_ecart_bet_from_symbol_and_ID(symbol,int(last_filled["ID_ecart"])-1)[2])
         self.sql.update_bet_with_ID(symbol,int(last_filled["ID_ecart"])-1,float(current_bet)+qtt/prix)
-        part_benef = min(max(float(benef),0.0),qtt) if qtt > 0 else 0.0
-        prix_suivi = prix*(1-part_benef/qtt) if qtt > 0 else prix
-        self.suivre_sans_risque(symbol,int(last_filled["ID_ecart"])-1,qtt/prix,prix_suivi)
+        return int(last_filled["ID_ecart"])-1, qtt/prix
 
     def un_ordre_filled_autre_new(self,ordres_ouvert,symbol,ID_client):
         """Cas normal : un ordre exécuté, l'autre encore ouvert.
@@ -367,13 +515,19 @@ class Basics():
         sens inverse, calcule le bénéfice de cet aller-retour, puis pose un nouvel
         achat et une nouvelle vente autour du dernier palier exécuté.
         """
+        self.journaliser_limite(symbol,ID_client,self.sql.get_last_filled(symbol,ID_client))
         for ordre in ordres_partiel:
             self.bin.cancel_order_partial(ordre["ID"],ID_client)
             sens = ordre["sens"]
             if sens == self.bin.client.SIDE_BUY:
-                ID_market = self.bin.new_market_order(symbol,ordre["montant_execute"],self.bin.client.SIDE_SELL,ID_client)
+                ID_market, prix_market = self.bin.new_market_order(symbol,ordre["montant_execute"],self.bin.client.SIDE_SELL,ID_client,detail=True)
+                sens_market = self.bin.client.SIDE_SELL
             if sens == self.bin.client.SIDE_SELL:
-                ID_market = self.bin.new_market_order(symbol,ordre["montant_execute"],self.bin.client.SIDE_BUY,ID_client)
+                ID_market, prix_market = self.bin.new_market_order(symbol,ordre["montant_execute"],self.bin.client.SIDE_BUY,ID_client,detail=True)
+                sens_market = self.bin.client.SIDE_BUY
+            if ID_market:
+                self.journaliser_ordre(symbol,ID_client,ID_market,sens_market,"MARKET","solde partiel",None,
+                                       prix_market,ordre["montant_execute"])
         last_filled_order = self.sql.get_last_filled(symbol,ID_client)
         self.bin.calcul_benef_partial(symbol,ID_client,ordre["ID"],ID_market)
         self.sql.new_log_debug("Nouveaux ordres apres filled",str(last_filled_order),symbol)
@@ -392,6 +546,8 @@ class Basics():
         """
         last_filled_order_buy = self.sql.get_last_filled_buy(symbol)
         last_filled_order_sell = self.sql.get_last_filled_sell(symbol)
+        self.journaliser_limite(symbol,ID_client,last_filled_order_buy)
+        self.journaliser_limite(symbol,ID_client,last_filled_order_sell)
         montant_interval = self.sql.get_montant_entre_ordres(symbol,
                                                              last_filled_order_buy["ID_ecart"],
                                                              last_filled_order_sell["ID_ecart"])

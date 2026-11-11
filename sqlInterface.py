@@ -206,13 +206,16 @@ class sqlAcces():
         return ordre
 
     def get_last_filled_buy(self,symbol):
-        """Renvoie le dernier achat exécuté d'une stratégie (tous types, tous clients).
+        """Renvoie le dernier achat LIMIT exécuté d'une stratégie (tous clients).
+
+        Les ordres au marché (achats up, ventes de financement, soldes de partiels)
+        sont exclus : ils n'ont pas de palier (ID_ecart = 0).
 
         Returns:
             dict de l'ordre, ou "" si aucun.
         """
         try:
-            res = self.cur.execute("SELECT *, MAX(date_debut) FROM Ordres WHERE sens='BUY' AND status='FILLED' AND symbol='"+str(symbol)+"'")
+            res = self.cur.execute("SELECT *, MAX(date_debut) FROM Ordres WHERE sens='BUY' AND status='FILLED' AND type='LIMIT' AND symbol='"+str(symbol)+"'")
         except sqlite3.IntegrityError as inst:
             self.new_log_error("get_last_filled_SQL",str(inst),symbol)
             return ""
@@ -224,13 +227,15 @@ class sqlAcces():
         return ordre
 
     def get_last_filled_sell(self,symbol):
-        """Renvoie la dernière vente exécutée d'une stratégie (tous types, tous clients).
+        """Renvoie la dernière vente LIMIT exécutée d'une stratégie (tous clients).
+
+        Les ordres au marché sont exclus (voir get_last_filled_buy).
 
         Returns:
             dict de l'ordre, ou "" si aucun.
         """
         try:
-            res = self.cur.execute("SELECT *, MAX(date_debut) FROM Ordres WHERE sens='SELL' AND status='FILLED' AND symbol='"+str(symbol)+"'")
+            res = self.cur.execute("SELECT *, MAX(date_debut) FROM Ordres WHERE sens='SELL' AND status='FILLED' AND type='LIMIT' AND symbol='"+str(symbol)+"'")
         except sqlite3.IntegrityError as inst:
             self.new_log_error("get_last_filled_SQL",str(inst),symbol)
             return ""
@@ -883,22 +888,44 @@ class sqlAcces():
         up_TMP = res.fetchall()[0][0]
         return up_TMP
     
-    def suivre_reinjection(self,symbol,ID_ecart,qtt,prix):
-        """Trace une réinjection sur un palier (colonnes de suivi, sans effet sur le trading).
-
-        reinj_quantite += qtt, et prix_moyen_reinj = moyenne pondérée de l'ancien
-        prix moyen (sur l'ancienne quantité) et de prix (sur qtt).
-        """
-        self.cur.execute(
-            """UPDATE ecart_bet SET
-                 prix_moyen_reinj = CASE WHEN :q > 0
-                     THEN (COALESCE(prix_moyen_reinj,0)*COALESCE(reinj_quantite,0) + :q*:prix)
-                          / (COALESCE(reinj_quantite,0) + :q)
-                     ELSE prix_moyen_reinj END,
-                 reinj_quantite = COALESCE(reinj_quantite,0) + :q
-               WHERE symbol = :symbol AND ID = :id""",
-            {"q":float(qtt),"prix":float(prix),"symbol":symbol,"id":int(ID_ecart)})
+    def inserer(self,table,ligne):
+        """Ajoute une ligne (dict colonne -> valeur) à une table de journal. Jamais de mise à jour."""
+        colonnes = list(ligne.keys())
+        self.cur.execute("INSERT INTO "+table+" ("+",".join(colonnes)+") VALUES ("
+                         +",".join("?"*len(colonnes))+")", [ligne[c] for c in colonnes])
         self.con.commit()
+
+    def get_parametres_reinjection(self,symbol):
+        """Paramètres de la source de réinjection (étape 2) d'une stratégie.
+
+        Valeurs par défaut (comportement d'avant) si les colonnes n'existent pas
+        encore (migration deploy/etape2_journal_reinjection.py non lancée).
+        """
+        defaut = {"source_reinjection":"EUR","ecart_min_ma":0.0,
+                  "si_reserves_insuffisantes":"suspendre","reinjection_suspendue":None}
+        try:
+            r = self.cur.execute("SELECT source_reinjection, ecart_min_ma, si_reserves_insuffisantes, "
+                                 "reinjection_suspendue FROM Devises WHERE symbol=?",(symbol,)).fetchone()
+        except sqlite3.OperationalError:
+            return defaut
+        if r is None:
+            return defaut
+        return {"source_reinjection":r[0] or "EUR","ecart_min_ma":float(r[1] or 0),
+                "si_reserves_insuffisantes":r[2] or "suspendre","reinjection_suspendue":r[3]}
+
+    def set_reinjection_suspendue(self,symbol,date):
+        """Note (date ISO) ou efface (None) la suspension de la réinjection d'une stratégie."""
+        self.cur.execute("UPDATE Devises SET reinjection_suspendue=? WHERE symbol=?",(date,symbol))
+        self.con.commit()
+
+    def get_derniere_moyenne(self,paire):
+        """Dernières MA7/MA25 1h enregistrées par l'API pour une paire, ou None."""
+        try:
+            r = self.cur.execute("SELECT ouverture, ma7, ma25 FROM moyennes_mobiles WHERE paire=? AND intervalle='1h' "
+                                 "ORDER BY ouverture DESC LIMIT 1",(paire,)).fetchone()
+        except sqlite3.OperationalError:
+            return None
+        return {"ouverture":r[0],"ma7":r[1],"ma25":r[2]} if r else None
 
     def add_capital_injecte(self,symbol,montant):
         """Ajoute au compteur Devises.capital_injecte (part réinjectée au-delà du bénéfice)."""

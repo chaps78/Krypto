@@ -1,0 +1,152 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Journal{% endblock %}
+{% block content %}
+<h1>Journal{% if symbol %} · {{ symbol }}{% endif %}</h1>
+
+{% if symbols|length > 1 %}
+<form class="filtres" method="get">
+  <label>Stratégie
+    <select name="symbol" onchange="this.form.submit()">
+      {% for s in symbols %}<option value="{{ s }}" {% if s == symbol %}selected{% endif %}>{{ s }}</option>{% endfor %}
+    </select>
+  </label>
+</form>
+{% endif %}
+
+{% if strat %}
+<section class="carte">
+  <h2>Source de la réinjection</h2>
+  {% if not strat.migration_etape2 %}
+  <p class="alerte" style="margin:0">Migration <code>deploy/etape2_journal_reinjection.py</code> non lancée : réinjection en EUR, réglage indisponible.</p>
+  {% else %}
+  {% if strat.suspendue_dt %}
+  <div class="alerte">
+    <strong>⚠ Réinjection suspendue depuis le {{ strat.suspendue_dt|date:"d/m/Y H:i" }}</strong> : les réserves EUR et {{ strat.devise1 }}
+    ne suffisaient pas. Les bets et le up_TMP ne bougent plus, le bénéfice reste en {{ strat.devise2 }} ; le trading continue.
+    Choix actuel : <strong>{{ strat.choix_txt }}</strong>.
+    <div style="display:flex; gap:.6rem; margin-top:.6rem; flex-wrap:wrap">
+      <form method="post" action="{% url 'modifier_reinjection' %}" onsubmit="return confirm('Reprendre la réinjection en {{ strat.devise2 }}, même si la réserve devient négative ?')">{% csrf_token %}
+        <input type="hidden" name="symbol" value="{{ symbol }}"><input type="hidden" name="si_reserves_insuffisantes" value="eur_negatif">
+        <button type="submit" class="bouton">Reprendre en {{ strat.devise2 }} même en négatif</button>
+      </form>
+      <form method="post" action="{% url 'modifier_reinjection' %}">{% csrf_token %}
+        <input type="hidden" name="symbol" value="{{ symbol }}"><input type="hidden" name="si_reserves_insuffisantes" value="suspendre">
+        <button type="submit" class="bouton secondaire">Laisser suspendu</button>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+  <form method="post" action="{% url 'modifier_reinjection' %}" class="filtres" id="form-source"
+        onsubmit="return this.source_reinjection.value !== 'auto' || confirm('Mode auto : le bot vendra du {{ strat.devise1 }} au marché pour financer la réinjection quand MA7 > MA25. Confirmer ?')">
+    {% csrf_token %}<input type="hidden" name="symbol" value="{{ symbol }}">
+    <label>Mode
+      <select name="source_reinjection">
+        {% for cle, libelle in modes.items %}<option value="{{ cle }}" {% if cle == strat.source_reinjection %}selected{% endif %}>{{ libelle }}</option>{% endfor %}
+      </select>
+    </label>
+    <label title="La source PEPE n'est retenue que si MA7 dépasse MA25 d'au moins cet écart">Écart min. MA7/MA25
+      <input type="text" name="ecart_min_ma" value="{{ strat.ecart_min_ma }}" size="4" inputmode="decimal"> %
+    </label>
+    <label>Si les réserves manquent
+      <select name="si_reserves_insuffisantes">
+        {% for cle, libelle in choix_insuffisant.items %}<option value="{{ cle }}" {% if cle == strat.si_reserves_insuffisantes %}selected{% endif %}>{{ libelle }}</option>{% endfor %}
+      </select>
+    </label>
+    <button type="submit" class="bouton">Enregistrer</button>
+  </form>
+  <p class="muted" style="margin:.4rem 0 0">
+    Les barèmes ne changent pas. En mode auto, la part capital du local et du down est financée par une vente au marché de
+    {{ strat.devise1 }} si MA7 &gt; MA25 (bougies 1h closes, de moins de 2 h), sinon en {{ strat.devise2 }} ; bascule sur l'autre
+    réserve si celle choisie deviendrait négative, suspension si les deux. Le up reste toujours en {{ strat.devise2 }}.
+    Effet à la prochaine vente.
+  </p>
+  {% endif %}
+</section>
+{% endif %}
+
+<section class="carte">
+  <h2>Réinjections <span class="muted">({{ reinjections|length }} dernières)</span></h2>
+  {% if reinjections %}
+  <div class="defilement">
+  <table>
+    <thead><tr>
+      <th>Date</th><th>Mode</th><th style="min-width:16rem">Source · raison</th><th class="num">Bénéfice B</th>
+      <th class="num" title="taux local / up / down">Taux</th>
+      <th class="num">Local</th><th class="num">Up</th><th class="num">Down</th>
+      <th class="num" title="Quantité ajoutée au bet du palier sous la vente">Ajout local</th>
+      <th class="num" title="Vente de financement (ou qui aurait été faite, en observation)">{{ strat.devise1|default:"Actif" }} vendus</th>
+      <th class="num">Capital</th><th class="num">MA7 / MA25</th>
+    </tr></thead>
+    <tbody>
+      {% for l in reinjections %}
+      <tr{% if l.simulee %} class="simulee"{% endif %}>
+        <td title="vente {{ l.ordre_vente }}">{{ l.date_dt|date:"d/m H:i:s" }}</td>
+        <td>{{ l.mode }}{% if l.simulee %} <span class="muted">· simulée</span>{% endif %}</td>
+        <td><strong>{{ l.source }}</strong> <span class="muted">· {{ l.raison }}</span></td>
+        <td class="num">{{ l.benefice_txt }}</td>
+        <td class="num">{{ l.taux_txt }}</td>
+        <td class="num">{{ l.local_txt }}</td><td class="num">{{ l.up_txt }}</td><td class="num">{{ l.down_txt }}</td>
+        <td class="num">{% if l.qte_local_txt %}{{ l.qte_local_txt }} <span class="muted">· palier {{ l.palier_local }}</span>{% endif %}</td>
+        <td class="num">{{ l.qte_devise1_vendue_txt }}</td>
+        <td class="num">{{ l.capital_injecte_txt }}</td>
+        <td class="num" style="white-space:nowrap">{{ l.ma_txt }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="muted" style="margin:0">Aucune réinjection enregistrée pour l'instant.</p>
+  {% endif %}
+</section>
+
+<section class="carte">
+  <div class="entete-gains">
+    <h2>Wallet à chaque ordre exécuté</h2>
+    <form method="get" class="filtres" style="margin:0 0 0 auto">
+      <input type="hidden" name="symbol" value="{{ symbol }}">
+      <label>Prix <input type="text" name="prix" value="{{ filtre.prix }}" size="7" inputmode="decimal" placeholder="ex. 4,37"> ×10⁻⁶</label>
+      <label>± <input type="text" name="tolerance" value="{{ filtre.tolerance }}" size="3" inputmode="decimal"> %</label>
+      <button type="submit" class="bouton">Filtrer</button>
+      {% if filtre.actif %}<a href="?symbol={{ symbol }}" class="muted">tout afficher</a>{% endif %}
+    </form>
+  </div>
+  {% if filtre.actif %}<p class="muted" style="margin:0 0 .6rem">Lignes enregistrées à ± {{ filtre.tolerance }} % de {{ filtre.prix_txt }} : la colonne Δ valeur compare chaque passage au précédent affiché.</p>{% endif %}
+  {% if wallet %}
+  <div class="defilement">
+  <table>
+    <thead><tr>
+      <th>Date</th><th>Ordre</th><th class="num">Palier</th><th class="num">Prix exéc.</th><th class="num">Quantité</th>
+      <th class="num">Prix marché</th><th class="num">{{ strat.devise2|default:"Cotation" }}</th><th class="num">{{ strat.devise1|default:"Actif" }}</th>
+      <th class="num">Valeur wallet</th><th class="num" title="Écart de valeur avec la ligne affichée juste en dessous">Δ valeur</th>
+      <th class="num">Réserve {{ strat.devise2|default:"" }}</th><th class="num">Réserve {{ strat.devise1|default:"" }}</th>
+    </tr></thead>
+    <tbody>
+      {% for l in wallet %}
+      <tr>
+        <td title="ordre {{ l.ordre_id }}">{{ l.date_dt|date:"d/m/Y H:i:s" }}</td>
+        <td><span class="{{ l.sens }}">{% if l.sens == "BUY" %}Achat{% else %}Vente{% endif %}</span> <span class="muted">{{ l.type_ordre|lower }} · {{ l.motif_txt }}</span></td>
+        <td class="num">{{ l.palier|default_if_none:"" }}</td>
+        <td class="num">{{ l.prix_execution_txt }}</td>
+        <td class="num">{{ l.quantite_txt }}</td>
+        <td class="num">{{ l.prix_marche_txt }}</td>
+        {% if l.erreur %}
+        <td colspan="6" class="alerte" title="{{ l.erreur }}">wallet illisible : {{ l.erreur|truncatechars:80 }}</td>
+        {% else %}
+        <td class="num">{{ l.wallet_devise2_txt }}</td>
+        <td class="num">{{ l.wallet_devise1_txt }}</td>
+        <td class="num"><strong>{{ l.valeur_wallet_txt }}</strong></td>
+        <td class="num{% if l.delta is not None and l.delta < 0 %} negatif{% endif %}">{{ l.delta_txt|default:"" }}</td>
+        <td class="num{% if l.reserve_devise2 is not None and l.reserve_devise2 < 0 %} negatif{% endif %}">{{ l.reserve_devise2_txt }}</td>
+        <td class="num{% if l.reserve_devise1 is not None and l.reserve_devise1 < 0 %} negatif{% endif %}">{{ l.reserve_devise1_txt }}</td>
+        {% endif %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="muted" style="margin:0">{% if filtre.actif %}Aucune ligne à ce prix.{% else %}Aucun ordre journalisé pour l'instant : la première ligne apparaîtra au prochain ordre exécuté.{% endif %}</p>
+  {% endif %}
+</section>
+{% endblock %}

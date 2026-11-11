@@ -51,6 +51,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
 import reinjection
+import reserves as calcul_reserves
 import verrou_ecriture
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -260,39 +261,23 @@ def strategy(symbol: str):
 
     capital_injecte : total réinjecté au-delà du bénéfice des ventes (None si la
     migration deploy/simplifier_suivi_reinjection.py n'est pas encore faite).
+    source_reinjection, ecart_min_ma, si_reserves_insuffisantes,
+    reinjection_suspendue : voir parametres_reinjection().
     """
     s = strategy_or_404(symbol)
     try:
         s["capital_injecte"] = query("SELECT capital_injecte FROM Devises WHERE symbol = ?", (symbol,))[0]["capital_injecte"]
     except sqlite3.OperationalError:
         s["capital_injecte"] = None
+    s.update(parametres_reinjection(symbol))
     return s
 
 
 @app.get("/strategies/{symbol}/grid")
 def grid(symbol: str):
-    """Grille de la stratégie : paliers (prix, bet) et suivi des réinjections.
-
-    reinj_quantite : quantité ajoutée au palier par la réinjection des ventes ;
-    prix_moyen_reinj : son prix d'achat moyen (pondéré par les quantités).
-    Si la base n'a pas encore ces colonnes (migration
-    deploy/simplifier_suivi_reinjection.py non lancée), elles valent None.
-    """
+    """Grille de la stratégie : paliers (prix, bet)."""
     strategy_or_404(symbol)
-    try:
-        return query(
-            """SELECT ID AS id, prix, bet, reinj_quantite, prix_moyen_reinj
-               FROM ecart_bet WHERE symbol = ? ORDER BY ID""",
-            (symbol,),
-        )
-    except sqlite3.OperationalError as e:
-        if "no such column" not in str(e):
-            raise
-        return query(
-            """SELECT ID AS id, prix, bet, NULL AS reinj_quantite, NULL AS prix_moyen_reinj
-               FROM ecart_bet WHERE symbol = ? ORDER BY ID""",
-            (symbol,),
-        )
+    return query("SELECT ID AS id, prix, bet FROM ecart_bet WHERE symbol = ? ORDER BY ID", (symbol,))
 
 
 FRAIS_BROKER = 0.00075   # 0,075 % de frais Binance sur chaque ordre (achat et vente)
@@ -750,22 +735,10 @@ def palier_courant(symbol):
 
 
 def besoins_grille(symbol, palier):
-    """Ce que la grille engage de chaque côté du palier courant.
-
-    Vente au palier p+1 de bet[p], achat au palier p de bet[p] : les paliers
-    >= palier courant sont détenus en actif (à vendre en montant), ceux en
-    dessous en devise de cotation (à acheter en descendant).
-    Renvoie (cotation nécessaire = somme bet × prix sous le palier,
-             actif nécessaire = somme des bets à partir du palier).
-    """
-    cotation = actif = 0.0
-    for p in query("SELECT ID, prix, bet FROM ecart_bet WHERE symbol = ?", (symbol,)):
-        bet, prix = float(p["bet"] or 0), float(p["prix"] or 0)
-        if p["ID"] < palier:
-            cotation += bet * prix
-        else:
-            actif += bet
-    return cotation, actif
+    """Besoins de la grille autour du palier courant (reserves.besoins_grille, partagé avec le bot)."""
+    return calcul_reserves.besoins_grille(
+        [(p["ID"], p["prix"], p["bet"]) for p in query("SELECT ID, prix, bet FROM ecart_bet WHERE symbol = ?", (symbol,))],
+        palier)
 
 
 def niveau_alerte(valeur, seuil=None):
@@ -989,6 +962,99 @@ def historique_reserves(symbol: str, limit: int = Query(default=168, ge=1, le=10
     strategy_or_404(symbol)
     try:
         return query("SELECT * FROM reserves WHERE symbol = ? ORDER BY date DESC LIMIT ?", (symbol, limit))
+    except sqlite3.OperationalError:
+        return []
+
+
+###########################################################################
+#        ÉTAPE 2 : JOURNAUX ET SOURCE DE LA RÉINJECTION                   #
+###########################################################################
+# Le bot écrit les journaux (journal_wallet, journal_reinjection) ; l'API ne
+# fait que les lire. Seuls les paramètres de la source de réinjection sont
+# modifiables ici (POST, sous le verrou d'écriture : effet à la vente suivante).
+PARAMETRES_DEFAUT = {"source_reinjection": "EUR", "ecart_min_ma": 0.0,
+                     "si_reserves_insuffisantes": "suspendre", "reinjection_suspendue": None}
+
+
+def parametres_reinjection(symbol):
+    """Paramètres de la source de réinjection ; valeurs par défaut si la migration manque.
+
+    source_reinjection : EUR (comportement historique) / observation / auto.
+    ecart_min_ma : écart minimal (%) de MA7 au-dessus de MA25 pour puiser dans l'actif.
+    si_reserves_insuffisantes : suspendre / eur_negatif (choix du propriétaire).
+    reinjection_suspendue : date de la suspension en cours, ou None.
+    migration_etape2 : False si deploy/etape2_journal_reinjection.py n'a pas été lancé.
+    """
+    try:
+        r = query("SELECT source_reinjection, ecart_min_ma, si_reserves_insuffisantes, reinjection_suspendue "
+                  "FROM Devises WHERE symbol = ?", (symbol,))
+    except sqlite3.OperationalError:
+        return {**PARAMETRES_DEFAUT, "migration_etape2": False}
+    p = {k: (v if v is not None else PARAMETRES_DEFAUT[k]) for k, v in r[0].items()} if r else dict(PARAMETRES_DEFAUT)
+    p["reinjection_suspendue"] = r[0]["reinjection_suspendue"] if r else None
+    p["ecart_min_ma"] = float(p["ecart_min_ma"] or 0)
+    p["migration_etape2"] = True
+    return p
+
+
+class ParametresReinjection(BaseModel):
+    source_reinjection: str | None = Field(default=None, pattern="^(EUR|observation|auto)$")
+    ecart_min_ma: float | None = Field(default=None, ge=0, le=50)
+    si_reserves_insuffisantes: str | None = Field(default=None, pattern="^(suspendre|eur_negatif)$")
+
+
+@app.post("/strategies/{symbol}/reinjection")
+def modifier_reinjection(symbol: str, p: ParametresReinjection):
+    """Modifie la source de réinjection d'une stratégie (effet à la vente suivante), tracé dans Log.
+
+    Repasser en EUR efface une suspension en cours (elle ne concerne que le mode auto).
+    """
+    strategy_or_404(symbol)
+    if not parametres_reinjection(symbol)["migration_etape2"]:
+        raise HTTPException(status_code=409, detail="Migration deploy/etape2_journal_reinjection.py non lancée")
+    changes = {k: v for k, v in p.model_dump().items() if v is not None}
+    if not changes:
+        raise HTTPException(status_code=422, detail="Aucun paramètre à modifier")
+    with base_en_ecriture() as con:
+        for colonne, valeur in changes.items():
+            con.execute(f"UPDATE Devises SET {colonne} = ? WHERE symbol = ?", (valeur, symbol))
+        if changes.get("source_reinjection") == "EUR":
+            con.execute("UPDATE Devises SET reinjection_suspendue = NULL WHERE symbol = ?", (symbol,))
+        con.execute("INSERT INTO Log (date, emplacement, erreur, type, symbol) VALUES (?, ?, ?, ?, ?)",
+                    (str(datetime.now(timezone.utc)), "Front : source de réinjection",
+                     ", ".join(f"{k} = {v}" for k, v in changes.items()), "DEBUG", symbol))
+    return parametres_reinjection(symbol)
+
+
+@app.get("/strategies/{symbol}/journal-wallet")
+def journal_wallet(symbol: str,
+                   prix: float | None = Query(default=None, gt=0, description="prix autour duquel filtrer"),
+                   tolerance: float = Query(default=1.0, gt=0, le=50, description="± % autour de prix"),
+                   limit: int = Query(default=200, ge=1, le=5000)):
+    """Journal du wallet (une ligne par ordre exécuté), du plus récent au plus ancien.
+
+    Avec prix : seulement les lignes dont le prix du marché est à ± tolerance %
+    de ce prix, pour comparer la valeur du wallet entre deux passages au même prix.
+    [] si la table n'existe pas encore.
+    """
+    strategy_or_404(symbol)
+    where, params = ["symbol = ?"], [symbol]
+    if prix is not None:
+        where.append("prix_marche BETWEEN ? AND ?")
+        params += [prix * (1 - tolerance / 100), prix * (1 + tolerance / 100)]
+    try:
+        return query("SELECT * FROM journal_wallet WHERE " + " AND ".join(where)
+                     + " ORDER BY id DESC LIMIT ?", params + [limit])
+    except sqlite3.OperationalError:
+        return []
+
+
+@app.get("/strategies/{symbol}/journal-reinjection")
+def journal_reinjection(symbol: str, limit: int = Query(default=200, ge=1, le=5000)):
+    """Journal des réinjections (réelles et simulées), du plus récent au plus ancien. [] sans la table."""
+    strategy_or_404(symbol)
+    try:
+        return query("SELECT * FROM journal_reinjection WHERE symbol = ? ORDER BY id DESC LIMIT ?", (symbol, limit))
     except sqlite3.OperationalError:
         return []
 
