@@ -64,6 +64,40 @@
 </section>
 {% endif %}
 
+{% if strat %}
+<section class="carte">
+  <h2>Équilibrage</h2>
+  {% if not strat.migration_etape3 %}
+  <p class="alerte" style="margin:0">Migration <code>deploy/etape3_equilibrage.py</code> non lancée : équilibrage indisponible (off).</p>
+  {% else %}
+  <form method="post" action="{% url 'modifier_reinjection' %}" class="filtres"
+        onsubmit="return this.equilibrage.value !== 'actif' || confirm('Équilibrage actif : après une vente, le bot annulera l\'ordre opposé, puis pourra déplacer du bet d\'un voisin vers le palier vendu (et vendre au marché si le prêteur est au-dessus). Confirmer ?')">
+    {% csrf_token %}<input type="hidden" name="symbol" value="{{ symbol }}">
+    <label>Mode
+      <select name="equilibrage">
+        {% for cle, libelle in modes_eq.items %}<option value="{{ cle }}" {% if cle == strat.equilibrage %}selected{% endif %}>{{ libelle }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Distance max. <input type="text" name="eq_distance" value="{{ strat.eq_distance }}" size="2" inputmode="numeric"> paliers</label>
+    <label title="Prêteur éligible si son gain ≥ (1 + déclenchement) × gain de la cible après réinjection normale">Déclenchement <input type="text" name="eq_declenchement" value="{{ strat.eq_declenchement }}" size="3" inputmode="decimal"> %</label>
+    <label title="Gain du prêteur après opération ≥ (1 + écart) × gain de la cible après">Écart min. <input type="text" name="eq_ecart" value="{{ strat.eq_ecart }}" size="3" inputmode="decimal"> %</label>
+    <label title="Cible exclue au-delà, plancher des prêteurs">Seuil d'objectif <input type="text" name="eq_seuil" value="{{ strat.eq_seuil }}" size="4" inputmode="decimal"> {{ strat.devise2 }}</label>
+    <label title="Un prêteur à l'objectif ne prête que si son gain dépasse le seuil + cette marge">Marge plancher <input type="text" name="eq_marge_plancher" value="{{ strat.eq_marge_plancher }}" size="3" inputmode="decimal"> {{ strat.devise2 }}</label>
+    <label>Ordre au marché min. <input type="text" name="eq_ordre_mini" value="{{ strat.eq_ordre_mini }}" size="3" inputmode="decimal"> {{ strat.devise2 }}</label>
+    <button type="submit" class="bouton">Enregistrer</button>
+  </form>
+  <p class="muted" style="margin:.4rem 0 0">
+    Après une vente, la cible (palier qui reçoit le local) emprunte q {{ strat.devise1 }} au voisin éligible le plus fort
+    (± {{ strat.eq_distance }} paliers). Le coût q × Δprix est payé sur min(B, local), le reste du local est ajouté sur place.
+    Un voisin ne prête que s'il a au moins {{ strat.eq_declenchement }} % de gain de plus que la cible, et il garde ensuite
+    au moins {{ strat.eq_ecart }} % de plus. À l'objectif ({{ strat.eq_seuil }} {{ strat.devise2 }}), il ne prête qu'au-delà de
+    {{ strat.eq_seuil }} + {{ strat.eq_marge_plancher }} {{ strat.devise2 }} et ne repasse pas dessous ; pas d'équilibrage si la cible vaut déjà
+    {{ strat.eq_seuil }} {{ strat.devise2 }}. En mode actif, l'ordre opposé est annulé avant ; prêteur au-dessus = vente au marché de q.
+  </p>
+  {% endif %}
+</section>
+{% endif %}
+
 <section class="carte">
   <h2>Réinjections <span class="muted">({{ reinjections|length }} dernières)</span></h2>
   {% if reinjections %}
@@ -75,7 +109,7 @@
       <th class="num">Local</th><th class="num">Up</th><th class="num">Down</th>
       <th class="num" title="Quantité ajoutée au bet du palier sous la vente">Ajout local</th>
       <th class="num" title="Vente de financement (ou qui aurait été faite, en observation)">{{ strat.devise1|default:"Actif" }} vendus</th>
-      <th class="num">Capital</th><th class="num">MA7 / MA25</th>
+      <th class="num">Capital</th><th class="num">MA7 / MA25</th><th style="min-width:18rem">Équilibrage</th>
     </tr></thead>
     <tbody>
       {% for l in reinjections %}
@@ -85,11 +119,15 @@
         <td><strong>{{ l.source }}</strong> <span class="muted">· {{ l.raison }}</span></td>
         <td class="num">{{ l.benefice_txt }}</td>
         <td class="num">{{ l.taux_txt }}</td>
-        <td class="num">{{ l.local_txt }}</td><td class="num">{{ l.up_txt }}</td><td class="num">{{ l.down_txt }}</td>
+        <td class="num">{{ l.local_txt }}</td><td class="num">{% if l.up_epargne %}<span title="palier du dessus déjà à l'objectif">{{ l.up_epargne_txt }} → épargne</span>{% else %}{{ l.up_txt }}{% endif %}</td><td class="num">{{ l.down_txt }}</td>
         <td class="num">{% if l.qte_local_txt %}{{ l.qte_local_txt }} <span class="muted">· palier {{ l.palier_local }}</span>{% endif %}</td>
         <td class="num">{{ l.qte_devise1_vendue_txt }}</td>
         <td class="num">{{ l.capital_injecte_txt }}</td>
         <td class="num" style="white-space:nowrap">{{ l.ma_txt }}</td>
+        <td>{% if l.eq_applique %}<strong>palier {{ l.eq_preteur }}</strong> ({{ l.eq_position }}) → {{ l.eq_cible }} :
+          {{ l.eq_q_txt }} · coût {{ l.eq_cout_txt }} · V {{ l.eq_vertical_txt }}<br>
+          <span class="muted">cible {{ l.eq_gain_cible_avant_txt }} → {{ l.eq_gain_cible_apres_txt }} · prêteur {{ l.eq_gain_preteur_avant_txt }} → {{ l.eq_gain_preteur_apres_txt }}{% if l.eq_ordre %} · ordre {{ l.eq_ordre }}{% endif %}</span>
+          {% elif l.eq_raison %}<span class="muted">{{ l.eq_raison }}{% if l.eq_gain_cible_avant_txt %} · cible {{ l.eq_gain_cible_avant_txt }} → {{ l.eq_gain_cible_apres_txt }}{% endif %}</span>{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>

@@ -448,6 +448,12 @@ MODES_REINJECTION = {"EUR": "EUR (comportement historique)",
                      "observation": "observation (EUR, décision auto simulée dans le journal)",
                      "auto": "auto (PEPE si MA7 > MA25, selon les réserves)"}
 CHOIX_INSUFFISANT = {"suspendre": "laisser suspendu", "eur_negatif": "reprendre en EUR même en négatif"}
+MODES_EQUILIBRAGE = {"off": "off (réinjection normale)",
+                     "observation": "observation (décision simulée dans le journal)",
+                     "actif": "actif (emprunt au voisin plus fort)"}
+CHAMPS_EQ = {"eq_distance": ("distance maximale", int, 1, 10), "eq_ecart": ("écart minimal", float, 0, 500),
+             "eq_seuil": ("seuil d'objectif", float, 0.01, 100000), "eq_ordre_mini": ("ordre minimal", float, 5, 1000),
+             "eq_declenchement": ("déclenchement", float, 0, 500), "eq_marge_plancher": ("marge du plancher", float, 0, 100000)}
 MOTIFS = {"grille": "grille", "up": "up", "financement": "financement réinj.", "solde partiel": "solde partiel"}
 
 
@@ -489,10 +495,13 @@ def lignes_journal_reinjection(lignes):
     """Mise en forme du journal des réinjections."""
     for l in lignes:
         l["date_dt"] = parse_date(l["date"])
-        for c in ("benefice", "local", "up", "down", "capital_injecte", "reserve_devise2"):
+        for c in ("benefice", "local", "up", "down", "capital_injecte", "reserve_devise2", "up_epargne"):
             l[c + "_txt"] = montant(l[c]) if l.get(c) is not None else ""
-        for c in ("qte_local", "qte_devise1_vendue", "reserve_devise1"):
+        for c in ("qte_local", "qte_devise1_vendue", "reserve_devise1", "eq_q"):
             l[c + "_txt"] = quantite_txt(l[c]) if l.get(c) else ""
+        for c in ("eq_gain_cible_avant", "eq_gain_cible_apres", "eq_gain_preteur_avant", "eq_gain_preteur_apres",
+                  "eq_cout", "eq_vertical"):
+            l[c + "_txt"] = montant(l[c]) if l.get(c) is not None else ""
         l["ma_txt"] = (f"{prix_txt(l['ma7'])} / {prix_txt(l['ma25'])}"
                        if l.get("ma7") is not None and l.get("ma25") is not None else "")
         l["taux_txt"] = " / ".join(f"{float(t):g} %" for t in (l.get("taux_local"), l.get("taux_up"), l.get("taux_down"))
@@ -510,6 +519,7 @@ def journal(request):
     """
     symbol, autorises = symbole_autorise(request, request.GET)
     contexte = {"erreur": None, "symbols": autorises, "symbol": symbol, "modes": MODES_REINJECTION,
+                "modes_eq": MODES_EQUILIBRAGE,
                 "choix_insuffisant": CHOIX_INSUFFISANT, "filtre": {"prix": request.GET.get("prix", ""),
                                                                    "tolerance": request.GET.get("tolerance", "1")}}
     if symbol is None:
@@ -554,7 +564,15 @@ def modifier_reinjection(request):
         params["source_reinjection"] = request.POST["source_reinjection"]
     if request.POST.get("si_reserves_insuffisantes") in CHOIX_INSUFFISANT:
         params["si_reserves_insuffisantes"] = request.POST["si_reserves_insuffisantes"]
+    if request.POST.get("equilibrage") in MODES_EQUILIBRAGE:
+        params["equilibrage"] = request.POST["equilibrage"]
     try:
+        for champ, (libelle, type_, mini, maxi) in CHAMPS_EQ.items():
+            valeur = nombre_saisi(request.POST.get(champ))
+            if valeur is not None:
+                if not mini <= valeur <= maxi or (type_ is int and valeur != int(valeur)):
+                    raise ValueError(f"{libelle} : {'un entier ' if type_ is int else ''}de {mini:g} à {maxi:g}")
+                params[champ] = type_(valeur)
         ecart = nombre_saisi(request.POST.get("ecart_min_ma"))
         if ecart is not None:
             if not 0 <= ecart <= 50:
@@ -563,9 +581,15 @@ def modifier_reinjection(request):
         if not params:
             raise ValueError("aucun paramètre")
         r = api_client.post(f"/strategies/{symbol}/reinjection", params, timeout=40)
-        messages.success(request, f"Réinjection : source {r['source_reinjection']}, écart MA {r['ecart_min_ma']:g} %, "
-                                  f"si réserves insuffisantes : {CHOIX_INSUFFISANT.get(r['si_reserves_insuffisantes'])}. "
-                                  "Effet à la prochaine vente.")
+        if any(k == "equilibrage" or k in CHAMPS_EQ for k in params):
+            messages.success(request, f"Équilibrage : {r['equilibrage']}, prêteurs à {r['eq_distance']} paliers au plus, "
+                                      f"déclenchement {r['eq_declenchement']:g} %, écart {r['eq_ecart']:g} %, seuil {r['eq_seuil']:g} "
+                                      f"(+ marge {r['eq_marge_plancher']:g}), ordre minimal "
+                                      f"{r['eq_ordre_mini']:g}. Effet à la prochaine vente.")
+        else:
+            messages.success(request, f"Réinjection : source {r['source_reinjection']}, écart MA {r['ecart_min_ma']:g} %, "
+                                      f"si réserves insuffisantes : {CHOIX_INSUFFISANT.get(r['si_reserves_insuffisantes'])}. "
+                                      "Effet à la prochaine vente.")
     except ValueError as e:
         messages.error(request, f"Paramètres invalides : {e}")
     except api_client.ApiError as e:

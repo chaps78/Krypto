@@ -6,11 +6,11 @@ supérieur au bénéfice donne le taux ; au-delà du dernier seuil, taux par dé
 Attention : seuils en valeur absolue, quelle que soit la devise de cotation.
 """
 
-BAREME_LOCAL = [(5, 1000), (10, 500), (15, 300), (25, 200), (40, 150), (60, 100)]
-DEFAUT_LOCAL = 50
+BAREME_LOCAL = [(5, 1000), (10, 500), (15, 300)]
+DEFAUT_LOCAL = 30
 
-BAREME_UP = [(10, 100), (15, 50), (25, 30), (40, 20), (60, 15)]
-DEFAUT_UP = 10
+BAREME_UP = [(10, 100), (15, 50)]
+DEFAUT_UP = 30
 
 
 def _taux(bareme, defaut, benef):

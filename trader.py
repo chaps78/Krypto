@@ -12,6 +12,7 @@ from sheetInterface import sheetAcces
 from messages import sur, quantite, montant
 import reinjection
 import reserves as calcul_reserves
+import equilibrage
 import verrou_ecriture
 
 
@@ -209,7 +210,9 @@ class Basics():
                     #                                                                           #
                     #############################################################################
                     etat = self.journaliser_limite(symbol,ID_client,last_filled)
-                    self.reinject_benef(symbol,ID_client,last_filled,etat)
+                    annules = self.annuler_avant_equilibrage(symbol,ID_client,last_filled,ordres_DB)
+                    self.reinject_benef(symbol,ID_client,last_filled,etat,
+                                        ordres_annules=bool(ordres_DB) and len(annules)==len(ordres_DB))
 
 
                     clients = self.sql.get_clients_infos()
@@ -224,7 +227,7 @@ class Basics():
                         ordre = self.bin.get_order_info_with_ID(symbol,ID_client,0,0,last_filled["ID"])
                         self.tele.send_message(str(ordre))
                     self.sql.new_log_debug("verification_2_ordres_V2","un ordre FILLED et un NEW : "+str(ordres_DB),symbol)
-                    self.un_ordre_filled_autre_new(ordres_DB,symbol,ID_client)
+                    self.un_ordre_filled_autre_new([o for o in ordres_DB if o["ID"] not in annules],symbol,ID_client)
                     self.sheet.update_all_info(symbol,ID_client)
                     # un ordre ferme et un NEW
                 elif len(ordres_partial) == 1:
@@ -253,11 +256,12 @@ class Basics():
         """Taux (%) de la part "up" en fonction du bénéfice : barème de reinjection.py."""
         return reinjection.taux_up(benef)
 
-    def reinject_benef(self,symbol,ID_client,last_filled,etat=None):
+    def reinject_benef(self,symbol,ID_client,last_filled,etat=None,ordres_annules=False):
         """Redistribue le bénéfice en attente (Devises.benef_TMP) d'une stratégie.
 
           - local    : taux get_taux_reinjection() -> reinject_local()
-          - up       : taux get_taux_up()          -> reinject_up() (toujours en cotation)
+          - up       : taux get_taux_up()          -> reinject_up() (toujours en cotation),
+                       au palier du dessus s'il est sous Obj_gain, sinon compteur Devises.epargne
           - down     : % Devises.down              -> reinject_down()
           - épargne  : % Devises.epargne_percent   -> compteur Devises.epargne
           - facture  : % Devises.factu_percent     -> compteur Devises.factu
@@ -272,6 +276,16 @@ class Basics():
                             réserve manque, suspension si les deux manquent.
         Les bets sont augmentés exactement comme avant, quelle que soit la source.
         etat : soldes et réserves lus juste après la vente (journaliser_ordre), ou None.
+
+        Placement du local (Devises.equilibrage, étape 3), décidé à chaque vente :
+          1. translation (étape ultérieure, à insérer ici en premier) ;
+          2. équilibrage (equilibrage.decider_equilibrage) : la cible emprunte q au
+             bet d'un voisin plus fort, le reste du local est ajouté sur place ;
+          3. sinon réinjection normale (reinject_local).
+        "off" : jamais ; "observation" : décision journalisée (ligne simulée) sans
+        rien modifier ; "actif" : appliqué, seulement si l'ordre opposé a été
+        annulé avant (ordres_annules), pour ne jamais modifier un palier sous un
+        ordre ouvert. Prêteur au-dessus : vente au marché de q (échec : normal).
 
         Si Devises.local contient du texte, c'est le nom d'une autre stratégie : le
         bénéfice de l'ordre est alors versé dans le up_TMP de celle-ci (et benef_TMP
@@ -303,6 +317,11 @@ class Basics():
                     debug_flag = 5
                     up_tmp = self.get_taux_up(benef_tmp)
                     up = benef_tmp*up_tmp/100
+                    # Up : palier juste au-dessus s'il est sous l'objectif, sinon épargne
+                    palier_up, up_vers_epargne = self.destination_up(symbol,ID_client,last_filled)
+                    up_epargne = up if up_vers_epargne else 0.0
+                    if up_vers_epargne:
+                        up = 0.0
                     debug_flag = 6
                     params = self.sans_risque("parametres_reinjection",symbol,
                                               lambda: self.sql.get_parametres_reinjection(symbol)) or {}
@@ -315,15 +334,32 @@ class Basics():
                                "ordre_vente":str(last_filled.get("ID")),"benefice":benef_tmp,
                                "taux_local":taux_local,"taux_up":up_tmp,"taux_down":repart["down"],
                                "local":local,"up":up,"down":down,"mode":mode,"simulee":0,
+                               "up_epargne":up_epargne,
                                "prix_marche":(etat or {}).get("prix"),
                                "reserve_devise2":(etat or {}).get("reserve_cotation"),
                                "reserve_devise1":(etat or {}).get("reserve_actif"),
                                "up_tmp_avant":self.sans_risque("up_tmp",symbol,lambda: float(self.sql.get_up_tmp(symbol)))}
                     if decision:
                         journal.update({"ma7":decision["ma7"],"ma25":decision["ma25"],"ma_bougie":decision["ma_bougie"]})
-                    if mode == "observation" and decision:
-                        simulee = dict(journal, simulee=1, source=decision["source"], raison=decision["raison"],
-                                       qte_devise1_vendue=decision["a_vendre"], capital_injecte=decision["capital"])
+                    params_eq = self.sans_risque("parametres_equilibrage",symbol,
+                                                 lambda: self.sql.get_parametres_equilibrage(symbol)) or {"equilibrage":"off"}
+                    mode_eq = params_eq.get("equilibrage","off")
+                    # 1. translation : étape ultérieure, à décider ici avant l'équilibrage
+                    # 2. équilibrage
+                    decision_eq = None
+                    if mode_eq in ("observation","actif"):
+                        decision_eq = self.sans_risque("decision_equilibrage",symbol,
+                            lambda: self.decider_equilibrage(symbol,ID_client,last_filled,benef_tmp,local,params_eq,etat))
+                    journal["eq_mode"] = mode_eq
+                    if mode == "observation" or mode_eq == "observation":
+                        simulee = dict(journal, simulee=1)
+                        if decision:
+                            simulee.update(source=decision["source"], raison=decision["raison"],
+                                           qte_devise1_vendue=decision["a_vendre"], capital_injecte=decision["capital"])
+                        else:
+                            simulee.update(source="EUR", raison="mode "+mode)
+                        simulee.update(self.champs_equilibrage(decision_eq, decision_eq["applique"] if decision_eq else False,
+                                                               decision_eq["raison"] if decision_eq else "mode "+mode_eq))
                         self.sans_risque("journal_reinjection",symbol,lambda: self.sql.inserer("journal_reinjection",simulee))
 
                     if mode == "auto" and decision and decision["source"] == "SUSPENDU":
@@ -339,19 +375,42 @@ class Basics():
                         self.sql.add_to_benef_TMP(symbol,-benef_tmp)
                         return None
 
+                    eq_applique, eq_raison, ordre_eq = False, "mode "+mode_eq, None
+                    if mode_eq == "actif":
+                        if not decision_eq:
+                            eq_raison = "décision d'équilibrage impossible : réinjection normale"
+                        elif not decision_eq["applique"]:
+                            eq_raison = decision_eq["raison"]
+                        elif not ordres_annules:
+                            eq_raison = "ordre opposé non annulé : réinjection normale"
+                        elif decision_eq["position"] == "dessus":
+                            ordre_eq = self.vendre_preteur(symbol,ID_client,decision_eq)
+                            eq_applique = ordre_eq is not None
+                            eq_raison = decision_eq["raison"] if eq_applique else "échec de l'ordre au marché du prêteur : réinjection normale"
+                        else:
+                            eq_applique, eq_raison = True, decision_eq["raison"]
                     vente = None
                     if mode == "auto" and decision and decision["source"] == "PEPE":
                         vente = self.vendre_pour_financer(symbol,ID_client,decision)
                     debug_flag = 61
-                    palier_local, qte_local = self.reinject_local(symbol,last_filled,local)
+                    if eq_applique:
+                        self.sql.equilibrer_bets(symbol,decision_eq["preteur"],decision_eq["cible"],
+                                                 decision_eq["q"],decision_eq["ajout_cible"])
+                        palier_local, qte_local = decision_eq["cible"], decision_eq["ajout_cible"]
+                        # Message de suivi TEMPORAIRE (texte_equilibrage), à retirer après la mise en route
+                        self.tele.send_message(sur(lambda: self.texte_equilibrage(symbol,last_filled,decision_eq,ordre_eq),
+                                                   "Equilibrage "+symbol))
+                    else:
+                        palier_local, qte_local = self.reinject_local(symbol,last_filled,local)
                     debug_flag = 7
                     palier_down = qte_down = None
                     if down>0:
                         palier_down, qte_down = self.reinject_down(symbol,ID_client,down,last_filled)
                     debug_flag = 8
-                    self.sql.ajout_epargne_paire_devise(symbol,epargne,ID_client)
+                    self.sql.ajout_epargne_paire_devise(symbol,epargne+up_epargne,ID_client)
                     debug_flag = 9
-                    self.reinject_up(symbol,ID_client,up,last_filled)
+                    if up > 0:
+                        self.reinject_up(symbol,ID_client,up,palier_up)
                     debug_flag = 10
                     # Ce qui est réinjecté au-delà du bénéfice vient du capital ; une part
                     # financée en actif compte pour sa valeur au prix d'exécution de la vente
@@ -372,6 +431,7 @@ class Basics():
                                     "prix_financement":vente["prix"] if vente else None,
                                     "ordre_financement":str(vente["ordre"]) if vente else None,
                                     "capital_injecte":max(capital,0.0),
+                                    **self.champs_equilibrage(decision_eq,eq_applique,eq_raison,ordre_eq),
                                     "up_tmp_apres":self.sans_risque("up_tmp",symbol,lambda: float(self.sql.get_up_tmp(symbol)))})
                     self.sans_risque("journal_reinjection",symbol,lambda: self.sql.inserer("journal_reinjection",journal))
                     if params.get("reinjection_suspendue"):
@@ -395,6 +455,97 @@ class Basics():
                                            entier=int(dev_entier)==1)
         d["ma7"], d["ma25"], d["ma_bougie"] = (ma or {}).get("ma7"), (ma or {}).get("ma25"), (ma or {}).get("ouverture")
         return d
+
+    def annuler_avant_equilibrage(self,symbol,ID_client,last_filled,ordres):
+        """Équilibrage actif, après une vente à réinjecter : annule l'ordre opposé AVANT la réinjection.
+
+        Ainsi aucun palier n'est modifié sous un ordre ouvert. Dans tous les
+        autres cas, rien n'est fait ici (annulation habituelle ensuite).
+
+        Returns:
+            liste des ID annulés (vide si rien n'a été fait ou en cas d'échec).
+        """
+        try:
+            if not last_filled or last_filled.get("sens") != "SELL" or not ordres:
+                return []
+            if self.sql.get_parametres_equilibrage(symbol)["equilibrage"] != "actif":
+                return []
+            if not self.sql.get_benef_TMP_and_benef_all_from_symbol(symbol)["TMP"] > 0:
+                return []
+        except Exception:
+            return []
+        annules = []
+        for o in ordres:
+            r = self.bin.cancel_order(o["ID"],ID_client)
+            if r and r[0] == "CANCELED":
+                annules.append(o["ID"])
+        return annules
+
+    def decider_equilibrage(self,symbol,ID_client,last_filled,benef,local,params_eq,etat):
+        """Décision d'équilibrage pour la cible ID_ecart−1 (palier qui reçoit le local)."""
+        paliers = {i:(v[0],v[1]) for i,v in self.sql.get_ecart_bet_from_symbol(symbol).items()}
+        prix = (etat or {}).get("prix") or float(self.bin.get_price(symbol,ID_client)["price"])
+        dev_entier = self.sql.get_devises_from_symbol(symbol,ID_client)["dev_entiere"]
+        return equilibrage.decider_equilibrage(paliers,int(last_filled["ID_ecart"])-1,benef,local,prix,
+                                               distance=params_eq["distance"],ecart=params_eq["ecart"],
+                                               seuil=params_eq["seuil"],ordre_mini=params_eq["ordre_mini"],
+                                               declenchement=params_eq["declenchement"],
+                                               marge_plancher=params_eq["marge_plancher"],
+                                               entier=int(dev_entier)==1)
+
+    def vendre_preteur(self,symbol,ID_client,decision_eq):
+        """Prêteur au-dessus de la cible : vend q d'actif au marché (EUR du rachat de la cible).
+
+        Returns:
+            identifiant de l'ordre, ou None si la vente a échoué (aucun bet modifié).
+        """
+        q = decision_eq["q"]
+        ordre_id, prix_exec = self.bin.new_market_order(symbol,q,"SELL",ID_client,detail=True)
+        if not ordre_id:
+            self.sans_risque("journal_wallet",symbol,lambda: self.sql.inserer("journal_wallet",{
+                "date":datetime.now(timezone.utc).isoformat(),"symbol":symbol,"id_client":ID_client,"sens":"SELL",
+                "type_ordre":"MARKET","motif":"équilibrage","palier":decision_eq["preteur"],"quantite":q,
+                "erreur":"vente au marché du prêteur échouée : pas d'équilibrage"}))
+            return None
+        self.journaliser_ordre(symbol,ID_client,ordre_id,"SELL","MARKET","équilibrage",decision_eq["preteur"],prix_exec,q)
+        decision_eq["prix_exec"] = prix_exec
+        return ordre_id
+
+    def texte_equilibrage(self,symbol,last_filled,d,ordre=None):
+        """Message TEMPORAIRE (suivi de la mise en route de l'équilibrage, à retirer ensuite) :
+        récapitulatif d'un équilibrage appliqué."""
+        actif, cotation = self.unite(symbol)
+        lignes = ["⚖️ "+symbol+" · équilibrage (suivi)",
+                  "Vente au palier "+str(last_filled.get("ID_ecart"))+" · bénéfice réinjecté en local à la cible",
+                  "Cible palier "+str(d["cible"])+" : gain "+montant(d["gain_cible_avant"])+" → "
+                  +montant(d["gain_cible_apres"])+" "+cotation
+                  +" (sans équilibrage : "+montant(d["gain_cible_normal"])+")",
+                  "Prêteur palier "+str(d["preteur"])+" ("+d["position"]+") : gain "+montant(d["gain_preteur_avant"])
+                  +" → "+montant(d["gain_preteur_apres"])+" "+cotation,
+                  "Transfert : "+quantite(d["q"])+" "+actif+" · coût "+montant(d["cout"])+" "+cotation
+                  +" · reste du local ajouté sur place "+montant(d["vertical"])+" "+cotation]
+        if d["position"] == "dessus":
+            prix = d.get("prix_exec")
+            valeur = " ≈ "+montant(d["q"]*prix)+" "+cotation+" à "+quantite(prix) if prix else ""
+            lignes.append("Ordre au marché : VENTE de "+quantite(d["q"])+" "+actif+valeur
+                          +(" (ordre "+str(ordre)+")" if ordre else ""))
+        else:
+            lignes.append("Aucun ordre au marché (prêteur en dessous : tout reste en "+cotation+")")
+        return "\n".join(lignes)
+
+    def champs_equilibrage(self,d,applique,raison,ordre=None):
+        """Colonnes eq_* du journal des réinjections pour une décision d'équilibrage (ou None)."""
+        d = d or {}
+        return {"eq_applique":1 if applique else 0,"eq_raison":raison,"eq_cible":d.get("cible"),
+                "eq_gain_cible_avant":d.get("gain_cible_avant"),
+                "eq_gain_cible_apres":d.get("gain_cible_apres") if applique else d.get("gain_cible_normal"),
+                "eq_preteur":d.get("preteur") if applique else None,
+                "eq_position":d.get("position") if applique else None,
+                "eq_gain_preteur_avant":d.get("gain_preteur_avant") if applique else None,
+                "eq_gain_preteur_apres":d.get("gain_preteur_apres") if applique else None,
+                "eq_q":d.get("q") if applique else None,"eq_cout":d.get("cout") if applique else None,
+                "eq_vertical":d.get("vertical") if applique else None,
+                "eq_ordre":str(ordre) if ordre else None}
 
     def vendre_pour_financer(self,symbol,ID_client,decision):
         """Vend au marché la quantité d'actif décidée pour financer la part capital.
@@ -435,13 +586,30 @@ class Basics():
         self.sql.add_to_ecart(symbol,ID,down/prix)
         return ID, down/prix
     
-    def reinject_up(self,symbol,ID_client,qtt,last_filled):
+    def destination_up(self,symbol,ID_client,last_filled):
+        """Palier qui reçoit la part "up" : celui juste au-dessus du dernier exécuté (ID_ecart+1).
+
+        S'il a déjà atteint l'objectif (gain théorique >= Obj_gain), ou s'il
+        n'existe pas (haut de la grille), pas de up : la part va en épargne.
+        Obj_gain vide : pas d'objectif, le up va toujours au palier du dessus.
+
+        Returns:
+            (ID du palier du dessus, True si la part up va en épargne).
+        """
+        ID = int(last_filled["ID_ecart"])+1
+        if ID+1 > self.sql.get_max_ID_from_symbol(symbol):
+            return ID, True
+        obj = self.sql.get_devises_from_symbol(symbol,ID_client)["obj_gain"]
+        if obj is None or obj == "":
+            return ID, False
+        return ID, self.sql.calcul_benef_with_ID(symbol,ID) >= float(obj)
+
+    def reinject_up(self,symbol,ID_client,qtt,ID):
         """Accumule la part "up" et l'investit quand le montant est suffisant.
 
         La quantité est ajoutée à Devises.up_TMP. Dès que up_TMP vaut plus de 6 USDT,
-        achète au marché, ajoute la quantité achetée au premier palier au-dessus du
-        dernier exécuté dont le gain théorique est inférieur à Obj_gain, puis
-        décrémente up_TMP.
+        achète au marché, ajoute la quantité achetée au palier ID (choisi par
+        destination_up : juste au-dessus du dernier exécuté), puis décrémente up_TMP.
 
         L'achat au marché est ajouté au journal du wallet (motif "up").
         """
@@ -457,14 +625,6 @@ class Basics():
         if float(convert_to_usdt)>6:
             symbol_split = symbol.split("_")[0]
             taux_convert = float(self.bin.get_price(symbol_split,ID_client)["price"])
-            ID = int(last_filled["ID_ecart"])+1
-            max_ID = self.sql.get_max_ID_from_symbol(symbol)
-            obj = float(self.sql.get_devises_from_symbol(symbol,ID_client)["obj_gain"])
-            while ID <= max_ID:
-                if self.sql.calcul_benef_with_ID(symbol,ID)<obj:
-                    break
-                ID+=1
-
             dev_entier = self.sql.get_devises_from_symbol(symbol,ID_client)["dev_entiere"]
             self.tele.send_message(sur(lambda: self.texte_reinject_up(symbol,ID_client,total,taux_convert,ID,int(dev_entier)==1),
                                        "Reinject UP "+symbol+" "+str(total)+"\n ID "+str(ID_client)))

@@ -913,6 +913,34 @@ class sqlAcces():
         return {"source_reinjection":r[0] or "EUR","ecart_min_ma":float(r[1] or 0),
                 "si_reserves_insuffisantes":r[2] or "suspendre","reinjection_suspendue":r[3]}
 
+    def get_parametres_equilibrage(self,symbol):
+        """Paramètres de l'équilibrage (étape 3) ; mode "off" si la migration n'est pas faite."""
+        defaut = {"equilibrage":"off","distance":3,"ecart":20.0,"seuil":15.0,"ordre_mini":6.0,
+                  "declenchement":30.0,"marge_plancher":1.0}
+        try:
+            r = self.cur.execute("SELECT equilibrage, eq_distance, eq_ecart, eq_seuil, eq_ordre_mini, "
+                                 "eq_declenchement, eq_marge_plancher "
+                                 "FROM Devises WHERE symbol=?",(symbol,)).fetchone()
+        except sqlite3.OperationalError:
+            return defaut
+        if r is None:
+            return defaut
+        return {"equilibrage":r[0] or "off","distance":int(r[1] if r[1] is not None else 3),
+                "ecart":float(r[2] if r[2] is not None else 20),"seuil":float(r[3] if r[3] is not None else 15),
+                "ordre_mini":float(r[4] if r[4] is not None else 6),
+                "declenchement":float(r[5] if r[5] is not None else 30),
+                "marge_plancher":float(r[6] if r[6] is not None else 1)}
+
+    def equilibrer_bets(self,symbol,preteur,cible,q,ajout_cible):
+        """Équilibrage : bet(prêteur) −= q et bet(cible) += ajout_cible, en une seule transaction."""
+        try:
+            self.cur.execute("UPDATE ecart_bet SET bet = bet - ? WHERE symbol = ? AND ID = ?",(float(q),symbol,int(preteur)))
+            self.cur.execute("UPDATE ecart_bet SET bet = bet + ? WHERE symbol = ? AND ID = ?",(float(ajout_cible),symbol,int(cible)))
+            self.con.commit()
+        except Exception:
+            self.con.rollback()
+            raise
+
     def set_reinjection_suspendue(self,symbol,date):
         """Note (date ISO) ou efface (None) la suspension de la réinjection d'une stratégie."""
         self.cur.execute("UPDATE Devises SET reinjection_suspendue=? WHERE symbol=?",(date,symbol))

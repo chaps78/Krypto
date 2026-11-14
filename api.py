@@ -972,6 +972,8 @@ def historique_reserves(symbol: str, limit: int = Query(default=168, ge=1, le=10
 # Le bot écrit les journaux (journal_wallet, journal_reinjection) ; l'API ne
 # fait que les lire. Seuls les paramètres de la source de réinjection sont
 # modifiables ici (POST, sous le verrou d'écriture : effet à la vente suivante).
+EQ_DEFAUT = {"equilibrage": "off", "eq_distance": 3, "eq_ecart": 20.0, "eq_seuil": 15.0, "eq_ordre_mini": 6.0,
+             "eq_declenchement": 30.0, "eq_marge_plancher": 1.0}
 PARAMETRES_DEFAUT = {"source_reinjection": "EUR", "ecart_min_ma": 0.0,
                      "si_reserves_insuffisantes": "suspendre", "reinjection_suspendue": None}
 
@@ -983,17 +985,26 @@ def parametres_reinjection(symbol):
     ecart_min_ma : écart minimal (%) de MA7 au-dessus de MA25 pour puiser dans l'actif.
     si_reserves_insuffisantes : suspendre / eur_negatif (choix du propriétaire).
     reinjection_suspendue : date de la suspension en cours, ou None.
-    migration_etape2 : False si deploy/etape2_journal_reinjection.py n'a pas été lancé.
+    equilibrage (off / observation / actif), eq_distance, eq_ecart (%), eq_seuil
+    et eq_ordre_mini (cotation) : équilibrage de l'étape 3.
+    migration_etape2 / migration_etape3 : False si la migration correspondante manque.
     """
     try:
         r = query("SELECT source_reinjection, ecart_min_ma, si_reserves_insuffisantes, reinjection_suspendue "
                   "FROM Devises WHERE symbol = ?", (symbol,))
     except sqlite3.OperationalError:
-        return {**PARAMETRES_DEFAUT, "migration_etape2": False}
+        return {**PARAMETRES_DEFAUT, **EQ_DEFAUT, "migration_etape2": False, "migration_etape3": False}
     p = {k: (v if v is not None else PARAMETRES_DEFAUT[k]) for k, v in r[0].items()} if r else dict(PARAMETRES_DEFAUT)
     p["reinjection_suspendue"] = r[0]["reinjection_suspendue"] if r else None
     p["ecart_min_ma"] = float(p["ecart_min_ma"] or 0)
     p["migration_etape2"] = True
+    try:
+        e = query("SELECT equilibrage, eq_distance, eq_ecart, eq_seuil, eq_ordre_mini, eq_declenchement, "
+                  "eq_marge_plancher FROM Devises WHERE symbol = ?",
+                  (symbol,))[0]
+        p.update({k: (v if v is not None else EQ_DEFAUT[k]) for k, v in e.items()}, migration_etape3=True)
+    except (sqlite3.OperationalError, IndexError):
+        p.update(EQ_DEFAUT, migration_etape3=False)
     return p
 
 
@@ -1001,11 +1012,18 @@ class ParametresReinjection(BaseModel):
     source_reinjection: str | None = Field(default=None, pattern="^(EUR|observation|auto)$")
     ecart_min_ma: float | None = Field(default=None, ge=0, le=50)
     si_reserves_insuffisantes: str | None = Field(default=None, pattern="^(suspendre|eur_negatif)$")
+    equilibrage: str | None = Field(default=None, pattern="^(off|observation|actif)$")
+    eq_distance: int | None = Field(default=None, ge=1, le=10)
+    eq_ecart: float | None = Field(default=None, ge=0, le=500)
+    eq_seuil: float | None = Field(default=None, gt=0, le=100000)
+    eq_ordre_mini: float | None = Field(default=None, ge=5, le=1000)
+    eq_declenchement: float | None = Field(default=None, ge=0, le=500)
+    eq_marge_plancher: float | None = Field(default=None, ge=0, le=100000)
 
 
 @app.post("/strategies/{symbol}/reinjection")
 def modifier_reinjection(symbol: str, p: ParametresReinjection):
-    """Modifie la source de réinjection d'une stratégie (effet à la vente suivante), tracé dans Log.
+    """Modifie la source de réinjection et l'équilibrage d'une stratégie (effet à la vente suivante), tracé dans Log.
 
     Repasser en EUR efface une suspension en cours (elle ne concerne que le mode auto).
     """
@@ -1013,6 +1031,8 @@ def modifier_reinjection(symbol: str, p: ParametresReinjection):
     if not parametres_reinjection(symbol)["migration_etape2"]:
         raise HTTPException(status_code=409, detail="Migration deploy/etape2_journal_reinjection.py non lancée")
     changes = {k: v for k, v in p.model_dump().items() if v is not None}
+    if any(k in EQ_DEFAUT for k in changes) and not parametres_reinjection(symbol)["migration_etape3"]:
+        raise HTTPException(status_code=409, detail="Migration deploy/etape3_equilibrage.py non lancée")
     if not changes:
         raise HTTPException(status_code=422, detail="Aucun paramètre à modifier")
     with base_en_ecriture() as con:
@@ -1021,7 +1041,7 @@ def modifier_reinjection(symbol: str, p: ParametresReinjection):
         if changes.get("source_reinjection") == "EUR":
             con.execute("UPDATE Devises SET reinjection_suspendue = NULL WHERE symbol = ?", (symbol,))
         con.execute("INSERT INTO Log (date, emplacement, erreur, type, symbol) VALUES (?, ?, ?, ?, ?)",
-                    (str(datetime.now(timezone.utc)), "Front : source de réinjection",
+                    (str(datetime.now(timezone.utc)), "Front : réglages de réinjection",
                      ", ".join(f"{k} = {v}" for k, v in changes.items()), "DEBUG", symbol))
     return parametres_reinjection(symbol)
 
