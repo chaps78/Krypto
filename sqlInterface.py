@@ -913,6 +913,42 @@ class sqlAcces():
         return {"source_reinjection":r[0] or "EUR","ecart_min_ma":float(r[1] or 0),
                 "si_reserves_insuffisantes":r[2] or "suspendre","reinjection_suspendue":r[3]}
 
+    def get_parametres_translation(self,symbol):
+        """Paramètres de détection des sources (étape 4), ou None si la migration n'est pas faite."""
+        try:
+            r = self.cur.execute("SELECT tr_distance, tr_duree, tr_gain_min FROM Devises WHERE symbol=?",
+                                 (symbol,)).fetchone()
+        except sqlite3.OperationalError:
+            return None
+        if r is None:
+            return None
+        return {"distance":int(r[0] if r[0] is not None else 6),"duree":float(r[1] if r[1] is not None else 48),
+                "gain_min":float(r[2] if r[2] is not None else 4.5)}
+
+    def get_suivi_sources(self,symbol):
+        """Grille avec chronomètres : {ID: (prix, bet, eloigne_depuis, source_depuis)} (dates en texte ISO)."""
+        res = self.cur.execute("SELECT ID, prix, bet, eloigne_depuis, source_depuis FROM ecart_bet WHERE symbol=?",
+                               (symbol,)).fetchall()
+        return {int(r[0]):(r[1],r[2],r[3],r[4]) for r in res}
+
+    def enregistrer_suivi_sources(self,symbol,changements,evenements):
+        """Écrit en une seule fois les chronomètres modifiés et les lignes du journal des ruptures.
+
+        changements : {ID: (eloigne_depuis, source_depuis)} en texte ISO ou None ;
+        evenements : liste de dict (colonnes de journal_ruptures).
+        """
+        try:
+            self.cur.executemany("UPDATE ecart_bet SET eloigne_depuis=?, source_depuis=? WHERE symbol=? AND ID=?",
+                                 [(e,s,symbol,i) for i,(e,s) in changements.items()])
+            for ev in evenements:
+                colonnes = list(ev.keys())
+                self.cur.execute("INSERT INTO journal_ruptures ("+",".join(colonnes)+") VALUES ("
+                                 +",".join("?"*len(colonnes))+")",[ev[c] for c in colonnes])
+            self.con.commit()
+        except Exception:
+            self.con.rollback()
+            raise
+
     def get_parametres_equilibrage(self,symbol):
         """Paramètres de l'équilibrage (étape 3) ; mode "off" si la migration n'est pas faite."""
         defaut = {"equilibrage":"off","distance":3,"ecart":20.0,"seuil":15.0,"ordre_mini":6.0,

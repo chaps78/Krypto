@@ -13,6 +13,7 @@ from messages import sur, quantite, montant
 import reinjection
 import reserves as calcul_reserves
 import equilibrage
+import translation
 import verrou_ecriture
 
 
@@ -25,6 +26,8 @@ class Basics():
         self.bin = binAcces()
         self.tele = teleAcces()
         self.sheet = sheetAcces()
+        # Suivi des sources de translation : {symbol: (palier courant, date de la dernière évaluation)}
+        self.suivi_sources = {}
 
     def plus_proche(self,symbol,ID_client):
         """Renvoie l'ID du palier de la grille dont le prix est le plus proche du prix actuel.
@@ -94,6 +97,50 @@ class Basics():
             except Exception:
                 print("suivi "+etape+" : "+str(inst))
             return None
+
+    def suivre_sources(self,symbol,ID_client):
+        """Étape 4, consigne 1 : chronomètres et sources de translation (lecture seule vis-à-vis du trading).
+
+        Réévalue à chaque changement de palier courant (dernier ordre limite
+        exécuté) et au moins toutes les heures : un palier devient éligible au
+        bout de 48 h même si le prix ne bouge pas, et son gain peut changer.
+        Écrit les chronomètres (ecart_bet.eloigne_depuis / source_depuis) et le
+        journal des ruptures. Ne touche ni aux bets ni aux ordres. Sans la
+        migration deploy/etape4_translation.py : ne fait rien.
+        """
+        maintenant = datetime.now(timezone.utc)
+        last = self.sql.get_last_filled(symbol,ID_client)
+        if not last or last.get("ID_ecart") is None:
+            return
+        courant = int(last["ID_ecart"])
+        precedent = self.suivi_sources.get(symbol)
+        if precedent and precedent[0] == courant and (maintenant-precedent[1]).total_seconds() < 3600:
+            return
+        # Noté avant le calcul : en cas d'erreur, nouvel essai au prochain changement ou dans 1 h (pas de log en boucle)
+        self.suivi_sources[symbol] = (courant,maintenant)
+        params = self.sql.get_parametres_translation(symbol)
+        if params is None:
+            return
+        grille = self.sql.get_suivi_sources(symbol)
+        def date(texte):
+            try:
+                return datetime.fromisoformat(texte) if texte else None
+            except ValueError:
+                return None
+        etat = {i:(date(v[2]),date(v[3])) for i,v in grille.items()}
+        nouvel, evenements, _ = translation.evaluer_sources({i:(v[0],v[1]) for i,v in grille.items()},courant,etat,
+                                                            maintenant,params["distance"],params["duree"],
+                                                            params["gain_min"])
+        iso = lambda d: d.isoformat() if d else None
+        changements = {i:(iso(e),iso(s)) for i,(e,s) in nouvel.items() if (e,s) != etat.get(i)}
+        prix_courant = grille.get(courant,(None,))[0]
+        lignes = [{"date":maintenant.isoformat(),"symbol":symbol,"palier":ev["palier"],"evenement":ev["evenement"],
+                   "raison":ev["raison"],"gain":ev["gain"],"distance":ev["distance"],"palier_courant":courant,
+                   "prix_courant":prix_courant,"prix_palier":grille[ev["palier"]][0],
+                   "eloigne_depuis":iso(ev["eloigne_depuis"]),"source_depuis":iso(ev["source_depuis"])}
+                  for ev in evenements]
+        if changements or lignes:
+            self.sql.enregistrer_suivi_sources(symbol,changements,lignes)
 
     def lire_etat_wallet(self,symbol,ID_client):
         """Soldes actif/cotation (libres + bloqués) lus sur Binance, prix du marché et réserves.
@@ -831,6 +878,8 @@ def main():
                 with verrou_ecriture.tenir():
                     basic.verification_2_ordres_V2(DEVISE,user_ID)
                     basic.verification_niveau_VS_timer(DEVISE,user_ID)
+                    basic.sans_risque("sources de translation",DEVISE,
+                                      lambda: basic.suivre_sources(DEVISE,user_ID))
                 battement()
                 time.sleep(4)
 

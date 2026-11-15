@@ -333,6 +333,8 @@ def grille(request):
             p["cumul_txt"] = montant(cumul)
             p["gain"] = gain_aller_retour(p, par_id.get(p["id"] + 1))
             p["gain_txt"] = montant(p["gain"]) if p["gain"] is not None else ""
+            p["chrono_txt"] = duree(parse_date(p.get("eloigne_depuis")))
+            p["source"] = bool(p.get("source_depuis"))
         for p in paliers:
             p["prix_de"] = p["quantite_de"] = p["ordre"] = None
             p["suite"] = False
@@ -366,10 +368,68 @@ def grille(request):
         contexte["erreur"] = str(e)
     if contexte["paliers"]:
         apercu_reduction(request, symbol, contexte)
+        sources_translation(symbol, contexte)
     erreurs = []
     contexte["reinjection"] = bloc(erreurs, "Barème de réinjection", bareme_reinjection)
     contexte["erreur_reinjection"] = erreurs[0] if erreurs else None
     return render(request, "dashboard/grille.html", contexte)
+
+
+def sources_translation(symbol, contexte):
+    """Étape 4 : sources de translation éligibles et journal des ruptures (contexte["translation"])."""
+    erreurs = []
+    d = bloc(erreurs, "Sources de translation", api_client.get, f"/strategies/{symbol}/sources")
+    ruptures = bloc(erreurs, "Journal des ruptures",
+                    lambda: api_client.get(f"/strategies/{symbol}/journal-ruptures", limit=50)) or []
+    for s in (d or {}).get("sources", []):
+        s["gain_txt"] = montant(s["gain"]) if s.get("gain") is not None else ""
+        s["prix_txt"] = prix_txt(s["prix"])
+        s["source_dt"] = parse_date(s["source_depuis"])
+        s["chrono_txt"] = duree(parse_date(s["eloigne_depuis"]))
+    for r in ruptures:
+        r["date_dt"] = parse_date(r["date"])
+        r["gain_txt"] = montant(r["gain"]) if r.get("gain") is not None else ""
+        r["prix_txt"] = prix_txt(r["prix_courant"]) if r.get("prix_courant") is not None else ""
+        debut, fin = parse_date(r.get("source_depuis")), parse_date(r["date"])
+        r["duree_txt"] = ""
+        if r["evenement"] == "fin" and debut and fin:
+            h = (fin - debut).total_seconds() / 3600
+            r["duree_txt"] = f"{h / 24:.1f} j" if h >= 48 else f"{h:.0f} h"
+    contexte["translation"] = {"sources": (d or {}).get("sources", []), "palier_courant": (d or {}).get("palier_courant"),
+                               "migration": (d or {}).get("migration_etape4", False), "ruptures": ruptures,
+                               "erreurs": erreurs}
+
+
+CHAMPS_TR = {"tr_distance": ("distance minimale", int, 1, 100), "tr_duree": ("durée minimale", float, 0, 10000),
+             "tr_gain_min": ("gain minimal", float, 0, 100000)}
+
+
+@login_required
+@require_POST
+def modifier_translation(request):
+    """Enregistre les paramètres de détection des sources de translation via l'API."""
+    symbol = request.POST.get("symbol")
+    if symbol not in settings.KRYPTO_GRILLE_SYMBOLS:
+        messages.error(request, "Stratégie non autorisée.")
+        return redirect("/grille/")
+    params = {}
+    try:
+        for champ, (libelle, type_, mini, maxi) in CHAMPS_TR.items():
+            valeur = nombre_saisi(request.POST.get(champ))
+            if valeur is not None:
+                if not mini <= valeur <= maxi or (type_ is int and valeur != int(valeur)):
+                    raise ValueError(f"{libelle} : {'un entier ' if type_ is int else ''}de {mini:g} à {maxi:g}")
+                params[champ] = type_(valeur)
+        if not params:
+            raise ValueError("aucun paramètre")
+        r = api_client.post(f"/strategies/{symbol}/translation", params, timeout=40)
+        messages.success(request, f"Sources de translation : distance {r['tr_distance']} paliers, durée {r['tr_duree']:g} h, "
+                                  f"gain > {r['tr_gain_min']:g}. Effet à la prochaine réévaluation du bot (dans l'heure).")
+    except ValueError as e:
+        messages.error(request, f"Paramètres invalides : {e}")
+    except api_client.ApiError as e:
+        messages.error(request, str(e))
+    return redirect(f"/grille/?symbol={symbol}#translation")
 
 
 STATUTS_REDUCTION = {

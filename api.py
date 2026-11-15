@@ -270,14 +270,23 @@ def strategy(symbol: str):
     except sqlite3.OperationalError:
         s["capital_injecte"] = None
     s.update(parametres_reinjection(symbol))
+    s.update(parametres_translation(symbol))
     return s
 
 
 @app.get("/strategies/{symbol}/grid")
 def grid(symbol: str):
-    """Grille de la stratégie : paliers (prix, bet)."""
+    """Grille de la stratégie : paliers (prix, bet), et chronomètres de translation (étape 4) si la migration est faite.
+
+    eloigne_depuis : date à laquelle le palier est passé à tr_distance paliers ou plus du palier courant ;
+    source_depuis : date à laquelle il est devenu source éligible (None sinon).
+    """
     strategy_or_404(symbol)
-    return query("SELECT ID AS id, prix, bet FROM ecart_bet WHERE symbol = ? ORDER BY ID", (symbol,))
+    try:
+        return query("SELECT ID AS id, prix, bet, eloigne_depuis, source_depuis FROM ecart_bet WHERE symbol = ? "
+                     "ORDER BY ID", (symbol,))
+    except sqlite3.OperationalError:
+        return query("SELECT ID AS id, prix, bet FROM ecart_bet WHERE symbol = ? ORDER BY ID", (symbol,))
 
 
 FRAIS_BROKER = 0.00075   # 0,075 % de frais Binance sur chaque ordre (achat et vente)
@@ -1044,6 +1053,87 @@ def modifier_reinjection(symbol: str, p: ParametresReinjection):
                     (str(datetime.now(timezone.utc)), "Front : réglages de réinjection",
                      ", ".join(f"{k} = {v}" for k, v in changes.items()), "DEBUG", symbol))
     return parametres_reinjection(symbol)
+
+
+###########################################################################
+#        ÉTAPE 4 : TRANSLATION, CONSIGNE 1 (DÉTECTION DES SOURCES)        #
+###########################################################################
+# Le bot tient les chronomètres et le journal des ruptures ; l'API les lit et
+# ne modifie que les paramètres de détection (effet à la réévaluation suivante,
+# au plus tard dans l'heure).
+TR_DEFAUT = {"tr_distance": 6, "tr_duree": 48.0, "tr_gain_min": 4.5}
+
+
+def parametres_translation(symbol):
+    """Paramètres de détection des sources ; valeurs par défaut et migration_etape4 False si la migration manque."""
+    try:
+        r = query("SELECT tr_distance, tr_duree, tr_gain_min FROM Devises WHERE symbol = ?", (symbol,))
+    except sqlite3.OperationalError:
+        return {**TR_DEFAUT, "migration_etape4": False}
+    p = {k: (v if v is not None else TR_DEFAUT[k]) for k, v in r[0].items()} if r else dict(TR_DEFAUT)
+    return {**p, "migration_etape4": True}
+
+
+class ParametresTranslation(BaseModel):
+    tr_distance: int | None = Field(default=None, ge=1, le=100)
+    tr_duree: float | None = Field(default=None, ge=0, le=10000)
+    tr_gain_min: float | None = Field(default=None, ge=0, le=100000)
+
+
+@app.post("/strategies/{symbol}/translation")
+def modifier_translation(symbol: str, p: ParametresTranslation):
+    """Modifie les paramètres de détection des sources (effet à la réévaluation suivante du bot), tracé dans Log."""
+    strategy_or_404(symbol)
+    if not parametres_translation(symbol)["migration_etape4"]:
+        raise HTTPException(status_code=409, detail="Migration deploy/etape4_translation.py non lancée")
+    changes = {k: v for k, v in p.model_dump().items() if v is not None}
+    if not changes:
+        raise HTTPException(status_code=422, detail="Aucun paramètre à modifier")
+    with base_en_ecriture() as con:
+        for colonne, valeur in changes.items():
+            con.execute(f"UPDATE Devises SET {colonne} = ? WHERE symbol = ?", (valeur, symbol))
+        con.execute("INSERT INTO Log (date, emplacement, erreur, type, symbol) VALUES (?, ?, ?, ?, ?)",
+                    (str(datetime.now(timezone.utc)), "Front : réglages de translation",
+                     ", ".join(f"{k} = {v}" for k, v in changes.items()), "DEBUG", symbol))
+    return parametres_translation(symbol)
+
+
+@app.get("/strategies/{symbol}/sources")
+def sources_translation(symbol: str):
+    """Sources de translation éligibles (état tenu par le bot), de la plus lointaine à la plus proche.
+
+    palier_courant : dernier palier exécuté ; sources : palier, prix, bet, gain
+    (bet × g, frais compris), distance, eloigne_depuis, source_depuis.
+    migration_etape4 False (et liste vide) si la migration manque.
+    """
+    strategy_or_404(symbol)
+    courant = palier_courant(symbol)
+    try:
+        lignes = query("SELECT ID AS id, prix, bet, eloigne_depuis, source_depuis FROM ecart_bet WHERE symbol = ? "
+                       "ORDER BY ID", (symbol,))
+    except sqlite3.OperationalError:
+        return {"palier_courant": courant, "sources": [], "migration_etape4": False}
+    prix = {l["id"]: l["prix"] for l in lignes}
+    sources = []
+    for l in lignes:
+        if not l["source_depuis"]:
+            continue
+        dessus = prix.get(l["id"] + 1)
+        g = None if dessus is None or l["prix"] is None else dessus - l["prix"] - FRAIS_BROKER * (l["prix"] + dessus)
+        sources.append({**l, "gain": (l["bet"] or 0) * g if g is not None else None,
+                        "distance": abs(l["id"] - courant) if courant is not None else None})
+    sources.sort(key=lambda s: (-(s["distance"] or 0), s["id"]))
+    return {"palier_courant": courant, "sources": sources, "migration_etape4": True}
+
+
+@app.get("/strategies/{symbol}/journal-ruptures")
+def journal_ruptures(symbol: str, limit: int = Query(default=200, ge=1, le=5000)):
+    """Journal des ruptures (source devenue éligible / fin), du plus récent au plus ancien. [] sans la table."""
+    strategy_or_404(symbol)
+    try:
+        return query("SELECT * FROM journal_ruptures WHERE symbol = ? ORDER BY id DESC LIMIT ?", (symbol, limit))
+    except sqlite3.OperationalError:
+        return []
 
 
 @app.get("/strategies/{symbol}/journal-wallet")
