@@ -368,7 +368,6 @@ def grille(request):
         contexte["erreur"] = str(e)
     if contexte["paliers"]:
         apercu_reduction(request, symbol, contexte)
-        sources_translation(symbol, contexte)
     erreurs = []
     contexte["reinjection"] = bloc(erreurs, "Barème de réinjection", bareme_reinjection)
     contexte["erreur_reinjection"] = erreurs[0] if erreurs else None
@@ -411,7 +410,7 @@ def modifier_translation(request):
     symbol = request.POST.get("symbol")
     if symbol not in settings.KRYPTO_GRILLE_SYMBOLS:
         messages.error(request, "Stratégie non autorisée.")
-        return redirect("/grille/")
+        return redirect("/pic/")
     params = {}
     try:
         for champ, (libelle, type_, mini, maxi) in CHAMPS_TR.items():
@@ -423,13 +422,13 @@ def modifier_translation(request):
         if not params:
             raise ValueError("aucun paramètre")
         r = api_client.post(f"/strategies/{symbol}/translation", params, timeout=40)
-        messages.success(request, f"Sources de translation : distance {r['tr_distance']} paliers, durée {r['tr_duree']:g} h, "
+        messages.success(request, f"Sources du déplacement du pic : distance {r['tr_distance']} paliers, durée {r['tr_duree']:g} h, "
                                   f"gain > {r['tr_gain_min']:g}. Effet à la prochaine réévaluation du bot (dans l'heure).")
     except ValueError as e:
         messages.error(request, f"Paramètres invalides : {e}")
     except api_client.ApiError as e:
         messages.error(request, str(e))
-    return redirect(f"/grille/?symbol={symbol}#translation")
+    return redirect(f"/pic/?symbol={symbol}")
 
 
 STATUTS_REDUCTION = {
@@ -573,13 +572,14 @@ def lignes_journal_reinjection(lignes):
 def journal(request):
     """Journal : source de la réinjection (réglage), journal des réinjections et journal du wallet.
 
+    L'équilibrage et le déplacement du pic ont leurs propres pages.
+
     Tout est lu dans la base via l'API (jamais Binance). Le filtre de prix ne
     garde que les lignes du wallet enregistrées à ± tolérance % d'un prix, pour
     comparer la valeur du wallet entre deux passages au même prix.
     """
     symbol, autorises = symbole_autorise(request, request.GET)
     contexte = {"erreur": None, "symbols": autorises, "symbol": symbol, "modes": MODES_REINJECTION,
-                "modes_eq": MODES_EQUILIBRAGE,
                 "choix_insuffisant": CHOIX_INSUFFISANT, "filtre": {"prix": request.GET.get("prix", ""),
                                                                    "tolerance": request.GET.get("tolerance", "1")}}
     if symbol is None:
@@ -609,6 +609,38 @@ def journal(request):
             f"/strategies/{symbol}/journal-wallet", prix=prix, tolerance=tolerance if prix else None)) or [])
     contexte["erreur"] = " · ".join(erreurs) or None
     return render(request, "dashboard/journal.html", contexte)
+
+
+@login_required
+def equilibrage(request):
+    """Équilibrage : réglages et décisions (lignes du journal des réinjections en mode actif ou observation)."""
+    symbol, autorises = symbole_autorise(request, request.GET)
+    contexte = {"erreur": None, "symbols": autorises, "symbol": symbol, "modes_eq": MODES_EQUILIBRAGE, "decisions": []}
+    if symbol is None:
+        contexte["erreur"] = "Aucune stratégie configurée (KRYPTO_GRILLE_SYMBOLS)."
+        return render(request, "dashboard/equilibrage.html", contexte)
+    erreurs = []
+    contexte["strat"] = bloc(erreurs, "Stratégie", api_client.get, f"/strategies/{symbol}")
+    contexte["decisions"] = lignes_journal_reinjection(
+        bloc(erreurs, "Décisions d'équilibrage", lambda: api_client.get(
+            f"/strategies/{symbol}/journal-reinjection", equilibrage="true")) or [])
+    contexte["erreur"] = " · ".join(erreurs) or None
+    return render(request, "dashboard/equilibrage.html", contexte)
+
+
+@login_required
+def pic(request):
+    """Déplacement du pic (translation) : réglages de détection, sources éligibles et journal des ruptures."""
+    symbol, autorises = symbole_autorise(request, request.GET)
+    contexte = {"erreur": None, "symbols": autorises, "symbol": symbol}
+    if symbol is None:
+        contexte["erreur"] = "Aucune stratégie configurée (KRYPTO_GRILLE_SYMBOLS)."
+        return render(request, "dashboard/pic.html", contexte)
+    erreurs = []
+    contexte["strat"] = bloc(erreurs, "Stratégie", api_client.get, f"/strategies/{symbol}")
+    sources_translation(symbol, contexte)
+    contexte["erreur"] = " · ".join(erreurs) or None
+    return render(request, "dashboard/pic.html", contexte)
 
 
 @login_required
@@ -654,7 +686,8 @@ def modifier_reinjection(request):
         messages.error(request, f"Paramètres invalides : {e}")
     except api_client.ApiError as e:
         messages.error(request, str(e))
-    return redirect(f"/journal/?symbol={symbol}")
+    page = "equilibrage" if request.POST.get("suite") == "equilibrage" else "journal"
+    return redirect(f"/{page}/?symbol={symbol}")
 
 
 def taux_pour(tranches, benef):

@@ -1,0 +1,81 @@
+{% extends "dashboard/base.html" %}
+{% block title %}Déplacement du pic{% endblock %}
+{% block content %}
+<h1>Déplacement du pic{% if symbol %} · {{ symbol }}{% endif %}</h1>
+<p class="muted"><strong>Déplacement du pic</strong> (translation) : quand le prix s'est durablement éloigné de paliers bien
+  garnis, leur capital sera rapatrié vers la zone du prix. <strong>Phase actuelle : détection seule</strong> (aucun bet ni
+  ordre modifié). Les déplacements eux-mêmes viendront avec la consigne 2, en observation puis en actif.</p>
+
+{% if symbols|length > 1 %}
+<form class="filtres" method="get">
+  <label>Stratégie
+    <select name="symbol" onchange="this.form.submit()">
+      {% for s in symbols %}<option value="{{ s }}" {% if s == symbol %}selected{% endif %}>{{ s }}</option>{% endfor %}
+    </select>
+  </label>
+</form>
+{% endif %}
+
+{% if erreur %}<p class="alerte">{{ erreur }}</p>{% endif %}
+
+{% if translation %}
+<section class="carte" id="translation">
+  <h2>Sources éligibles</h2>
+  {% for e in translation.erreurs %}<p class="alerte">{{ e }}</p>{% endfor %}
+  {% if not translation.migration %}
+  <p class="alerte" style="margin:0">Migration <code>deploy/etape4_translation.py</code> non lancée : détection indisponible.</p>
+  {% else %}
+  <form method="post" action="{% url 'modifier_translation' %}" class="filtres">
+    {% csrf_token %}<input type="hidden" name="symbol" value="{{ symbol }}">
+    <label>Distance min. <input type="text" name="tr_distance" value="{{ strat.tr_distance }}" size="2" inputmode="numeric"> paliers</label>
+    <label>Durée min. <input type="text" name="tr_duree" value="{{ strat.tr_duree }}" size="3" inputmode="decimal"> h</label>
+    <label title="Strictement supérieur">Gain min. <input type="text" name="tr_gain_min" value="{{ strat.tr_gain_min }}" size="3" inputmode="decimal"> {{ strat.devise2 }}</label>
+    <button type="submit" class="bouton">Enregistrer</button>
+  </form>
+  <p class="muted">Source éligible : à {{ strat.tr_distance }} paliers ou plus du palier courant
+    ({{ translation.palier_courant|default:"?" }}, dernier ordre limite exécuté) depuis au moins {{ strat.tr_duree }} h,
+    avec un gain de plus de {{ strat.tr_gain_min }} {{ strat.devise2 }}. Détection seule : aucun bet ni ordre modifié.
+    Le bot réévalue à chaque changement de palier courant et au moins toutes les heures.</p>
+  {% if translation.sources %}
+  <table class="grille">
+    <thead><tr><th class="num">Palier</th><th class="num">Prix</th><th class="num">Gain</th><th class="num">Distance</th>
+      <th>Éloigné depuis</th><th>Source depuis</th></tr></thead>
+    <tbody>
+      {% for s in translation.sources %}
+      <tr><td class="num">{{ s.id }}</td><td class="num">{{ s.prix_txt }} {{ strat.devise2 }}</td>
+        <td class="num">{{ s.gain_txt }} {{ strat.devise2 }}</td><td class="num">{{ s.distance }}</td>
+        <td>{{ s.chrono_txt }}</td><td>{{ s.source_dt|date:"d/m H:i" }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted" style="margin:0">Aucune source éligible pour l'instant.</p>
+  {% endif %}
+  </section>
+
+<section class="carte">
+  <h2>Journal des ruptures <span class="muted">(50 dernières lignes)</span></h2>
+  <p class="muted" style="margin-top:0">Une ligne quand un palier devient source, une ligne quand il cesse de l'être.
+    Durée d'éligibilité courte et retour du prix fréquent : 48 h est trop court ; prix parti très loin pendant l'attente : trop long.</p>
+  {% if translation.ruptures %}
+  <div class="defilement">
+  <table class="grille">
+    <thead><tr><th>Date</th><th>Événement</th><th class="num">Palier</th><th class="num">Gain</th>
+      <th class="num">Distance</th><th class="num">Palier courant · prix</th><th>Durée d'éligibilité</th></tr></thead>
+    <tbody>
+      {% for r in translation.ruptures %}
+      <tr><td>{{ r.date_dt|date:"d/m H:i" }}</td>
+        <td>{% if r.evenement == "eligible" %}<strong>devient source</strong>{% else %}fin <span class="muted">· {{ r.raison }}</span>{% endif %}</td>
+        <td class="num">{{ r.palier }}</td><td class="num">{{ r.gain_txt }} {{ strat.devise2 }}</td><td class="num">{{ r.distance }}</td>
+        <td class="num">{{ r.palier_courant }} · {{ r.prix_txt }}</td><td>{{ r.duree_txt }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="muted" style="margin:0">Aucune rupture enregistrée pour l'instant.</p>
+  {% endif %}
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

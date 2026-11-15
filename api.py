@@ -50,6 +50,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
+import version as version_krypto
 import reinjection
 import reserves as calcul_reserves
 import verrou_ecriture
@@ -187,8 +188,12 @@ def bot():
         "dernier_battement": dernier.isoformat() if dernier else None,
         "age_secondes": age,
         "service": service,
+        "version": VERSION, "commit": COMMIT,
     }
 
+
+# Version du code de ce serveur (bot et API), lue au démarrage de l'API
+VERSION, COMMIT = version_krypto.version(), version_krypto.commit()
 
 SYSTEMCTL = "/usr/bin/systemctl"
 
@@ -1160,11 +1165,18 @@ def journal_wallet(symbol: str,
 
 
 @app.get("/strategies/{symbol}/journal-reinjection")
-def journal_reinjection(symbol: str, limit: int = Query(default=200, ge=1, le=5000)):
-    """Journal des réinjections (réelles et simulées), du plus récent au plus ancien. [] sans la table."""
+def journal_reinjection(symbol: str, limit: int = Query(default=200, ge=1, le=5000),
+                        equilibrage: bool = Query(default=False, description="seulement les décisions d'équilibrage")):
+    """Journal des réinjections (réelles et simulées), du plus récent au plus ancien. [] sans la table.
+
+    equilibrage=true : seulement les décisions d'équilibrage, c'est-à-dire les lignes en mode
+    actif, et en mode observation les lignes simulées (la ligne réelle n'a alors pas d'équilibrage).
+    """
     strategy_or_404(symbol)
+    filtre = (" AND (eq_mode = 'actif' OR (eq_mode = 'observation' AND simulee = 1))" if equilibrage else "")
     try:
-        return query("SELECT * FROM journal_reinjection WHERE symbol = ? ORDER BY id DESC LIMIT ?", (symbol, limit))
+        return query("SELECT * FROM journal_reinjection WHERE symbol = ?" + filtre + " ORDER BY id DESC LIMIT ?",
+                     (symbol, limit))
     except sqlite3.OperationalError:
         return []
 

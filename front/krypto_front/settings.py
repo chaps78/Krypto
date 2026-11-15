@@ -13,6 +13,18 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Version du front : fichier VERSION et commit git du dépôt (le front est dans front/ du dépôt Krypto)
+try:
+    KRYPTO_VERSION = (BASE_DIR.parent / "VERSION").read_text().strip() or "?"
+except OSError:
+    KRYPTO_VERSION = "?"
+try:
+    import subprocess as _sp
+    KRYPTO_COMMIT = _sp.run(["git", "-C", str(BASE_DIR.parent), "rev-parse", "--short", "HEAD"],
+                            capture_output=True, text=True, timeout=3).stdout.strip() or None
+except Exception:
+    KRYPTO_COMMIT = None
+
 # Charge front/.env s'il existe (lignes CLE=valeur), sans écraser l'environnement.
 _env = BASE_DIR / ".env"
 if _env.exists():

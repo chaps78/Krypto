@@ -18,6 +18,8 @@
     body { margin:0; font:15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--txt); }
     nav { display:flex; align-items:center; gap:1.2rem; padding:.7rem 1.2rem; background:var(--card); border-bottom:1px solid var(--line); }
     nav .logo { font-weight:700; }
+    nav .version { font-weight:400; font-size:.8rem; color:var(--muted); }
+    nav .alerte-version { color:#d92d20; }
     nav a { color:var(--muted); text-decoration:none; }
     nav a.actif { color:var(--txt); font-weight:600; }
     nav .droite { margin-left:auto; display:flex; gap:1rem; align-items:center; color:var(--muted); font-size:.9rem; }
@@ -115,7 +117,7 @@
 <body>
   {% if user.is_authenticated %}
   <nav>
-    <span class="logo">Krypto</span>
+    <span class="logo" title="Front : version {{ version_front }}{% if commit_front %} ({{ commit_front }}){% endif %} · Bot et API : version {{ version_api|default:'?' }}{% if commit_api %} ({{ commit_api }}){% endif %}">Krypto <span class="version">v{{ version_front }}</span>{% if version_api and version_api != version_front %} <span class="version alerte-version">API v{{ version_api }}</span>{% endif %}</span>
     <span class="pastille {{ bot_etat }}" title="{{ bot_info }}">{% if bot_etat == "marche" %}Bot en marche{% elif bot_etat == "fige" %}Bot figé{% elif bot_etat == "arrete" %}Bot arrêté{% elif bot_etat == "arret_en_cours" %}Arrêt en cours…{% elif bot_etat == "demarrage" %}Démarrage…{% else %}Bot ?{% endif %}</span>
     {% if bot_action == "arreter" %}
     <button type="button" class="eteindre" onclick="document.getElementById('confirmer-arret').showModal()">Éteindre</button>
@@ -128,6 +130,8 @@
     <a href="{% url 'kpi' %}" class="{% if request.resolver_match.url_name == 'kpi' %}actif{% endif %}">KPI</a>
     <a href="{% url 'grille' %}" class="{% if request.resolver_match.url_name == 'grille' %}actif{% endif %}">Grille</a>
     <a href="{% url 'journal' %}" class="{% if request.resolver_match.url_name == 'journal' %}actif{% endif %}">Journal</a>
+    <a href="{% url 'equilibrage' %}" class="{% if request.resolver_match.url_name == 'equilibrage' %}actif{% endif %}">Équilibrage</a>
+    <a href="{% url 'pic' %}" class="{% if request.resolver_match.url_name == 'pic' %}actif{% endif %}">Déplacement du pic</a>
     <a href="{% url 'logs' %}" class="{% if request.resolver_match.url_name == 'logs' %}actif{% endif %}">Logs</a>
     <div class="droite">
       {{ user.username }}
