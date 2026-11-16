@@ -79,7 +79,7 @@
       <th class="num">Local</th><th class="num">Up</th><th class="num">Down</th>
       <th class="num" title="Quantité ajoutée au bet du palier sous la vente">Ajout local</th>
       <th class="num" title="Vente de financement (ou qui aurait été faite, en observation)">{{ strat.devise1|default:"Actif" }} vendus</th>
-      <th class="num">Capital</th><th class="num">MA7 / MA25</th><th title="Placement du local : normal ou par équilibrage (détail sur la page Équilibrage)">Placement du local</th>
+      <th class="num">Capital</th><th class="num">MA7 / MA25</th><th title="Placement du local : normal, par déplacement du pic ou par équilibrage (détail sur leurs pages)">Placement du local</th>
     </tr></thead>
     <tbody>
       {% for l in reinjections %}
@@ -94,7 +94,7 @@
         <td class="num">{{ l.qte_devise1_vendue_txt }}</td>
         <td class="num">{{ l.capital_injecte_txt }}</td>
         <td class="num" style="white-space:nowrap">{{ l.ma_txt }}</td>
-        <td>{% if l.eq_applique %}<a href="{% url 'equilibrage' %}?symbol={{ symbol }}">équilibrage</a> <span class="muted">· palier {{ l.eq_preteur }} → {{ l.eq_cible }}</span>{% else %}<span class="muted">normal</span>{% endif %}</td>
+        <td>{% if l.tr_applique %}<a href="{% url 'pic' %}?symbol={{ symbol }}">déplacement du pic</a> <span class="muted">· cas {{ l.tr_cas }}, source {{ l.tr_source }}</span>{% elif l.eq_applique %}<a href="{% url 'equilibrage' %}?symbol={{ symbol }}">équilibrage</a> <span class="muted">· palier {{ l.eq_preteur }} → {{ l.eq_cible }}</span>{% else %}<span class="muted">normal</span>{% endif %}</td>
       </tr>
       {% endfor %}
     </tbody>

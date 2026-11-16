@@ -401,6 +401,34 @@ def sources_translation(symbol, contexte):
 
 CHAMPS_TR = {"tr_distance": ("distance minimale", int, 1, 100), "tr_duree": ("durée minimale", float, 0, 10000),
              "tr_gain_min": ("gain minimal", float, 0, 100000)}
+CHAMPS_TR2 = {"tr_plancher": ("plancher de la source", float, 0, 100000), "tr_ordre_mini": ("ordre minimal", float, 5, 1000)}
+MODES_TRANSLATION = {"off": "off (aucun déplacement)",
+                     "observation": "observation (déplacement simulé dans le journal)",
+                     "actif": "actif (déplacements réels)"}
+
+
+def lignes_translation(lignes):
+    """Mise en forme des décisions de déplacement du pic (colonnes tr_* du journal des réinjections)."""
+    import json
+    for l in lignes:
+        l["date_dt"] = parse_date(l["date"])
+        for c in ("benefice", "local", "tr_gain_source_avant", "tr_gain_source_apres", "tr_cout", "tr_vertical",
+                  "tr_cout_reel"):
+            l[c + "_txt"] = montant(l[c]) if l.get(c) is not None else ""
+        l["tr_q_txt"] = quantite_txt(l["tr_q"]) if l.get("tr_q") else ""
+        l["tr_prix_exec_txt"] = prix_txt(l["tr_prix_exec"]) if l.get("tr_prix_exec") else ""
+        try:
+            recepteurs = json.loads(l.get("tr_recepteurs") or "[]")
+        except ValueError:
+            recepteurs = []
+        for r in recepteurs:
+            r["q_txt"] = quantite_txt(r.get("q"))
+            r["gain_avant_txt"], r["gain_apres_txt"] = montant(r.get("gain_avant")), montant(r.get("gain_apres"))
+            r["cout_txt"] = montant(r.get("cout"))
+            r["valeur_ordre_txt"] = montant(r["valeur_ordre"]) if r.get("valeur_ordre") is not None else ""
+        l["recepteurs"] = recepteurs
+        l["avec_ordre"] = any(r.get("ordre") for r in recepteurs)
+    return lignes
 
 
 @login_required
@@ -412,8 +440,12 @@ def modifier_translation(request):
         messages.error(request, "Stratégie non autorisée.")
         return redirect("/pic/")
     params = {}
+    if request.POST.get("translation") in MODES_TRANSLATION:
+        params["translation"] = request.POST["translation"]
+    if "tr_notif_present" in request.POST:
+        params["tr_notif_observation"] = 1 if request.POST.get("tr_notif_observation") else 0
     try:
-        for champ, (libelle, type_, mini, maxi) in CHAMPS_TR.items():
+        for champ, (libelle, type_, mini, maxi) in {**CHAMPS_TR, **CHAMPS_TR2}.items():
             valeur = nombre_saisi(request.POST.get(champ))
             if valeur is not None:
                 if not mini <= valeur <= maxi or (type_ is int and valeur != int(valeur)):
@@ -422,8 +454,14 @@ def modifier_translation(request):
         if not params:
             raise ValueError("aucun paramètre")
         r = api_client.post(f"/strategies/{symbol}/translation", params, timeout=40)
-        messages.success(request, f"Sources du déplacement du pic : distance {r['tr_distance']} paliers, durée {r['tr_duree']:g} h, "
-                                  f"gain > {r['tr_gain_min']:g}. Effet à la prochaine réévaluation du bot (dans l'heure).")
+        if any(k in params for k in CHAMPS_TR):
+            messages.success(request, f"Sources : distance {r['tr_distance']} paliers, durée {r['tr_duree']:g} h, "
+                                      f"gain > {r['tr_gain_min']:g}. Effet à la prochaine réévaluation du bot (dans l'heure).")
+        else:
+            messages.success(request, f"Déplacement du pic : {r['translation']}, plancher {r['tr_plancher']:g}, "
+                                      f"ordre minimal {r['tr_ordre_mini']:g}, "
+                                      f"notification des simulations {'oui' if r['tr_notif_observation'] else 'non'}. "
+                                      "Effet à la prochaine vente.")
     except ValueError as e:
         messages.error(request, f"Paramètres invalides : {e}")
     except api_client.ApiError as e:
@@ -513,7 +551,8 @@ MODES_EQUILIBRAGE = {"off": "off (réinjection normale)",
 CHAMPS_EQ = {"eq_distance": ("distance maximale", int, 1, 10), "eq_ecart": ("écart minimal", float, 0, 500),
              "eq_seuil": ("seuil d'objectif", float, 0.01, 100000), "eq_ordre_mini": ("ordre minimal", float, 5, 1000),
              "eq_declenchement": ("déclenchement", float, 0, 500), "eq_marge_plancher": ("marge du plancher", float, 0, 100000)}
-MOTIFS = {"grille": "grille", "up": "up", "financement": "financement réinj.", "solde partiel": "solde partiel"}
+MOTIFS = {"grille": "grille", "up": "up", "financement": "financement réinj.", "solde partiel": "solde partiel",
+          "équilibrage": "équilibrage", "translation": "déplacement du pic"}
 
 
 def symbole_autorise(request, source):
@@ -637,8 +676,15 @@ def pic(request):
         contexte["erreur"] = "Aucune stratégie configurée (KRYPTO_GRILLE_SYMBOLS)."
         return render(request, "dashboard/pic.html", contexte)
     erreurs = []
-    contexte["strat"] = bloc(erreurs, "Stratégie", api_client.get, f"/strategies/{symbol}")
+    strat = contexte["strat"] = bloc(erreurs, "Stratégie", api_client.get, f"/strategies/{symbol}")
+    if strat:
+        strat["tr_cout_paye_txt"] = montant(strat.get("tr_cout_paye") or 0)
+        strat["tr_cout_reconnu_txt"] = montant(strat.get("tr_cout_reconnu") or 0)
+    contexte["modes_tr"] = MODES_TRANSLATION
     sources_translation(symbol, contexte)
+    contexte["deplacements"] = lignes_translation(
+        bloc(erreurs, "Déplacements", lambda: api_client.get(
+            f"/strategies/{symbol}/journal-reinjection", translation="true")) or [])
     contexte["erreur"] = " · ".join(erreurs) or None
     return render(request, "dashboard/pic.html", contexte)
 

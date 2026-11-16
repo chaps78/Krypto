@@ -20,15 +20,17 @@ class teleAcces():
 
         Ne lève jamais d'exception : une panne de Telegram (timeout, réseau...)
         est seulement affichée, pour ne pas interrompre le bot au milieu d'un
-        traitement d'ordre.
+        traitement d'ordre. Renvoie True si le message est parti, False sinon.
         """
         if ID_chat==0:
             ID_chat = self.BOT_CHAT_ID
         try:
             bot = telebot.TeleBot(self.TELEG_TOKEN)
             bot.send_message(ID_chat, message)
+            return True
         except Exception as inst:
             print("Telegram : envoi impossible : "+str(inst))
+            return False
 
 def main():
     """Test manuel du module."""

@@ -1067,15 +1067,29 @@ def modifier_reinjection(symbol: str, p: ParametresReinjection):
 # ne modifie que les paramètres de détection (effet à la réévaluation suivante,
 # au plus tard dans l'heure).
 TR_DEFAUT = {"tr_distance": 6, "tr_duree": 48.0, "tr_gain_min": 4.5}
+TR2_DEFAUT = {"translation": "off", "tr_plancher": 3.0, "tr_ordre_mini": 6.0,
+              "tr_notif_observation": 0, "tr_cout_paye": 0.0, "tr_cout_reconnu": 0.0}
 
 
 def parametres_translation(symbol):
-    """Paramètres de détection des sources ; valeurs par défaut et migration_etape4 False si la migration manque."""
+    """Paramètres du déplacement du pic ; valeurs par défaut si la migration manque.
+
+    Détection (consigne 1) : tr_distance, tr_duree (h), tr_gain_min ; migration_etape4.
+    Translation (consigne 2) : translation (off / observation / actif), tr_plancher,
+    tr_ordre_mini, tr_notif_observation (0/1), compteurs tr_cout_paye
+    et tr_cout_reconnu (cotation) ; migration_translation.
+    """
     try:
         r = query("SELECT tr_distance, tr_duree, tr_gain_min FROM Devises WHERE symbol = ?", (symbol,))
     except sqlite3.OperationalError:
-        return {**TR_DEFAUT, "migration_etape4": False}
+        return {**TR_DEFAUT, **TR2_DEFAUT, "migration_etape4": False, "migration_translation": False}
     p = {k: (v if v is not None else TR_DEFAUT[k]) for k, v in r[0].items()} if r else dict(TR_DEFAUT)
+    try:
+        r2 = query("SELECT " + ", ".join(TR2_DEFAUT) + " FROM Devises WHERE symbol = ?", (symbol,))
+        p.update({k: (v if v is not None else TR2_DEFAUT[k]) for k, v in r2[0].items()} if r2 else TR2_DEFAUT)
+        p["migration_translation"] = True
+    except sqlite3.OperationalError:
+        p.update(TR2_DEFAUT, migration_translation=False)
     return {**p, "migration_etape4": True}
 
 
@@ -1083,6 +1097,10 @@ class ParametresTranslation(BaseModel):
     tr_distance: int | None = Field(default=None, ge=1, le=100)
     tr_duree: float | None = Field(default=None, ge=0, le=10000)
     tr_gain_min: float | None = Field(default=None, ge=0, le=100000)
+    translation: str | None = Field(default=None, pattern="^(off|observation|actif)$")
+    tr_plancher: float | None = Field(default=None, ge=0, le=100000)
+    tr_ordre_mini: float | None = Field(default=None, ge=5, le=1000)
+    tr_notif_observation: int | None = Field(default=None, ge=0, le=1)
 
 
 @app.post("/strategies/{symbol}/translation")
@@ -1094,11 +1112,13 @@ def modifier_translation(symbol: str, p: ParametresTranslation):
     changes = {k: v for k, v in p.model_dump().items() if v is not None}
     if not changes:
         raise HTTPException(status_code=422, detail="Aucun paramètre à modifier")
+    if any(k in TR2_DEFAUT for k in changes) and not parametres_translation(symbol)["migration_translation"]:
+        raise HTTPException(status_code=409, detail="Colonnes de la consigne 2 absentes : relancer deploy/etape4_translation.py")
     with base_en_ecriture() as con:
         for colonne, valeur in changes.items():
             con.execute(f"UPDATE Devises SET {colonne} = ? WHERE symbol = ?", (valeur, symbol))
         con.execute("INSERT INTO Log (date, emplacement, erreur, type, symbol) VALUES (?, ?, ?, ?, ?)",
-                    (str(datetime.now(timezone.utc)), "Front : réglages de translation",
+                    (str(datetime.now(timezone.utc)), "Front : réglages du déplacement du pic",
                      ", ".join(f"{k} = {v}" for k, v in changes.items()), "DEBUG", symbol))
     return parametres_translation(symbol)
 
@@ -1166,14 +1186,18 @@ def journal_wallet(symbol: str,
 
 @app.get("/strategies/{symbol}/journal-reinjection")
 def journal_reinjection(symbol: str, limit: int = Query(default=200, ge=1, le=5000),
-                        equilibrage: bool = Query(default=False, description="seulement les décisions d'équilibrage")):
+                        equilibrage: bool = Query(default=False, description="seulement les décisions d'équilibrage"),
+                        translation: bool = Query(default=False, description="seulement les décisions de déplacement du pic")):
     """Journal des réinjections (réelles et simulées), du plus récent au plus ancien. [] sans la table.
 
     equilibrage=true : seulement les décisions d'équilibrage, c'est-à-dire les lignes en mode
     actif, et en mode observation les lignes simulées (la ligne réelle n'a alors pas d'équilibrage).
+    translation=true : de même pour le déplacement du pic (colonnes tr_*).
     """
     strategy_or_404(symbol)
     filtre = (" AND (eq_mode = 'actif' OR (eq_mode = 'observation' AND simulee = 1))" if equilibrage else "")
+    if translation:
+        filtre += " AND (tr_mode = 'actif' OR (tr_mode = 'observation' AND simulee = 1))"
     try:
         return query("SELECT * FROM journal_reinjection WHERE symbol = ?" + filtre + " ORDER BY id DESC LIMIT ?",
                      (symbol, limit))

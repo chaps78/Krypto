@@ -914,7 +914,12 @@ class sqlAcces():
                 "si_reserves_insuffisantes":r[2] or "suspendre","reinjection_suspendue":r[3]}
 
     def get_parametres_translation(self,symbol):
-        """Paramètres de détection des sources (étape 4), ou None si la migration n'est pas faite."""
+        """Paramètres du déplacement du pic (étape 4), ou None si la migration n'est pas faite.
+
+        Détection (consigne 1) : distance, duree (h), gain_min. Translation (consigne 2) :
+        translation (off / observation / actif ; "off" si les colonnes manquent),
+        plancher, ordre_mini, notif_observation (bool).
+        """
         try:
             r = self.cur.execute("SELECT tr_distance, tr_duree, tr_gain_min FROM Devises WHERE symbol=?",
                                  (symbol,)).fetchone()
@@ -922,8 +927,36 @@ class sqlAcces():
             return None
         if r is None:
             return None
-        return {"distance":int(r[0] if r[0] is not None else 6),"duree":float(r[1] if r[1] is not None else 48),
-                "gain_min":float(r[2] if r[2] is not None else 4.5)}
+        p = {"distance":int(r[0] if r[0] is not None else 6),"duree":float(r[1] if r[1] is not None else 48),
+             "gain_min":float(r[2] if r[2] is not None else 4.5),
+             "translation":"off","plancher":3.0,"ordre_mini":6.0,"notif_observation":False}
+        try:
+            r = self.cur.execute("SELECT translation, tr_plancher, tr_ordre_mini, tr_notif_observation "
+                                 "FROM Devises WHERE symbol=?",(symbol,)).fetchone()
+        except sqlite3.OperationalError:
+            return p
+        p.update({"translation":r[0] or "off","plancher":float(r[1] if r[1] is not None else 3),
+                  "ordre_mini":float(r[2] if r[2] is not None else 6),"notif_observation":bool(r[3])})
+        return p
+
+    def appliquer_translation(self,symbol,source,q,recepteurs,cout_paye,cout_reconnu):
+        """Déplacement du pic : bet(source) −= q, bet(receveur) += ajout pour chaque receveur,
+        et compteurs de coût (Devises.tr_cout_paye / tr_cout_reconnu), en une seule transaction.
+
+        recepteurs : liste de (palier, ajout).
+        """
+        try:
+            self.cur.execute("UPDATE ecart_bet SET bet = bet - ? WHERE symbol = ? AND ID = ?",(float(q),symbol,int(source)))
+            for palier,ajout in recepteurs:
+                self.cur.execute("UPDATE ecart_bet SET bet = bet + ? WHERE symbol = ? AND ID = ?",
+                                 (float(ajout),symbol,int(palier)))
+            self.cur.execute("UPDATE Devises SET tr_cout_paye = COALESCE(tr_cout_paye,0) + ?, "
+                             "tr_cout_reconnu = COALESCE(tr_cout_reconnu,0) + ? WHERE symbol = ?",
+                             (float(cout_paye),float(cout_reconnu),symbol))
+            self.con.commit()
+        except Exception:
+            self.con.rollback()
+            raise
 
     def get_suivi_sources(self,symbol):
         """Grille avec chronomètres : {ID: (prix, bet, eloigne_depuis, source_depuis)} (dates en texte ISO)."""

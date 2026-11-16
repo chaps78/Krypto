@@ -1,4 +1,4 @@
-"""Étape 4 : translation, consigne 1 (détection des paliers sources). Migration unique, 2026-11.
+"""Étape 4 : déplacement du pic (translation), consignes 1 et 2. Migration unique, 2026-11.
 
 Ajoute, sans rien modifier d'existant (bets, ordres, réinjection inchangés) :
   ecart_bet : eloigne_depuis (chronomètre : date à laquelle le palier est passé à
@@ -7,6 +7,10 @@ Ajoute, sans rien modifier d'existant (bets, ordres, réinjection inchangés) :
   Devises   : tr_distance (6 paliers), tr_duree (48 h), tr_gain_min (4,5) ;
   table journal_ruptures : une ligne quand un palier devient source éligible,
               une ligne quand il cesse de l'être.
+  Consigne 2 : Devises.translation ('off' par défaut : aucun effet), tr_plancher (3),
+              tr_ordre_mini (6), tr_notif_observation (0),
+              compteurs tr_cout_paye / tr_cout_reconnu ; journal_reinjection : colonnes tr_*.
+Déjà passée pour la consigne 1 : la relancer ajoute seulement les colonnes de la consigne 2.
 Puis reconstitue les chronomètres des stratégies actives à partir de
 l'historique des ordres limites exécutés (sinon aucune source avant 48 h).
 Prérequis : migration de l'étape 3 (deploy/etape3_equilibrage.py).
@@ -40,6 +44,30 @@ A_AJOUTER = [
     ("Devises", "tr_distance", "INTEGER DEFAULT 6"),
     ("Devises", "tr_duree", "REAL DEFAULT 48"),
     ("Devises", "tr_gain_min", "REAL DEFAULT 4.5"),
+    # Consigne 2 : translation
+    ("Devises", "translation", "TEXT DEFAULT 'off'"),
+    ("Devises", "tr_plancher", "REAL DEFAULT 3"),
+    ("Devises", "tr_ordre_mini", "REAL DEFAULT 6"),
+    ("Devises", "tr_notif_observation", "INTEGER DEFAULT 0"),
+    ("Devises", "tr_cout_paye", "REAL DEFAULT 0"),
+    ("Devises", "tr_cout_reconnu", "REAL DEFAULT 0"),
+    ("journal_reinjection", "tr_mode", "TEXT"),
+    ("journal_reinjection", "tr_applique", "INTEGER"),
+    ("journal_reinjection", "tr_raison", "TEXT"),
+    ("journal_reinjection", "tr_cas", "TEXT"),
+    ("journal_reinjection", "tr_source", "INTEGER"),
+    ("journal_reinjection", "tr_distance", "INTEGER"),
+    ("journal_reinjection", "tr_position", "TEXT"),
+    ("journal_reinjection", "tr_gain_source_avant", "REAL"),
+    ("journal_reinjection", "tr_gain_source_apres", "REAL"),
+    ("journal_reinjection", "tr_recepteurs", "TEXT"),
+    ("journal_reinjection", "tr_q", "REAL"),
+    ("journal_reinjection", "tr_cout", "REAL"),
+    ("journal_reinjection", "tr_nature", "TEXT"),
+    ("journal_reinjection", "tr_vertical", "REAL"),
+    ("journal_reinjection", "tr_ordre", "TEXT"),
+    ("journal_reinjection", "tr_prix_exec", "REAL"),
+    ("journal_reinjection", "tr_cout_reel", "REAL"),
 ]
 TABLES = {
     "journal_ruptures": """CREATE TABLE journal_ruptures (
@@ -125,7 +153,7 @@ def main():
     ajouts = [c for c in A_AJOUTER if c[1] not in colonnes(con, c[0])]
     tables = [t for t in TABLES if not colonnes(con, t)]
     if not ajouts and not tables:
-        print("L'étape 4 (consigne 1) est déjà en place : rien à faire.")
+        print("L'étape 4 (consignes 1 et 2) est déjà en place : rien à faire.")
         return
     avant = controle(con)
     sauvegarde = DB + ".avant_etape4_" + datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -148,7 +176,7 @@ def main():
     if manquantes or apres != avant:
         sys.exit(f"ANOMALIE : manquants {manquantes}, contrôle avant {avant}, après {apres}. "
                  f"Restaurer la sauvegarde : cp {sauvegarde} {DB}")
-    print(f"Étape 4 (consigne 1) en place. Contrôle OK : "
+    print(f"Étape 4 en place (déplacement du pic : off partout). Contrôle OK : "
           f"{apres[0][0]} paliers et {apres[1][0]} stratégies inchangés.")
     con.close()
 

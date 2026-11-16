@@ -3,8 +3,9 @@
 {% block content %}
 <h1>Déplacement du pic{% if symbol %} · {{ symbol }}{% endif %}</h1>
 <p class="muted"><strong>Déplacement du pic</strong> (translation) : quand le prix s'est durablement éloigné de paliers bien
-  garnis, leur capital sera rapatrié vers la zone du prix. <strong>Phase actuelle : détection seule</strong> (aucun bet ni
-  ordre modifié). Les déplacements eux-mêmes viendront avec la consigne 2, en observation puis en actif.</p>
+  garnis, leur capital sera rapatrié vers la zone du prix. <strong>Mode actuel : {{ strat.translation|default:"off" }}</strong>
+  (off : détection seule, aucun bet ni ordre modifié). À chaque vente, le palier vendu récupère une partie du bet d'une source lointaine, et la vente
+  « paie » l'écart de prix. Ordre de décision : déplacement du pic, sinon équilibrage, sinon réinjection normale.</p>
 
 {% if symbols|length > 1 %}
 <form class="filtres" method="get">
@@ -17,6 +18,79 @@
 {% endif %}
 
 {% if erreur %}<p class="alerte">{{ erreur }}</p>{% endif %}
+
+{% if strat %}
+<section class="carte">
+  <h2>Réglages du déplacement</h2>
+  {% if not strat.migration_translation %}
+  <p class="alerte" style="margin:0">Colonnes de la consigne 2 absentes : relancer <code>deploy/etape4_translation.py</code> (bot arrêté).</p>
+  {% else %}
+  <form method="post" action="{% url 'modifier_translation' %}" class="filtres"
+        onsubmit="return this.translation.value !== 'actif' || confirm('Déplacement du pic actif : après une vente, le bot annulera l\'ordre opposé, puis pourra déplacer du bet d\'une source lointaine vers la zone du prix, avec un ordre au marché si la source et le receveur ne sont pas du même côté du prix. Confirmer ?')">
+    {% csrf_token %}<input type="hidden" name="symbol" value="{{ symbol }}"><input type="hidden" name="tr_notif_present" value="1">
+    <label>Mode
+      <select name="translation">
+        {% for cle, libelle in modes_tr.items %}<option value="{{ cle }}" {% if cle == strat.translation %}selected{% endif %}>{{ libelle }}</option>{% endfor %}
+      </select>
+    </label>
+    <label title="Gain de la source après l'opération, minimum">Plancher source <input type="text" name="tr_plancher" value="{{ strat.tr_plancher }}" size="3" inputmode="decimal"> {{ strat.devise2 }}</label>
+    <label>Ordre au marché min. <input type="text" name="tr_ordre_mini" value="{{ strat.tr_ordre_mini }}" size="3" inputmode="decimal"> {{ strat.devise2 }}</label>
+    <label><input type="checkbox" name="tr_notif_observation" value="1" {% if strat.tr_notif_observation %}checked{% endif %}> Telegram aussi pour les simulations</label>
+    <button type="submit" class="bouton">Enregistrer</button>
+  </form>
+  <p class="muted" style="margin:.4rem 0 0">
+    Objectif par palier : {{ strat.eq_seuil }} {{ strat.devise2 }} (même réglage que l'équilibrage).
+    Le budget paie l'écart de prix q × Δ et il est utilisé en entier, sauf si la source descendait sous
+    {{ strat.tr_plancher }} {{ strat.devise2 }} ; le receveur peut dépasser l'objectif.
+    <strong>Cas A</strong> (cible sous l'objectif) : la cible reçoit q de la source, budget = local du barème ; s'il en reste
+    (plancher atteint), le reste V est ajouté sur place. <strong>Cas B</strong> (cible à l'objectif) : budget = bénéfice B, aucune
+    réinjection du barème (ni local, ni up), réparti entre les voisins T−1 et T+1 encore sous l'objectif ; ce qui n'est pas
+    utilisé reste en gain. Source : la plus lointaine des sources éligibles (à égalité, celle du dessous), une par vente,
+    ignorée si son écart de prix avec la cible atteint le prix de la cible.
+    Coûts cumulés : payé {{ strat.tr_cout_paye_txt }} {{ strat.devise2 }} · reconnu {{ strat.tr_cout_reconnu_txt }} {{ strat.devise2 }}.
+  </p>
+  {% endif %}
+</section>
+
+<section class="carte">
+  <h2>Déplacements <span class="muted">({{ deplacements|length }} dernières décisions)</span></h2>
+  <p class="muted" style="margin-top:0">Une ligne par vente en mode actif ou observation (lignes simulées en italique).
+    Coût « payé » : en euros (source en dessous du prix) ; « perte reconnue » : actif prévu à la vente plus haut,
+    revendu plus bas (source au-dessus). Coût réel : résultat de l'ordre au marché, à comparer au coût calculé.</p>
+  {% if deplacements %}
+  <div class="defilement">
+  <table>
+    <thead><tr>
+      <th>Date</th><th>Mode</th><th style="min-width:14rem">Résultat</th><th class="num">Bénéfice B</th>
+      <th>Source</th><th style="min-width:16rem">Destination(s)</th><th class="num">Coût q × Δ</th>
+      <th class="num">Reste sur place V</th><th>Ordre au marché</th>
+    </tr></thead>
+    <tbody>
+      {% for l in deplacements %}
+      <tr{% if l.simulee %} class="simulee"{% endif %}>
+        <td title="vente {{ l.ordre_vente }}">{{ l.date_dt|date:"d/m H:i:s" }}</td>
+        <td>{{ l.tr_mode }}{% if l.simulee %} <span class="muted">· simulée</span>{% endif %}</td>
+        <td>{% if l.tr_applique %}<strong>déplacé · cas {{ l.tr_cas }}</strong>{% else %}<span class="muted">non{% if l.tr_cas %} (cas {{ l.tr_cas }}){% endif %} : {{ l.tr_raison }}</span>{% endif %}</td>
+        <td class="num">{{ l.benefice_txt }}</td>
+        <td>{% if l.tr_source is not None and l.tr_applique %}palier {{ l.tr_source }} <span class="muted">· {{ l.tr_position }}, D = {{ l.tr_distance }}</span><br>
+          <span class="muted">gain {{ l.tr_gain_source_avant_txt }} → {{ l.tr_gain_source_apres_txt }}</span>{% endif %}</td>
+        <td>{% for r in l.recepteurs %}palier {{ r.palier }} : {{ r.gain_avant_txt }} → {{ r.gain_apres_txt }}
+          <span class="muted">· {{ r.q_txt }} {{ strat.devise1 }}, coût {{ r.cout_txt }}</span>{% if not forloop.last %}<br>{% endif %}{% endfor %}</td>
+        <td class="num">{% if l.tr_applique %}{{ l.tr_cout_txt }}<br><span class="muted">{{ l.tr_nature }}</span>{% endif %}</td>
+        <td class="num">{{ l.tr_vertical_txt }}</td>
+        <td>{% for r in l.recepteurs %}{% if r.ordre %}{% if r.ordre == "SELL" %}vente{% else %}achat{% endif %} {{ r.q_txt }} ≈ {{ r.valeur_ordre_txt }}
+          {% if l.tr_ordre %}<br><span class="muted">ordre {{ l.tr_ordre }} à {{ l.tr_prix_exec_txt }} · coût réel {{ l.tr_cout_reel_txt }}</span>{% endif %}{% endif %}{% endfor %}
+          {% if l.tr_applique and not l.avec_ordre %}<span class="muted">aucun (même côté du prix)</span>{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="muted" style="margin:0">Aucune décision enregistrée (mode off, ou pas encore de vente).</p>
+  {% endif %}
+</section>
+{% endif %}
 
 {% if translation %}
 <section class="carte" id="translation">

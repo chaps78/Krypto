@@ -3,7 +3,9 @@ import os
 import signal
 import sys
 import time
+import json
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from bininterface import binAcces
 from sqlInterface import sqlAcces
@@ -28,6 +30,8 @@ class Basics():
         self.sheet = sheetAcces()
         # Suivi des sources de translation : {symbol: (palier courant, date de la dernière évaluation)}
         self.suivi_sources = {}
+        # Messages Telegram à envoyer après la pose de la nouvelle paire d'ordres (déplacement du pic)
+        self.messages_differes = []
 
     def plus_proche(self,symbol,ID_client):
         """Renvoie l'ID du palier de la grille dont le prix est le plus proche du prix actuel.
@@ -275,6 +279,7 @@ class Basics():
                         self.tele.send_message(str(ordre))
                     self.sql.new_log_debug("verification_2_ordres_V2","un ordre FILLED et un NEW : "+str(ordres_DB),symbol)
                     self.un_ordre_filled_autre_new([o for o in ordres_DB if o["ID"] not in annules],symbol,ID_client)
+                    self.envoyer_messages_differes(symbol)
                     self.sheet.update_all_info(symbol,ID_client)
                     # un ordre ferme et un NEW
                 elif len(ordres_partial) == 1:
@@ -373,10 +378,34 @@ class Basics():
                     params = self.sans_risque("parametres_reinjection",symbol,
                                               lambda: self.sql.get_parametres_reinjection(symbol)) or {}
                     mode = params.get("source_reinjection","EUR")
+                    params_eq = self.sans_risque("parametres_equilibrage",symbol,
+                                                 lambda: self.sql.get_parametres_equilibrage(symbol)) or {"equilibrage":"off"}
+                    mode_eq = params_eq.get("equilibrage","off")
+                    # 1. Déplacement du pic (translation) : décidé en premier
+                    params_tr = self.sans_risque("parametres_translation",symbol,
+                                                 lambda: self.sql.get_parametres_translation(symbol)) or {}
+                    mode_tr = params_tr.get("translation","off")
+                    decision_tr = None
+                    if mode_tr in ("observation","actif"):
+                        decision_tr = self.sans_risque("decision_translation",symbol,
+                            lambda: self.decider_translation(symbol,ID_client,last_filled,benef_tmp,local,params_tr,
+                                                             params_eq.get("seuil",15.0),etat))
+                    tr_prevue = bool(mode_tr == "actif" and decision_tr and decision_tr["applique"] and ordres_annules)
+                    normal = (local,up,down,up_epargne)
+                    def montants(avec_translation):
+                        """(local, up, down, up_epargne) réellement dépensés : avec translation, le local
+                        devient la dépense réelle (cas A : L ou V ; cas B : coût payé ou 0) et, en cas B,
+                        aucune réinjection du barème (ni up, ni down, ni épargne du up)."""
+                        if not avec_translation:
+                            return normal
+                        if decision_tr["cas"] == "B":
+                            return decision_tr["depense"],0.0,0.0,0.0
+                        return decision_tr["depense"],normal[1],normal[2],normal[3]
+                    local_fin, up, down, up_epargne = montants(tr_prevue)
                     decision = None
                     if mode in ("observation","auto"):
                         decision = self.sans_risque("decision_reinjection",symbol,
-                            lambda: self.decider_reinjection(symbol,ID_client,benef_tmp,local,up,down,params,etat))
+                            lambda: self.decider_reinjection(symbol,ID_client,benef_tmp,local_fin,up,down,params,etat))
                     journal = {"date":datetime.now(timezone.utc).isoformat(),"symbol":symbol,
                                "ordre_vente":str(last_filled.get("ID")),"benefice":benef_tmp,
                                "taux_local":taux_local,"taux_up":up_tmp,"taux_down":repart["down"],
@@ -388,17 +417,13 @@ class Basics():
                                "up_tmp_avant":self.sans_risque("up_tmp",symbol,lambda: float(self.sql.get_up_tmp(symbol)))}
                     if decision:
                         journal.update({"ma7":decision["ma7"],"ma25":decision["ma25"],"ma_bougie":decision["ma_bougie"]})
-                    params_eq = self.sans_risque("parametres_equilibrage",symbol,
-                                                 lambda: self.sql.get_parametres_equilibrage(symbol)) or {"equilibrage":"off"}
-                    mode_eq = params_eq.get("equilibrage","off")
-                    # 1. translation : étape ultérieure, à décider ici avant l'équilibrage
-                    # 2. équilibrage
+                    # 2. équilibrage (seulement si le déplacement du pic ne s'applique pas)
                     decision_eq = None
                     if mode_eq in ("observation","actif"):
                         decision_eq = self.sans_risque("decision_equilibrage",symbol,
                             lambda: self.decider_equilibrage(symbol,ID_client,last_filled,benef_tmp,local,params_eq,etat))
                     journal["eq_mode"] = mode_eq
-                    if mode == "observation" or mode_eq == "observation":
+                    if mode == "observation" or mode_eq == "observation" or mode_tr == "observation":
                         simulee = dict(journal, simulee=1)
                         if decision:
                             simulee.update(source=decision["source"], raison=decision["raison"],
@@ -407,11 +432,26 @@ class Basics():
                             simulee.update(source="EUR", raison="mode "+mode)
                         simulee.update(self.champs_equilibrage(decision_eq, decision_eq["applique"] if decision_eq else False,
                                                                decision_eq["raison"] if decision_eq else "mode "+mode_eq))
+                        if mode_tr == "observation":
+                            tr_sim = bool(decision_tr and decision_tr["applique"])
+                            simulee.update(self.champs_translation(decision_tr,mode_tr,tr_sim,
+                                (decision_tr or {}).get("raison","décision impossible")))
+                            if tr_sim:
+                                # Déplacement du pic prioritaire : pas d'équilibrage dans cette simulation
+                                simulee.update(self.champs_equilibrage(None,False,"déplacement du pic prioritaire"))
+                                if decision_tr["cas"] == "B":
+                                    simulee.update(local=0.0,up=0.0,down=0.0,up_epargne=0.0)
+                                if params_tr.get("notif_observation"):
+                                    self.messages_differes.append(sur(lambda: self.texte_translation(symbol,decision_tr,simulee=True),
+                                                                      "[simulée] Déplacement du pic "+symbol))
+                        else:
+                            simulee.update(self.champs_translation(None,mode_tr,False,"mode "+mode_tr))
                         self.sans_risque("journal_reinjection",symbol,lambda: self.sql.inserer("journal_reinjection",simulee))
 
                     if mode == "auto" and decision and decision["source"] == "SUSPENDU":
                         # Réinjection suspendue : bets et up_TMP inchangés, le bénéfice reste en cotation
-                        journal.update({"source":"SUSPENDU","raison":decision["raison"],"capital_injecte":0.0})
+                        journal.update({"source":"SUSPENDU","raison":decision["raison"],"capital_injecte":0.0,
+                                        **self.champs_translation(None,mode_tr,False,"réinjection suspendue")})
                         self.sans_risque("journal_reinjection",symbol,lambda: self.sql.inserer("journal_reinjection",journal))
                         self.sans_risque("suspension",symbol,lambda: self.sql.set_reinjection_suspendue(
                             symbol,datetime.now(timezone.utc).isoformat()))
@@ -422,8 +462,30 @@ class Basics():
                         self.sql.add_to_benef_TMP(symbol,-benef_tmp)
                         return None
 
+                    tr_applique, tr_raison, ordre_tr, prix_tr, recep_ordre = False, "mode "+mode_tr, None, None, None
+                    if mode_tr == "actif":
+                        if not decision_tr:
+                            tr_raison = "décision impossible : équilibrage ou réinjection normale"
+                        elif not decision_tr["applique"]:
+                            tr_raison = decision_tr["raison"]
+                        elif not ordres_annules:
+                            tr_raison = "ordre opposé non annulé : équilibrage ou réinjection normale"
+                        else:
+                            ok, ordre_tr, prix_tr, recep_ordre = self.ordre_translation(symbol,ID_client,decision_tr)
+                            if ok:
+                                tr_applique, tr_raison = True, decision_tr["raison"]
+                            else:
+                                tr_raison = "échec de l'ordre au marché : équilibrage ou réinjection normale"
+                    if tr_prevue and not tr_applique:
+                        # Ordre au marché échoué : aucun bet modifié, retour aux montants normaux
+                        local_fin, up, down, up_epargne = montants(False)
+                        if mode in ("observation","auto"):
+                            decision = self.sans_risque("decision_reinjection",symbol,
+                                lambda: self.decider_reinjection(symbol,ID_client,benef_tmp,local,up,down,params,etat))
                     eq_applique, eq_raison, ordre_eq = False, "mode "+mode_eq, None
-                    if mode_eq == "actif":
+                    if tr_applique:
+                        eq_raison = "déplacement du pic prioritaire"
+                    elif mode_eq == "actif":
                         if not decision_eq:
                             eq_raison = "décision d'équilibrage impossible : réinjection normale"
                         elif not decision_eq["applique"]:
@@ -440,7 +502,20 @@ class Basics():
                     if mode == "auto" and decision and decision["source"] == "PEPE":
                         vente = self.vendre_pour_financer(symbol,ID_client,decision)
                     debug_flag = 61
-                    if eq_applique:
+                    if tr_applique:
+                        d = decision_tr
+                        paye = d["cout"] if d["nature"] == "payé" else 0.0
+                        self.sql.appliquer_translation(symbol,d["source"],d["q"],
+                                                       [(r["palier"],r["ajout"]) for r in d["recepteurs"]],
+                                                       paye,d["cout"]-paye)
+                        if d["cas"] == "A":
+                            palier_local, qte_local = d["recepteurs"][0]["palier"], d["recepteurs"][0]["ajout"]
+                        else:
+                            palier_local = qte_local = None
+                        # Envoyé après la pose de la nouvelle paire d'ordres (envoyer_messages_differes)
+                        self.messages_differes.append(sur(lambda: self.texte_translation(symbol,d),
+                                                          "Déplacement du pic "+symbol))
+                    elif eq_applique:
                         self.sql.equilibrer_bets(symbol,decision_eq["preteur"],decision_eq["cible"],
                                                  decision_eq["q"],decision_eq["ajout_cible"])
                         palier_local, qte_local = decision_eq["cible"], decision_eq["ajout_cible"]
@@ -461,7 +536,7 @@ class Basics():
                     debug_flag = 10
                     # Ce qui est réinjecté au-delà du bénéfice vient du capital ; une part
                     # financée en actif compte pour sa valeur au prix d'exécution de la vente
-                    capital = local+up+down-benef_tmp
+                    capital = local_fin+up+down-benef_tmp
                     if vente:
                         capital += vente["qte"]*vente["prix"]-decision["valeur_vente"]
                     if capital > 0:
@@ -479,6 +554,10 @@ class Basics():
                                     "ordre_financement":str(vente["ordre"]) if vente else None,
                                     "capital_injecte":max(capital,0.0),
                                     **self.champs_equilibrage(decision_eq,eq_applique,eq_raison,ordre_eq),
+                                    **self.champs_translation(decision_tr if tr_applique else None,mode_tr,tr_applique,
+                                                              tr_raison,ordre_tr,prix_tr,recep_ordre),
+                                    "local":0.0 if tr_applique and decision_tr["cas"] == "B" else local,
+                                    "up":up,"down":down,"up_epargne":up_epargne,
                                     "up_tmp_apres":self.sans_risque("up_tmp",symbol,lambda: float(self.sql.get_up_tmp(symbol)))})
                     self.sans_risque("journal_reinjection",symbol,lambda: self.sql.inserer("journal_reinjection",journal))
                     if params.get("reinjection_suspendue"):
@@ -492,6 +571,80 @@ class Basics():
                 self.tele.send_message("Erreur dans les fonctions Flag = "+ str(debug_flag))
                 return inst
 
+    def decider_translation(self,symbol,ID_client,last_filled,benef,local,params_tr,seuil,etat):
+        """Décision de déplacement du pic (translation.decider_translation) pour la vente last_filled."""
+        grille = self.sql.get_suivi_sources(symbol)
+        paliers = {i:(v[0],v[1]) for i,v in grille.items()}
+        sources = [i for i,v in grille.items() if v[3]]
+        prix = (etat or {}).get("prix") or float(self.bin.get_price(symbol,ID_client)["price"])
+        dev_entier = self.sql.get_devises_from_symbol(symbol,ID_client)["dev_entiere"]
+        N = int(last_filled["ID_ecart"])
+        return translation.decider_translation(paliers,N,N-1,benef,local,sources,prix,seuil=seuil,
+                                               plancher=params_tr["plancher"],ordre_mini=params_tr["ordre_mini"],
+                                               distance=params_tr["distance"],
+                                               gain_min=params_tr["gain_min"],entier=int(dev_entier)==1)
+
+    def ordre_translation(self,symbol,ID_client,d):
+        """Passe l'ordre au marché d'un déplacement du pic, s'il en faut un (au plus un par translation).
+
+        Returns:
+            (True, ordre_id, prix_exec, receveur) si l'ordre est passé ou s'il n'en faut pas
+            (ordre_id None) ; (False, None, None, receveur) si l'ordre a échoué (ligne
+            d'erreur au journal du wallet : aucun bet ne sera modifié).
+        """
+        r = next((r for r in d["recepteurs"] if r["ordre"]),None)
+        if r is None:
+            return True, None, None, None
+        ordre_id, prix_exec = self.bin.new_market_order(symbol,r["q"],r["ordre"],ID_client,detail=True)
+        if not ordre_id:
+            self.sans_risque("journal_wallet",symbol,lambda: self.sql.inserer("journal_wallet",{
+                "date":datetime.now(timezone.utc).isoformat(),"symbol":symbol,"id_client":ID_client,"sens":r["ordre"],
+                "type_ordre":"MARKET","motif":"translation","palier":r["palier"],"quantite":r["q"],
+                "erreur":"ordre au marché du déplacement du pic échoué : pas de translation"}))
+            return False, None, None, r
+        self.journaliser_ordre(symbol,ID_client,ordre_id,r["ordre"],"MARKET","translation",r["palier"],prix_exec,r["q"])
+        return True, ordre_id, prix_exec, r
+
+    def champs_translation(self,d,mode,applique,raison,ordre=None,prix_exec=None,recepteur_ordre=None):
+        """Colonnes tr_* du journal des réinjections pour une décision de déplacement du pic (ou None)."""
+        d = d or {}
+        champs = {"tr_mode":mode,"tr_applique":1 if applique else 0,"tr_raison":raison,"tr_cas":d.get("cas")}
+        if d.get("applique"):
+            cout_reel = None
+            if recepteur_ordre and prix_exec:
+                # Coût réel du transfert passé par l'ordre, à comparer à q × Δ (calculé au prix du receveur) :
+                # vente de l'actif de la source au marché au lieu de p(S), ou achat au marché avec les euros de la source
+                q = recepteur_ordre["q"]
+                cout_reel = q*(d["prix_source"]-prix_exec) if recepteur_ordre["ordre"] == "SELL" else q*(prix_exec-d["prix_source"])
+            champs.update({"tr_source":d["source"],"tr_distance":d["distance"],"tr_position":d["position"],
+                           "tr_gain_source_avant":d["gain_source_avant"],"tr_gain_source_apres":d["gain_source_apres"],
+                           "tr_recepteurs":json.dumps([{k:r[k] for k in ("palier","q","delta","cout","ajout","gain_avant",
+                                                                         "gain_apres","ordre","valeur_ordre")}
+                                                       for r in d["recepteurs"]]),
+                           "tr_q":d["q"],"tr_cout":d["cout"],"tr_nature":d["nature"],"tr_vertical":d["vertical"],
+                           "tr_ordre":str(ordre) if ordre else None,"tr_prix_exec":prix_exec,"tr_cout_reel":cout_reel})
+        return champs
+
+    def texte_translation(self,symbol,d,simulee=False):
+        """Message Telegram d'un déplacement du pic (exécuté, ou simulé si demandé)."""
+        _, cotation = self.unite(symbol)
+        unite = "€" if cotation == "EUR" else cotation
+        f = lambda x: f"{x:.2f}".replace(".",",")+" "+unite
+        heure = datetime.now(ZoneInfo("Europe/Paris")).strftime("%d/%m %H:%M")
+        lignes = [("[simulée] " if simulee else "")+"Déplacement du pic "+symbol+" — "+heure+" (cas "+d["cas"]+")",
+                  "Source : palier "+str(d["source"])+" — gain "+f(d["gain_source_avant"])+" → "+f(d["gain_source_apres"])]
+        for r in d["recepteurs"]:
+            lignes.append("Destination : palier "+str(r["palier"])+" — gain "+f(r["gain_avant"])+" → "+f(r["gain_apres"]))
+        return "\n".join(lignes)
+
+    def envoyer_messages_differes(self,symbol):
+        """Envoie les messages en attente (après la pose de la nouvelle paire). Un échec est noté dans Log."""
+        messages_a_envoyer, self.messages_differes = self.messages_differes, []
+        for m in messages_a_envoyer:
+            if not self.tele.send_message(m):
+                self.sans_risque("log telegram",symbol,lambda: self.sql.new_log_error(
+                    "telegram déplacement du pic","envoi impossible : "+m.split("\n")[0],symbol))
+
     def decider_reinjection(self,symbol,ID_client,benef,local,up,down,params,etat):
         """Décision du mode auto (reserves.decider_source) avec les MA7/MA25 de la base."""
         ma = self.sql.get_derniere_moyenne(symbol.split("_")[0])
@@ -504,7 +657,7 @@ class Basics():
         return d
 
     def annuler_avant_equilibrage(self,symbol,ID_client,last_filled,ordres):
-        """Équilibrage actif, après une vente à réinjecter : annule l'ordre opposé AVANT la réinjection.
+        """Équilibrage ou déplacement du pic actif, après une vente à réinjecter : annule l'ordre opposé AVANT la réinjection.
 
         Ainsi aucun palier n'est modifié sous un ordre ouvert. Dans tous les
         autres cas, rien n'est fait ici (annulation habituelle ensuite).
@@ -515,7 +668,9 @@ class Basics():
         try:
             if not last_filled or last_filled.get("sens") != "SELL" or not ordres:
                 return []
-            if self.sql.get_parametres_equilibrage(symbol)["equilibrage"] != "actif":
+            params_tr = self.sql.get_parametres_translation(symbol) or {}
+            if (self.sql.get_parametres_equilibrage(symbol)["equilibrage"] != "actif"
+                    and params_tr.get("translation") != "actif"):
                 return []
             if not self.sql.get_benef_TMP_and_benef_all_from_symbol(symbol)["TMP"] > 0:
                 return []
