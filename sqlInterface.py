@@ -933,20 +933,25 @@ class sqlAcces():
         try:
             r = self.cur.execute("SELECT translation, tr_plancher, tr_ordre_mini, tr_notif_observation "
                                  "FROM Devises WHERE symbol=?",(symbol,)).fetchone()
+            # Colonne de l'enchaînement des sources (4.4) : sans elle, le journal refuserait les lignes
+            self.cur.execute("SELECT tr_sources FROM journal_reinjection LIMIT 0")
         except sqlite3.OperationalError:
             return p
         p.update({"translation":r[0] or "off","plancher":float(r[1] if r[1] is not None else 3),
                   "ordre_mini":float(r[2] if r[2] is not None else 6),"notif_observation":bool(r[3])})
         return p
 
-    def appliquer_translation(self,symbol,source,q,recepteurs,cout_paye,cout_reconnu):
-        """Déplacement du pic : bet(source) −= q, bet(receveur) += ajout pour chaque receveur,
-        et compteurs de coût (Devises.tr_cout_paye / tr_cout_reconnu), en une seule transaction.
+    def appliquer_translation(self,symbol,sources,recepteurs,cout_paye,cout_reconnu):
+        """Déplacement du pic : bet(source) −= q pour chaque source, bet(receveur) += ajout pour
+        chaque receveur, et compteurs de coût (Devises.tr_cout_paye / tr_cout_reconnu), en une
+        seule transaction.
 
-        recepteurs : liste de (palier, ajout).
+        sources : liste de (palier, q) ; recepteurs : liste de (palier, ajout).
         """
         try:
-            self.cur.execute("UPDATE ecart_bet SET bet = bet - ? WHERE symbol = ? AND ID = ?",(float(q),symbol,int(source)))
+            for source,q in sources:
+                self.cur.execute("UPDATE ecart_bet SET bet = bet - ? WHERE symbol = ? AND ID = ?",
+                                 (float(q),symbol,int(source)))
             for palier,ajout in recepteurs:
                 self.cur.execute("UPDATE ecart_bet SET bet = bet + ? WHERE symbol = ? AND ID = ?",
                                  (float(ajout),symbol,int(palier)))

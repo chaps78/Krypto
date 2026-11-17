@@ -96,6 +96,7 @@ def reconstituer_chronos(executions, ids, distance=6):
 # si elle est côté PEPE (cet actif prévu à la vente plus haut est revendu plus bas).
 
 DEFAUTS_DECISION = {"seuil": 15.0, "plancher": 3.0, "ordre_mini": 6.0}
+RESTE_MINI = 0.01   # budget restant (cotation) sous lequel on ne puise plus dans la source suivante (résidu d'arrondi)
 
 
 def cote(i, courant):
@@ -103,15 +104,15 @@ def cote(i, courant):
     return "PEPE" if int(i) >= int(courant) else "EUR"
 
 
-def choisir_source(prix, bets, courant, cible, sources, distance=6, gain_min=4.5, frais=FRAIS):
-    """Source de la translation : la plus lointaine des sources éligibles, à égalité celle du dessous.
+def ordonner_sources(prix, bets, courant, cible, sources, distance=6, gain_min=4.5, frais=FRAIS):
+    """Sources utilisables pour cette vente, dans l'ordre où on y puise.
 
-    Une source est recontrôlée avec le palier courant de cette vente (distance
-    et gain), et écartée si Δ = |p(S) − p(T)| ≥ p(T) (l'écart coûterait plus que
-    la valeur déplacée).
+    La plus lointaine d'abord, à égalité celle du dessous. Une source est
+    recontrôlée avec le palier courant de cette vente (distance et gain), et
+    écartée si Δ = |p(S) − p(T)| ≥ p(T) (l'écart coûterait plus que la valeur déplacée).
 
     Returns:
-        (ID de la source ou None, liste des sources écartées [(ID, motif)]).
+        (liste des IDs, liste des sources écartées [(ID, motif)]).
     """
     pT = prix.get(cible)
     retenues, ecartees = [], []
@@ -129,9 +130,13 @@ def choisir_source(prix, bets, courant, cible, sources, distance=6, gain_min=4.5
             ecartees.append((S, "écart de prix ≥ prix du receveur"))
         else:
             retenues.append((d, S < int(courant), S))
-    if not retenues:
-        return None, ecartees
-    return max(retenues)[2], ecartees
+    return [r[2] for r in sorted(retenues, reverse=True)], ecartees
+
+
+def choisir_source(prix, bets, courant, cible, sources, distance=6, gain_min=4.5, frais=FRAIS):
+    """Première source de ordonner_sources() : (ID ou None, sources écartées)."""
+    ordre, ecartees = ordonner_sources(prix, bets, courant, cible, sources, distance, gain_min, frais)
+    return (ordre[0] if ordre else None), ecartees
 
 
 def decider_translation(paliers, courant, cible, benef, local, sources, prix_marche, seuil=15.0, plancher=3.0,
@@ -142,122 +147,168 @@ def decider_translation(paliers, courant, cible, benef, local, sources, prix_mar
     benef : B ; local : L (local du barème) ; sources : IDs des sources éligibles
     (consigne 1) ; prix_marche : prix actuel (valeur des ordres au marché).
 
-    Le budget est utilisé en entier pour payer l'écart (q × Δ = budget), sauf si
-    la source descendait sous le plancher ; le receveur peut dépasser le seuil.
-    Cas A (gain(T) < seuil) : receveur T, budget L, q = min(L / Δ, bet(S) − plancher / g(S)),
-    reste V = L − q × Δ (non nul seulement si le plancher limite) ajouté sur place à T.
+    Le budget paie l'écart (q × Δ) et il est utilisé en entier. On puise dans les
+    sources l'une après l'autre (ordonner_sources) : quand une source atteint le
+    plancher, le reste du budget est pris sur la suivante. Le receveur peut dépasser le seuil.
+    Cas A (gain(T) < seuil) : receveur T, budget L ; ce qui reste quand toutes les
+    sources sont au plancher (V) est ajouté sur place à T.
     Cas B (gain(T) ≥ seuil) : budget B, aucune réinjection du barème ; receveurs
-    T − 1 et T + 1 s'ils sont sous le seuil (moitié du budget chacun) ; q(N) × Δ(N)
-    = part ; plancher de la source sur le total (réduction proportionnelle, le reste
-    de B reste en gain) ; ordre au marché < ordre_mini : tout le budget au receveur
-    du même côté que la source (s'il n'est pas servi : pas de translation).
+    T − 1 et T + 1 s'ils sont sous le seuil (moitié du budget chacun). Une source qui
+    ne couvre pas les deux parts est partagée au prorata ; le reste de B reste en gain.
+    Ordres au marché : un seul, net (achats − ventes de toutes les paires source/receveur
+    de côtés opposés). S'il vaut moins que ordre_mini : on ne garde que les paires du
+    même côté (aucun ordre) ; en cas B, le budget est alors partagé entre les receveurs
+    qu'une source du même côté peut servir. Sinon, pas de translation.
 
     Returns:
-        dict : applique, raison, cas, source, distance, position (côté de la source :
-        "dessus" PEPE / "dessous" EUR), gain_source_avant / apres, recepteurs (liste
-        de dict palier, q, delta, cout, ajout, gain_avant, gain_apres, ordre
-        None / "SELL" / "BUY", valeur_ordre), q, cout, nature ("payé" / "perte
-        reconnue"), vertical (V, cas A), budget, depense (euros réellement
-        consommés : cas A L ou V, cas B coût payé ou 0), ecartees.
+        dict : applique, raison, cas, source (première source utilisée), distance,
+        position ("dessus" PEPE / "dessous" EUR), prix_source, gain_source_avant / apres
+        (de cette première source), sources (détail par source : source, distance,
+        position, prix, gain_avant, gain_apres, q, cout, nature), transferts (paires
+        source, palier, q, delta, cout, ordre), recepteurs (par receveur : palier, q,
+        delta, cout, ajout, gain_avant, gain_apres, ordre, valeur_ordre), q, cout,
+        cout_paye, cout_reconnu, nature ("payé" / "perte reconnue" / "mixte"),
+        ordre ("BUY" / "SELL" / None, ordre net), q_ordre, valeur_ordre, vertical
+        (V, cas A), budget, depense (euros réellement consommés : coût payé + V), ecartees.
     """
     prix = {int(i): float(v[0]) for i, v in paliers.items() if v[0] is not None}
     bets = {int(i): float(v[1] or 0) for i, v in paliers.items()}
     T, N = int(cible), int(courant)
     benef, local = max(float(benef), 0.0), max(float(local), 0.0)
     res = {"applique": False, "cas": None, "source": None, "distance": None, "position": None,
-           "gain_source_avant": None, "gain_source_apres": None, "recepteurs": [], "q": 0.0, "cout": 0.0,
-           "nature": None, "vertical": None, "budget": None, "depense": None, "ecartees": []}
+           "prix_source": None, "gain_source_avant": None, "gain_source_apres": None, "sources": [],
+           "transferts": [], "recepteurs": [], "q": 0.0, "cout": 0.0, "cout_paye": 0.0, "cout_reconnu": 0.0,
+           "nature": None, "ordre": None, "q_ordre": 0.0, "valeur_ordre": None, "vertical": None,
+           "budget": None, "depense": None, "ecartees": []}
     gT, pT = gain_unitaire(prix, T, frais), prix.get(T)
     if gT is None or not pT or gT <= 0:
         return {**res, "raison": "cible hors de la grille ou sans gain"}
     betT = bets.get(T, 0.0)
     cas = "A" if betT * gT < seuil else "B"
     res["cas"] = cas
-    S, ecartees = choisir_source(prix, bets, N, T, sources, distance, gain_min, frais)
+    ordre_src, ecartees = ordonner_sources(prix, bets, N, T, sources, distance, gain_min, frais)
     res["ecartees"] = ecartees
-    if S is None:
+    if not ordre_src:
         return {**res, "raison": "aucune source" + (f" ({len(ecartees)} écartée(s))" if ecartees else "")}
-    gS, pS, betS = gain_unitaire(prix, S, frais), prix[S], bets.get(S, 0.0)
-    cote_S = cote(S, N)
-    nature = "perte reconnue" if cote_S == "PEPE" else "payé"
-    q_source_max = betS - plancher / gS
-    res.update({"source": S, "distance": abs(S - N), "position": "dessus" if cote_S == "PEPE" else "dessous",
-                "gain_source_avant": betS * gS, "nature": nature, "prix_source": pS})
-
-    def ordre(R):
-        if cote(R, N) == cote_S:
-            return None
-        return "SELL" if cote_S == "PEPE" else "BUY"
+    S0 = ordre_src[0]
+    res.update({"source": S0, "distance": abs(S0 - N), "position": "dessus" if cote(S0, N) == "PEPE" else "dessous",
+                "prix_source": prix[S0], "gain_source_avant": bets.get(S0, 0.0) * gain_unitaire(prix, S0, frais)})
 
     def arrondi(q):
         return float(math.floor(q)) if entier else q
 
+    def sens(S, R):
+        """Ordre au marché nécessaire pour la paire (S, R), ou None (même côté)."""
+        if cote(R, N) == cote(S, N):
+            return None
+        return "SELL" if cote(S, N) == "PEPE" else "BUY"
+
+    def allouer(budgets, autorise):
+        """Puise dans les sources, dans l'ordre, jusqu'à épuiser les budgets {R: montant}.
+
+        Returns: liste des transferts {source, palier, q, delta, cout, ordre}.
+        """
+        reste = dict(budgets)
+        dispo = {S: max(bets.get(S, 0.0) - plancher / gain_unitaire(prix, S, frais), 0.0) for S in ordre_src}
+        transferts = []
+        for S in ordre_src:
+            Rs = [R for R in reste if reste[R] >= RESTE_MINI and autorise(S, R) and abs(prix[S] - prix[R]) > 0]
+            if not Rs or dispo[S] <= 0:
+                continue
+            besoins = {R: reste[R] / abs(prix[S] - prix[R]) for R in Rs}
+            k = min(1.0, dispo[S] / sum(besoins.values()))
+            for R in Rs:
+                q = arrondi(besoins[R] * k)
+                if q <= 0:
+                    continue
+                delta = abs(prix[S] - prix[R])
+                transferts.append({"source": S, "palier": R, "q": q, "delta": delta, "cout": q * delta,
+                                   "ordre": sens(S, R)})
+                reste[R] -= q * delta
+                dispo[S] -= q
+        return transferts
+
+    def ordre_net(transferts):
+        """(sens, quantité) de l'ordre au marché unique, achats − ventes."""
+        net = sum(t["q"] if t["ordre"] == "BUY" else -t["q"] for t in transferts if t["ordre"])
+        if abs(net) <= 0:
+            return None, 0.0
+        return ("BUY" if net > 0 else "SELL"), abs(net)
+
+    def ordre_trop_petit(transferts):
+        o, q = ordre_net(transferts)
+        return o is not None and q * prix_marche < ordre_mini
+
+    tous = lambda S, R: True
+    meme_cote = lambda S, R: sens(S, R) is None
+
     if cas == "A":
-        delta = abs(pS - pT)
-        limites = {"budget": local / delta if delta > 0 else math.inf, "plancher de la source": q_source_max}
-        q = arrondi(max(min(limites.values()), 0.0))
-        limite = min(limites, key=limites.get)
+        budgets = {T: local}
         res["budget"] = local
-        if q <= 0:
-            return {**res, "raison": f"q ≤ 0 (limite : {limite})"}
-        o = ordre(T)
-        if o and q * prix_marche < ordre_mini:
-            return {**res, "raison": f"ordre au marché < {ordre_mini:g}"}
-        cout = q * delta
-        vertical = local - cout
-        ajout = q + vertical / pT
-        r = {"palier": T, "q": q, "delta": delta, "cout": cout, "ajout": ajout, "gain_avant": betT * gT,
-             "gain_apres": (betT + ajout) * gT, "ordre": o, "valeur_ordre": q * prix_marche if o else None}
-        return {**res, "applique": True, "raison": f"cas A, limité par : {limite}", "recepteurs": [r], "q": q,
-                "cout": cout, "vertical": vertical, "gain_source_apres": (betS - q) * gS,
-                "depense": local if nature == "payé" else vertical}
+        if local <= 0:
+            return {**res, "raison": "aucun budget (local nul)"}
+        transferts = allouer(budgets, tous)
+        if ordre_trop_petit(transferts):
+            transferts = allouer(budgets, meme_cote)
+            if not transferts:
+                return {**res, "raison": f"ordre au marché < {ordre_mini:g}"}
+    else:
+        res["budget"] = benef
+        candidats = []
+        for R in (T - 1, T + 1):
+            gR, pR = gain_unitaire(prix, R, frais), prix.get(R)
+            if gR is None or not pR or gR <= 0 or bets.get(R, 0.0) * gR >= seuil:
+                continue
+            candidats.append(R)
+        if not candidats:
+            return {**res, "raison": "voisins à l'objectif"}
+        if benef <= 0:
+            return {**res, "raison": "aucun budget (bénéfice nul)"}
+        transferts = allouer({R: benef / len(candidats) for R in candidats}, tous)
+        if ordre_trop_petit(transferts):
+            servis = [R for R in candidats if any(sens(S, R) is None for S in ordre_src)]
+            if not servis:
+                return {**res, "raison": f"ordre au marché < {ordre_mini:g} et voisin du même côté à l'objectif"}
+            transferts = allouer({R: benef / len(servis) for R in servis}, meme_cote)
+    if not transferts:
+        return {**res, "raison": "q ≤ 0 (plancher des sources)"}
 
-    # Cas B
-    res["budget"] = benef
-    candidats = []
-    for R in (T - 1, T + 1):
-        gR, pR = gain_unitaire(prix, R, frais), prix.get(R)
-        if gR is None or not pR or gR <= 0 or bets.get(R, 0.0) * gR >= seuil:
-            continue
-        candidats.append(R)
-    if not candidats:
-        return {**res, "raison": "voisins à l'objectif"}
+    cout = sum(t["cout"] for t in transferts)
+    paye = sum(t["cout"] for t in transferts if cote(t["source"], N) == "EUR")
+    vertical = local - cout if cas == "A" else None
+    o, q_ordre = ordre_net(transferts)
 
-    def repartir(receveurs):
-        """q par receveur (toute sa part du budget), puis plancher de la source sur le total."""
-        part = benef / len(receveurs)
-        qs = {}
-        for R in receveurs:
-            gR, pR = gain_unitaire(prix, R, frais), prix[R]
-            delta = abs(pS - pR)
-            qs[R] = max(part / delta if delta > 0 else 0.0, 0.0)
-        total = sum(qs.values())
-        if total > q_source_max:
-            k = max(q_source_max, 0.0) / total if total > 0 else 0.0
-            qs = {R: q * k for R, q in qs.items()}
-        return {R: arrondi(q) for R, q in qs.items()}
-
-    qs = repartir(candidats)
-    trop_petits = [R for R in candidats if ordre(R) and qs[R] * prix_marche < ordre_mini]
-    if trop_petits:
-        meme_cote = [R for R in candidats if not ordre(R)]
-        if not meme_cote:
-            return {**res, "raison": f"ordre au marché < {ordre_mini:g} et voisin du même côté à l'objectif"}
-        qs = repartir(meme_cote)
+    detail_sources = []
+    for S in dict.fromkeys(t["source"] for t in transferts):
+        gS, betS = gain_unitaire(prix, S, frais), bets.get(S, 0.0)
+        qS = sum(t["q"] for t in transferts if t["source"] == S)
+        detail_sources.append({"source": S, "distance": abs(S - N),
+                               "position": "dessus" if cote(S, N) == "PEPE" else "dessous", "prix": prix[S],
+                               "gain_avant": betS * gS, "gain_apres": (betS - qS) * gS, "q": qS,
+                               "cout": sum(t["cout"] for t in transferts if t["source"] == S),
+                               "nature": "perte reconnue" if cote(S, N) == "PEPE" else "payé"})
     recepteurs = []
-    for R, q in qs.items():
-        if q <= 0:
-            continue
+    for R in dict.fromkeys(t["palier"] for t in transferts):
         gR, pR, betR = gain_unitaire(prix, R, frais), prix[R], bets.get(R, 0.0)
-        delta = abs(pS - pR)
-        o = ordre(R)
-        recepteurs.append({"palier": R, "q": q, "delta": delta, "cout": q * delta, "ajout": q,
-                           "gain_avant": betR * gR, "gain_apres": (betR + q) * gR, "ordre": o,
-                           "valeur_ordre": q * prix_marche if o else None})
-    if not recepteurs:
-        return {**res, "raison": "q ≤ 0 (plancher de la source)"}
-    q_total = sum(r["q"] for r in recepteurs)
-    cout = sum(r["cout"] for r in recepteurs)
-    return {**res, "applique": True, "raison": "cas B, " + " et ".join(str(r["palier"]) for r in recepteurs),
-            "recepteurs": recepteurs, "q": q_total, "cout": cout, "gain_source_apres": (betS - q_total) * gS,
-            "depense": cout if nature == "payé" else 0.0}
+        tR = [t for t in transferts if t["palier"] == R]
+        qR = sum(t["q"] for t in tR)
+        ajout = qR + (vertical / pR if cas == "A" else 0.0)
+        q_ord = sum(t["q"] for t in tR if t["ordre"])
+        recepteurs.append({"palier": R, "q": qR, "delta": sum(t["cout"] for t in tR) / qR,
+                           "cout": sum(t["cout"] for t in tR), "ajout": ajout, "gain_avant": betR * gR,
+                           "gain_apres": (betR + ajout) * gR,
+                           "ordre": next((t["ordre"] for t in tR if t["ordre"]), None), "q_ordre": q_ord,
+                           "valeur_ordre": q_ord * prix_marche if q_ord else None})
+    natures = {s["nature"] for s in detail_sources}
+    premiere = detail_sources[0]
+    utilisees = ", ".join(str(s["source"]) for s in detail_sources)
+    raison = (f"cas A, source(s) {utilisees}" + (" ; reste V sur place" if vertical and vertical >= 0.01 else "")
+              if cas == "A" else f"cas B, {' et '.join(str(r['palier']) for r in recepteurs)} ; source(s) {utilisees}")
+    return {**res, "applique": True, "raison": raison, "source": premiere["source"],
+            "distance": premiere["distance"], "position": premiere["position"], "prix_source": premiere["prix"],
+            "gain_source_avant": premiere["gain_avant"], "gain_source_apres": premiere["gain_apres"],
+            "sources": detail_sources, "transferts": transferts, "recepteurs": recepteurs,
+            "q": sum(t["q"] for t in transferts), "cout": cout, "cout_paye": paye, "cout_reconnu": cout - paye,
+            "nature": natures.pop() if len(natures) == 1 else "mixte",
+            "ordre": o, "q_ordre": q_ordre, "valeur_ordre": q_ordre * prix_marche if o else None,
+            "vertical": vertical, "depense": paye + (vertical or 0.0)}

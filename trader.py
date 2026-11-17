@@ -462,7 +462,7 @@ class Basics():
                         self.sql.add_to_benef_TMP(symbol,-benef_tmp)
                         return None
 
-                    tr_applique, tr_raison, ordre_tr, prix_tr, recep_ordre = False, "mode "+mode_tr, None, None, None
+                    tr_applique, tr_raison, ordre_tr, prix_tr = False, "mode "+mode_tr, None, None
                     if mode_tr == "actif":
                         if not decision_tr:
                             tr_raison = "décision impossible : équilibrage ou réinjection normale"
@@ -471,7 +471,7 @@ class Basics():
                         elif not ordres_annules:
                             tr_raison = "ordre opposé non annulé : équilibrage ou réinjection normale"
                         else:
-                            ok, ordre_tr, prix_tr, recep_ordre = self.ordre_translation(symbol,ID_client,decision_tr)
+                            ok, ordre_tr, prix_tr = self.ordre_translation(symbol,ID_client,decision_tr)
                             if ok:
                                 tr_applique, tr_raison = True, decision_tr["raison"]
                             else:
@@ -504,10 +504,9 @@ class Basics():
                     debug_flag = 61
                     if tr_applique:
                         d = decision_tr
-                        paye = d["cout"] if d["nature"] == "payé" else 0.0
-                        self.sql.appliquer_translation(symbol,d["source"],d["q"],
+                        self.sql.appliquer_translation(symbol,[(s["source"],s["q"]) for s in d["sources"]],
                                                        [(r["palier"],r["ajout"]) for r in d["recepteurs"]],
-                                                       paye,d["cout"]-paye)
+                                                       d["cout_paye"],d["cout_reconnu"])
                         if d["cas"] == "A":
                             palier_local, qte_local = d["recepteurs"][0]["palier"], d["recepteurs"][0]["ajout"]
                         else:
@@ -555,7 +554,7 @@ class Basics():
                                     "capital_injecte":max(capital,0.0),
                                     **self.champs_equilibrage(decision_eq,eq_applique,eq_raison,ordre_eq),
                                     **self.champs_translation(decision_tr if tr_applique else None,mode_tr,tr_applique,
-                                                              tr_raison,ordre_tr,prix_tr,recep_ordre),
+                                                              tr_raison,ordre_tr,prix_tr),
                                     "local":0.0 if tr_applique and decision_tr["cas"] == "B" else local,
                                     "up":up,"down":down,"up_epargne":up_epargne,
                                     "up_tmp_apres":self.sans_risque("up_tmp",symbol,lambda: float(self.sql.get_up_tmp(symbol)))})
@@ -585,41 +584,50 @@ class Basics():
                                                gain_min=params_tr["gain_min"],entier=int(dev_entier)==1)
 
     def ordre_translation(self,symbol,ID_client,d):
-        """Passe l'ordre au marché d'un déplacement du pic, s'il en faut un (au plus un par translation).
+        """Passe l'ordre au marché d'un déplacement du pic, s'il en faut un.
+
+        Un seul ordre, net de toutes les paires source/receveur de côtés opposés
+        (d["ordre"], d["q_ordre"]), même quand plusieurs sources sont utilisées.
 
         Returns:
-            (True, ordre_id, prix_exec, receveur) si l'ordre est passé ou s'il n'en faut pas
-            (ordre_id None) ; (False, None, None, receveur) si l'ordre a échoué (ligne
+            (True, ordre_id, prix_exec) si l'ordre est passé ou s'il n'en faut pas
+            (ordre_id None) ; (False, None, None) si l'ordre a échoué (ligne
             d'erreur au journal du wallet : aucun bet ne sera modifié).
         """
-        r = next((r for r in d["recepteurs"] if r["ordre"]),None)
-        if r is None:
-            return True, None, None, None
-        ordre_id, prix_exec = self.bin.new_market_order(symbol,r["q"],r["ordre"],ID_client,detail=True)
+        if not d.get("ordre"):
+            return True, None, None
+        sens, q = d["ordre"], d["q_ordre"]
+        palier = next((t["palier"] for t in d["transferts"] if t["ordre"] == sens),None)
+        ordre_id, prix_exec = self.bin.new_market_order(symbol,q,sens,ID_client,detail=True)
         if not ordre_id:
             self.sans_risque("journal_wallet",symbol,lambda: self.sql.inserer("journal_wallet",{
-                "date":datetime.now(timezone.utc).isoformat(),"symbol":symbol,"id_client":ID_client,"sens":r["ordre"],
-                "type_ordre":"MARKET","motif":"translation","palier":r["palier"],"quantite":r["q"],
+                "date":datetime.now(timezone.utc).isoformat(),"symbol":symbol,"id_client":ID_client,"sens":sens,
+                "type_ordre":"MARKET","motif":"translation","palier":palier,"quantite":q,
                 "erreur":"ordre au marché du déplacement du pic échoué : pas de translation"}))
-            return False, None, None, r
-        self.journaliser_ordre(symbol,ID_client,ordre_id,r["ordre"],"MARKET","translation",r["palier"],prix_exec,r["q"])
-        return True, ordre_id, prix_exec, r
+            return False, None, None
+        self.journaliser_ordre(symbol,ID_client,ordre_id,sens,"MARKET","translation",palier,prix_exec,q)
+        return True, ordre_id, prix_exec
 
-    def champs_translation(self,d,mode,applique,raison,ordre=None,prix_exec=None,recepteur_ordre=None):
+    def champs_translation(self,d,mode,applique,raison,ordre=None,prix_exec=None):
         """Colonnes tr_* du journal des réinjections pour une décision de déplacement du pic (ou None)."""
         d = d or {}
         champs = {"tr_mode":mode,"tr_applique":1 if applique else 0,"tr_raison":raison,"tr_cas":d.get("cas")}
         if d.get("applique"):
             cout_reel = None
-            if recepteur_ordre and prix_exec:
-                # Coût réel du transfert passé par l'ordre, à comparer à q × Δ (calculé au prix du receveur) :
-                # vente de l'actif de la source au marché au lieu de p(S), ou achat au marché avec les euros de la source
-                q = recepteur_ordre["q"]
-                cout_reel = q*(d["prix_source"]-prix_exec) if recepteur_ordre["ordre"] == "SELL" else q*(prix_exec-d["prix_source"])
-            champs.update({"tr_source":d["source"],"tr_distance":d["distance"],"tr_position":d["position"],
+            if d.get("ordre") and prix_exec:
+                # Coût réel des paires passées par l'ordre, à comparer à q × Δ (calculé au prix du receveur) :
+                # actif de la source vendu au marché au lieu de p(S), ou acheté au marché avec les euros de la source
+                prix_src = {s["source"]:s["prix"] for s in d["sources"]}
+                cout_reel = sum(t["q"]*(prix_src[t["source"]]-prix_exec) if t["ordre"] == "SELL"
+                                else t["q"]*(prix_exec-prix_src[t["source"]])
+                                for t in d["transferts"] if t["ordre"])
+            champs.update({"tr_source":d["source"],
+                           "tr_sources":json.dumps([{k:s[k] for k in ("source","distance","position","gain_avant",
+                                                                      "gain_apres","q","cout","nature")}
+                                                    for s in d["sources"]]),"tr_distance":d["distance"],"tr_position":d["position"],
                            "tr_gain_source_avant":d["gain_source_avant"],"tr_gain_source_apres":d["gain_source_apres"],
                            "tr_recepteurs":json.dumps([{k:r[k] for k in ("palier","q","delta","cout","ajout","gain_avant",
-                                                                         "gain_apres","ordre","valeur_ordre")}
+                                                                         "gain_apres","ordre","q_ordre","valeur_ordre")}
                                                        for r in d["recepteurs"]]),
                            "tr_q":d["q"],"tr_cout":d["cout"],"tr_nature":d["nature"],"tr_vertical":d["vertical"],
                            "tr_ordre":str(ordre) if ordre else None,"tr_prix_exec":prix_exec,"tr_cout_reel":cout_reel})
@@ -631,8 +639,9 @@ class Basics():
         unite = "€" if cotation == "EUR" else cotation
         f = lambda x: f"{x:.2f}".replace(".",",")+" "+unite
         heure = datetime.now(ZoneInfo("Europe/Paris")).strftime("%d/%m %H:%M")
-        lignes = [("[simulée] " if simulee else "")+"Déplacement du pic "+symbol+" — "+heure+" (cas "+d["cas"]+")",
-                  "Source : palier "+str(d["source"])+" — gain "+f(d["gain_source_avant"])+" → "+f(d["gain_source_apres"])]
+        lignes = [("[simulée] " if simulee else "")+"Déplacement du pic "+symbol+" — "+heure+" (cas "+d["cas"]+")"]
+        for src in d["sources"]:
+            lignes.append("Source : palier "+str(src["source"])+" — gain "+f(src["gain_avant"])+" → "+f(src["gain_apres"]))
         for r in d["recepteurs"]:
             lignes.append("Destination : palier "+str(r["palier"])+" — gain "+f(r["gain_avant"])+" → "+f(r["gain_apres"]))
         return "\n".join(lignes)

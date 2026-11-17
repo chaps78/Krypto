@@ -1086,6 +1086,7 @@ def parametres_translation(symbol):
     p = {k: (v if v is not None else TR_DEFAUT[k]) for k, v in r[0].items()} if r else dict(TR_DEFAUT)
     try:
         r2 = query("SELECT " + ", ".join(TR2_DEFAUT) + " FROM Devises WHERE symbol = ?", (symbol,))
+        query("SELECT tr_sources FROM journal_reinjection LIMIT 0")  # enchaînement des sources (4.4)
         p.update({k: (v if v is not None else TR2_DEFAUT[k]) for k, v in r2[0].items()} if r2 else TR2_DEFAUT)
         p["migration_translation"] = True
     except sqlite3.OperationalError:

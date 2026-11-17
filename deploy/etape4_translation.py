@@ -9,8 +9,9 @@ Ajoute, sans rien modifier d'existant (bets, ordres, réinjection inchangés) :
               une ligne quand il cesse de l'être.
   Consigne 2 : Devises.translation ('off' par défaut : aucun effet), tr_plancher (3),
               tr_ordre_mini (6), tr_notif_observation (0),
-              compteurs tr_cout_paye / tr_cout_reconnu ; journal_reinjection : colonnes tr_*.
-Déjà passée pour la consigne 1 : la relancer ajoute seulement les colonnes de la consigne 2.
+              compteurs tr_cout_paye / tr_cout_reconnu ; journal_reinjection : colonnes tr_*
+              (tr_sources en 4.4 : détail de chaque source utilisée).
+Déjà passée : la relancer ajoute seulement les colonnes manquantes.
 Puis reconstitue les chronomètres des stratégies actives à partir de
 l'historique des ordres limites exécutés (sinon aucune source avant 48 h).
 Prérequis : migration de l'étape 3 (deploy/etape3_equilibrage.py).
@@ -68,6 +69,8 @@ A_AJOUTER = [
     ("journal_reinjection", "tr_ordre", "TEXT"),
     ("journal_reinjection", "tr_prix_exec", "REAL"),
     ("journal_reinjection", "tr_cout_reel", "REAL"),
+    # 4.4 : enchaînement des sources (détail par source, JSON)
+    ("journal_reinjection", "tr_sources", "TEXT"),
 ]
 TABLES = {
     "journal_ruptures": """CREATE TABLE journal_ruptures (

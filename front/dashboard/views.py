@@ -428,6 +428,26 @@ def lignes_translation(lignes):
             r["valeur_ordre_txt"] = montant(r["valeur_ordre"]) if r.get("valeur_ordre") is not None else ""
         l["recepteurs"] = recepteurs
         l["avec_ordre"] = any(r.get("ordre") for r in recepteurs)
+        try:
+            sources = json.loads(l.get("tr_sources") or "[]")
+        except ValueError:
+            sources = []
+        if not sources and l.get("tr_source") is not None:
+            # Lignes d'avant 4.4 : une seule source, colonnes tr_source / tr_gain_source_*
+            sources = [{"source": l["tr_source"], "position": l.get("tr_position"), "distance": l.get("tr_distance"),
+                        "gain_avant": l.get("tr_gain_source_avant"), "gain_apres": l.get("tr_gain_source_apres"),
+                        "q": l.get("tr_q"), "cout": l.get("tr_cout"), "nature": l.get("tr_nature")}]
+        for s in sources:
+            s["gain_avant_txt"], s["gain_apres_txt"] = montant(s.get("gain_avant")), montant(s.get("gain_apres"))
+            s["q_txt"] = quantite_txt(s.get("q")) if s.get("q") else ""
+            s["cout_txt"] = montant(s.get("cout")) if s.get("cout") is not None else ""
+        l["sources"] = sources
+        # Ordre au marché réellement passé : un seul, net des achats et des ventes des receveurs
+        net = sum((r.get("q_ordre", r.get("q")) or 0) * (1 if r.get("ordre") == "BUY" else -1)
+                  for r in recepteurs if r.get("ordre"))
+        l["ordre_net"] = ("achat" if net > 0 else "vente") if net else ""
+        l["ordre_net_q_txt"] = quantite_txt(abs(net)) if net else ""
+        l["ordre_compense"] = l["avec_ordre"] and not net
     return lignes
 
 
