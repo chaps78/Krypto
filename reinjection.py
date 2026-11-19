@@ -9,8 +9,10 @@ Attention : seuils en valeur absolue, quelle que soit la devise de cotation.
 BAREME_LOCAL = [(5, 1000), (10, 500), (15, 300)]
 DEFAUT_LOCAL = 30
 
-BAREME_UP = [(10, 100), (15, 50)]
-DEFAUT_UP = 30
+# Up désactivé (2026-11, option A) : taux nul quel que soit le bénéfice, donc ni
+# cumul up_TMP ni achat au marché. Ancien barème : [(10, 100), (15, 50)], défaut 30.
+BAREME_UP = []
+DEFAUT_UP = 0
 
 
 def _taux(bareme, defaut, benef):

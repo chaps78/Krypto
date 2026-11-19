@@ -109,7 +109,8 @@
     </tbody>
   </table>
   <p class="muted">Pourcentage du gain de la vente réinjecté : <strong>local</strong> ajouté au palier juste sous celui
-    exécuté, <strong>UP</strong> mis de côté puis acheté au marché (dès 6 USDT) pour un palier au-dessus.
+    exécuté. <strong>UP désactivé</strong> (0 %) : plus d'achat au marché pour le palier du dessus ; quand le bénéfice
+    dépasse 15, la part qui lui revenait reste en trésorerie.
     Seuils en valeur absolue, quelle que soit la devise.</p>
   {% else %}
   <p class="alerte">{{ erreur_reinjection|default:"Barème de réinjection indisponible." }}</p>
