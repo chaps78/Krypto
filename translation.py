@@ -150,15 +150,13 @@ def decider_translation(paliers, courant, cible, benef, local, sources, prix_mar
     Le budget paie l'écart (q × Δ) et il est utilisé en entier. On puise dans les
     sources l'une après l'autre (ordonner_sources) : quand une source atteint le
     plancher, le reste du budget est pris sur la suivante. Le receveur peut dépasser le seuil.
-    Cas A (gain(T) < seuil) : receveur T, budget L ; ce qui reste quand toutes les
-    sources sont au plancher (V) est ajouté sur place à T.
-    Cas B (gain(T) ≥ seuil) : budget B, aucune réinjection du barème ; receveurs
-    T − 1 et T + 1 s'ils sont sous le seuil (moitié du budget chacun). Une source qui
-    ne couvre pas les deux parts est partagée au prorata ; le reste de B reste en gain.
+    Cas A (gain(T) < seuil), seul cas depuis 4.6 : receveur T, budget L ; ce qui reste
+    quand toutes les sources sont au plancher (V) est ajouté sur place à T.
+    Cible à l'objectif (gain(T) ≥ seuil, ancien cas B) : pas de déplacement ; la
+    réinjection normale met 30 % de B sur T, le reste reste hors de la grille.
     Ordres au marché : un seul, net (achats − ventes de toutes les paires source/receveur
     de côtés opposés). S'il vaut moins que ordre_mini : on ne garde que les paires du
-    même côté (aucun ordre) ; en cas B, le budget est alors partagé entre les receveurs
-    qu'une source du même côté peut servir. Sinon, pas de translation.
+    même côté (aucun ordre). Sinon, pas de translation.
 
     Returns:
         dict : applique, raison, cas, source (première source utilisée), distance,
@@ -184,7 +182,10 @@ def decider_translation(paliers, courant, cible, benef, local, sources, prix_mar
     if gT is None or not pT or gT <= 0:
         return {**res, "raison": "cible hors de la grille ou sans gain"}
     betT = bets.get(T, 0.0)
-    cas = "A" if betT * gT < seuil else "B"
+    if betT * gT >= seuil:
+        # 4.6 : cible à l'objectif -> pas de déplacement du pic (réinjection normale, 30 % du barème)
+        return {**res, "raison": f"cible à l'objectif ({seuil:g}) : pas de déplacement"}
+    cas = "A"
     res["cas"] = cas
     ordre_src, ecartees = ordonner_sources(prix, bets, N, T, sources, distance, gain_min, frais)
     res["ecartees"] = ecartees
@@ -242,40 +243,21 @@ def decider_translation(paliers, courant, cible, benef, local, sources, prix_mar
     tous = lambda S, R: True
     meme_cote = lambda S, R: sens(S, R) is None
 
-    if cas == "A":
-        budgets = {T: local}
-        res["budget"] = local
-        if local <= 0:
-            return {**res, "raison": "aucun budget (local nul)"}
-        transferts = allouer(budgets, tous)
-        if ordre_trop_petit(transferts):
-            transferts = allouer(budgets, meme_cote)
-            if not transferts:
-                return {**res, "raison": f"ordre au marché < {ordre_mini:g}"}
-    else:
-        res["budget"] = benef
-        candidats = []
-        for R in (T - 1, T + 1):
-            gR, pR = gain_unitaire(prix, R, frais), prix.get(R)
-            if gR is None or not pR or gR <= 0 or bets.get(R, 0.0) * gR >= seuil:
-                continue
-            candidats.append(R)
-        if not candidats:
-            return {**res, "raison": "voisins à l'objectif"}
-        if benef <= 0:
-            return {**res, "raison": "aucun budget (bénéfice nul)"}
-        transferts = allouer({R: benef / len(candidats) for R in candidats}, tous)
-        if ordre_trop_petit(transferts):
-            servis = [R for R in candidats if any(sens(S, R) is None for S in ordre_src)]
-            if not servis:
-                return {**res, "raison": f"ordre au marché < {ordre_mini:g} et voisin du même côté à l'objectif"}
-            transferts = allouer({R: benef / len(servis) for R in servis}, meme_cote)
+    budgets = {T: local}
+    res["budget"] = local
+    if local <= 0:
+        return {**res, "raison": "aucun budget (local nul)"}
+    transferts = allouer(budgets, tous)
+    if ordre_trop_petit(transferts):
+        transferts = allouer(budgets, meme_cote)
+        if not transferts:
+            return {**res, "raison": f"ordre au marché < {ordre_mini:g}"}
     if not transferts:
         return {**res, "raison": "q ≤ 0 (plancher des sources)"}
 
     cout = sum(t["cout"] for t in transferts)
     paye = sum(t["cout"] for t in transferts if cote(t["source"], N) == "EUR")
-    vertical = local - cout if cas == "A" else None
+    vertical = local - cout
     o, q_ordre = ordre_net(transferts)
 
     detail_sources = []
@@ -292,7 +274,7 @@ def decider_translation(paliers, courant, cible, benef, local, sources, prix_mar
         gR, pR, betR = gain_unitaire(prix, R, frais), prix[R], bets.get(R, 0.0)
         tR = [t for t in transferts if t["palier"] == R]
         qR = sum(t["q"] for t in tR)
-        ajout = qR + (vertical / pR if cas == "A" else 0.0)
+        ajout = qR + vertical / pR
         q_ord = sum(t["q"] for t in tR if t["ordre"])
         recepteurs.append({"palier": R, "q": qR, "delta": sum(t["cout"] for t in tR) / qR,
                            "cout": sum(t["cout"] for t in tR), "ajout": ajout, "gain_avant": betR * gR,
@@ -302,8 +284,7 @@ def decider_translation(paliers, courant, cible, benef, local, sources, prix_mar
     natures = {s["nature"] for s in detail_sources}
     premiere = detail_sources[0]
     utilisees = ", ".join(str(s["source"]) for s in detail_sources)
-    raison = (f"cas A, source(s) {utilisees}" + (" ; reste V sur place" if vertical and vertical >= 0.01 else "")
-              if cas == "A" else f"cas B, {' et '.join(str(r['palier']) for r in recepteurs)} ; source(s) {utilisees}")
+    raison = f"cas A, source(s) {utilisees}" + (" ; reste V sur place" if vertical and vertical >= 0.01 else "")
     return {**res, "applique": True, "raison": raison, "source": premiere["source"],
             "distance": premiere["distance"], "position": premiere["position"], "prix_source": premiere["prix"],
             "gain_source_avant": premiere["gain_avant"], "gain_source_apres": premiere["gain_apres"],

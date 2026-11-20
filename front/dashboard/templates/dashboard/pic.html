@@ -44,10 +44,10 @@
     Sources : la plus lointaine d'abord (à égalité, celle du dessous) ; quand elle atteint
     {{ strat.tr_plancher }} {{ strat.devise2 }}, le reste du budget est pris sur la suivante, et ainsi de suite.
     Une source est ignorée si son écart de prix avec la cible atteint le prix de la cible.
-    <strong>Cas A</strong> (cible sous l'objectif) : la cible reçoit q des sources, budget = local du barème ; s'il en reste
-    quand toutes les sources sont au plancher, le reste V est ajouté sur place. <strong>Cas B</strong> (cible à l'objectif) :
-    budget = bénéfice B, aucune réinjection du barème (ni local, ni up), réparti entre les voisins T−1 et T+1 encore sous
-    l'objectif ; ce qui n'est pas utilisé reste en gain. Un seul ordre au marché par vente, net des achats et des ventes ;
+    <strong>Cible sous l'objectif</strong> (cas A) : la cible reçoit q des sources, budget = local du barème ; s'il en reste
+    quand toutes les sources sont au plancher, le reste V est ajouté sur place. <strong>Cible à l'objectif</strong> :
+    pas de déplacement (l'ancien cas B vers T−1 et T+1 est supprimé depuis 4.6) ; la réinjection normale met 30 % de B
+    sur la cible et le reste ne retourne pas dans la grille. Un seul ordre au marché par vente, net des achats et des ventes ;
     s'il est sous le minimum, seules les sources du même côté que le receveur sont utilisées.
     Coûts cumulés : payé {{ strat.tr_cout_paye_txt }} {{ strat.devise2 }} · reconnu {{ strat.tr_cout_reconnu_txt }} {{ strat.devise2 }}.
   </p>

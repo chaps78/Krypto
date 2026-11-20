@@ -248,9 +248,53 @@ def reserves_strategies():
     return resultats
 
 
+def hors_grille_strategies(request):
+    """Capital hors de la grille (4.6) des stratégies actives, sur le mois de la carte Gain du mois.
+
+    Une série par jour du mois (jusqu'à aujourd'hui pour le mois en cours) : variation du jour
+    (barres) et cumul en fin de journée (courbe, reporté les jours sans vente, vide avant le
+    début du suivi). Totaux du mois : bénéfice non réinjecté, capital pris dans la réserve, solde.
+    """
+    maintenant = datetime.now(timezone.utc)
+    courant = (maintenant.year, maintenant.month)
+    annee = entier(request.GET.get("annee"), courant[0], 2020, 2100)
+    mois = entier(request.GET.get("mois"), courant[1], 1, 12)
+    if (annee, mois) > courant:
+        annee, mois = courant
+    nb_jours = maintenant.day if (annee, mois) == courant else calendar.monthrange(annee, mois)[1]
+    resultats = []
+    for strat in api_client.get("/strategies", actif="true"):
+        d = api_client.get(f"/strategies/{strat['symbol']}/hors-grille", annee=annee, mois=mois)
+        if not d["migration"]:
+            resultats.append({**strat, "migration": False})
+            continue
+        debut_suivi = (d["debut_suivi"] or "9999")[:10]
+        par_jour = {j["jour"]: j for j in d["jours"]}
+        serie, cumul = [], d["cumul_debut"]
+        for n in range(1, nb_jours + 1):
+            jour = f"{annee}-{mois:02d}-{n:02d}"
+            j = par_jour.get(jour)
+            if j:
+                cumul = j["cumul"]
+            suivi = jour >= debut_suivi
+            serie.append({"jour": n, "variation": j["variation"] if j else 0.0,
+                          "benefice": j["benefice"] if j else 0.0, "reinjection": j["reinjection"] if j else 0.0,
+                          "nb": j["nb"] if j else 0, "cumul": cumul if suivi else None})
+        benefice = sum(j["benefice"] for j in d["jours"])
+        reinjection = sum(j["reinjection"] for j in d["jours"])
+        resultats.append({**strat, "migration": True, "suivi": d["debut_suivi"] is not None,
+                          "debut_suivi_dt": parse_date(d["debut_suivi"]),
+                          "benefice_txt": montant(benefice), "reinjection_txt": montant(reinjection),
+                          "solde": benefice - reinjection, "solde_txt": montant(benefice - reinjection),
+                          "cumul": d["cumul_fin"], "cumul_txt": montant(d["cumul_fin"]),
+                          "nb": sum(j["nb"] for j in d["jours"]),
+                          "graphe": {"mois": f"{mois:02d}/{annee}", "devise": strat.get("devise2"), "jours": serie}})
+    return resultats
+
+
 @login_required
 def kpi(request):
-    """Page KPI : gain du mois, portefeuilles Binance, réserves et moyennes mobiles, ordres ouverts.
+    """Page KPI : gain du mois, capital hors grille, portefeuilles Binance, réserves et moyennes mobiles, ordres ouverts.
 
     Chaque bloc est indépendant : une erreur dans l'un est affichée en haut
     de page sans empêcher les autres de s'afficher.
@@ -261,8 +305,10 @@ def kpi(request):
         "gains": bloc(erreurs, "Gain du mois", gains_du_mois, request),
         "wallets": bloc(erreurs, "Portefeuille", portefeuilles),
         "reserves": bloc(erreurs, "Réserves", reserves_strategies) or [],
+        "hors_grille": bloc(erreurs, "Capital hors grille", hors_grille_strategies, request) or [],
         "strategies": bloc(erreurs, "Ordres ouverts", ordres_ouverts) or [],
     }
+    contexte["hors_grille_graphes"] = [h.get("graphe") for h in contexte["hors_grille"]]
     contexte["erreur"] = " · ".join(erreurs) or None
     return render(request, "dashboard/kpi.html", contexte)
 

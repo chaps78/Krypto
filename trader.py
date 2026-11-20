@@ -394,12 +394,9 @@ class Basics():
                     normal = (local,up,down,up_epargne)
                     def montants(avec_translation):
                         """(local, up, down, up_epargne) réellement dépensés : avec translation, le local
-                        devient la dépense réelle (cas A : L ou V ; cas B : coût payé ou 0) et, en cas B,
-                        aucune réinjection du barème (ni up, ni down, ni épargne du up)."""
+                        devient la dépense réelle (coût payé + V)."""
                         if not avec_translation:
                             return normal
-                        if decision_tr["cas"] == "B":
-                            return decision_tr["depense"],0.0,0.0,0.0
                         return decision_tr["depense"],normal[1],normal[2],normal[3]
                     local_fin, up, down, up_epargne = montants(tr_prevue)
                     decision = None
@@ -439,8 +436,6 @@ class Basics():
                             if tr_sim:
                                 # Déplacement du pic prioritaire : pas d'équilibrage dans cette simulation
                                 simulee.update(self.champs_equilibrage(None,False,"déplacement du pic prioritaire"))
-                                if decision_tr["cas"] == "B":
-                                    simulee.update(local=0.0,up=0.0,down=0.0,up_epargne=0.0)
                                 if params_tr.get("notif_observation"):
                                     self.messages_differes.append(sur(lambda: self.texte_translation(symbol,decision_tr,simulee=True),
                                                                       "[simulée] Déplacement du pic "+symbol))
@@ -451,7 +446,8 @@ class Basics():
                     if mode == "auto" and decision and decision["source"] == "SUSPENDU":
                         # Réinjection suspendue : bets et up_TMP inchangés, le bénéfice reste en cotation
                         journal.update({"source":"SUSPENDU","raison":decision["raison"],"capital_injecte":0.0,
-                                        **self.champs_translation(None,mode_tr,False,"réinjection suspendue")})
+                                        **self.champs_translation(None,mode_tr,False,"réinjection suspendue"),
+                                        **self.champs_hors_grille(symbol,benef_tmp)})
                         self.sans_risque("journal_reinjection",symbol,lambda: self.sql.inserer("journal_reinjection",journal))
                         self.sans_risque("suspension",symbol,lambda: self.sql.set_reinjection_suspendue(
                             symbol,datetime.now(timezone.utc).isoformat()))
@@ -507,10 +503,7 @@ class Basics():
                         self.sql.appliquer_translation(symbol,[(s["source"],s["q"]) for s in d["sources"]],
                                                        [(r["palier"],r["ajout"]) for r in d["recepteurs"]],
                                                        d["cout_paye"],d["cout_reconnu"])
-                        if d["cas"] == "A":
-                            palier_local, qte_local = d["recepteurs"][0]["palier"], d["recepteurs"][0]["ajout"]
-                        else:
-                            palier_local = qte_local = None
+                        palier_local, qte_local = d["recepteurs"][0]["palier"], d["recepteurs"][0]["ajout"]
                         # Envoyé après la pose de la nouvelle paire d'ordres (envoyer_messages_differes)
                         self.messages_differes.append(sur(lambda: self.texte_translation(symbol,d),
                                                           "Déplacement du pic "+symbol))
@@ -555,8 +548,8 @@ class Basics():
                                     **self.champs_equilibrage(decision_eq,eq_applique,eq_raison,ordre_eq),
                                     **self.champs_translation(decision_tr if tr_applique else None,mode_tr,tr_applique,
                                                               tr_raison,ordre_tr,prix_tr),
-                                    "local":0.0 if tr_applique and decision_tr["cas"] == "B" else local,
-                                    "up":up,"down":down,"up_epargne":up_epargne,
+                                    **self.champs_hors_grille(symbol,-capital),
+                                    "local":local,"up":up,"down":down,"up_epargne":up_epargne,
                                     "up_tmp_apres":self.sans_risque("up_tmp",symbol,lambda: float(self.sql.get_up_tmp(symbol)))})
                     self.sans_risque("journal_reinjection",symbol,lambda: self.sql.inserer("journal_reinjection",journal))
                     if params.get("reinjection_suspendue"):
@@ -569,6 +562,19 @@ class Basics():
                 self.sql.new_log_debug("Ordres V2"+ " Flag = "+str(debug_flag),str(inst) ,symbol)
                 self.tele.send_message("Erreur dans les fonctions Flag = "+ str(debug_flag))
                 return inst
+
+    def champs_hors_grille(self,symbol,variation):
+        """Colonnes hors_grille / cumul_hors_grille d'une ligne réelle du journal (4.6).
+
+        variation : effet de la vente sur le capital hors de la grille, en euros :
+        positif = bénéfice non réinjecté, négatif = capital pris dans la réserve
+        (part financée en actif comptée au prix d'exécution). Vide si la migration
+        deploy/etape4_hors_grille.py n'est pas faite.
+        """
+        cumul = self.sans_risque("cumul_hors_grille",symbol,lambda: self.sql.get_cumul_hors_grille(symbol))
+        if cumul is None:
+            return {}
+        return {"hors_grille":variation,"cumul_hors_grille":cumul+variation}
 
     def decider_translation(self,symbol,ID_client,last_filled,benef,local,params_tr,seuil,etat):
         """Décision de déplacement du pic (translation.decider_translation) pour la vente last_filled."""

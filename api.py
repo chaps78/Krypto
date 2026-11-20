@@ -1206,6 +1206,48 @@ def journal_reinjection(symbol: str, limit: int = Query(default=200, ge=1, le=50
         return []
 
 
+@app.get("/strategies/{symbol}/hors-grille")
+def hors_grille(symbol: str,
+                annee: int | None = Query(default=None, ge=2020, le=2100),
+                mois: int | None = Query(default=None, ge=1, le=12)):
+    """Capital hors de la grille (4.6), jour par jour sur un mois (UTC), lignes réelles seulement.
+
+    Par vente, journal_reinjection.hors_grille : + bénéfice non réinjecté, − capital pris dans
+    la réserve (équivalent euros). jours : par jour avec au moins une vente, variation
+    (somme), benefice (part positive), reinjection (part négative, en valeur absolue), nb,
+    cumul (fin de journée). cumul_debut : cumul avant le mois. debut_suivi : première
+    ligne suivie (None si aucune). migration=false sans les colonnes.
+    """
+    strategy_or_404(symbol)
+    maintenant = datetime.now(timezone.utc)
+    annee, mois = annee or maintenant.year, mois or maintenant.month
+    debut, fin = f"{annee}-{mois:02d}", "{}-{:02d}".format(*decaler_mois(annee, mois, 1))
+    vide = {"migration": False, "annee": annee, "mois": mois, "debut_suivi": None,
+            "cumul_debut": 0.0, "cumul_fin": 0.0, "jours": []}
+    reelles = "symbol = ? AND simulee = 0 AND hors_grille IS NOT NULL"
+    try:
+        premiere = query(f"SELECT MIN(date) AS d, MAX(date) AS f FROM journal_reinjection WHERE {reelles}", (symbol,))[0]
+    except sqlite3.OperationalError:
+        return vide
+    avant = query(f"SELECT cumul_hors_grille AS c FROM journal_reinjection WHERE {reelles} AND date < ? "
+                  "ORDER BY id DESC LIMIT 1", (symbol, debut))
+    lignes = query(f"SELECT date, hors_grille, cumul_hors_grille FROM journal_reinjection WHERE {reelles} "
+                   "AND date >= ? AND date < ? ORDER BY id", (symbol, debut, fin))
+    jours = {}
+    for l in lignes:
+        j = jours.setdefault(l["date"][:10], {"jour": l["date"][:10], "variation": 0.0, "benefice": 0.0,
+                                              "reinjection": 0.0, "nb": 0, "cumul": None})
+        v = float(l["hors_grille"])
+        j["variation"] += v
+        j["benefice" if v >= 0 else "reinjection"] += abs(v)
+        j["nb"] += 1
+        j["cumul"] = l["cumul_hors_grille"]
+    cumul_debut = float(avant[0]["c"]) if avant else 0.0
+    liste = list(jours.values())
+    return {**vide, "migration": True, "debut_suivi": premiere["d"], "cumul_debut": cumul_debut,
+            "cumul_fin": float(liste[-1]["cumul"]) if liste else cumul_debut, "jours": liste}
+
+
 @app.get("/logs")
 def logs(
     type: str | None = Query(default="ERREUR", pattern="^(ERREUR|DEBUG)$"),

@@ -1029,6 +1029,16 @@ class sqlAcces():
             return None
         return {"ouverture":r[0],"ma7":r[1],"ma25":r[2]} if r else None
 
+    def get_cumul_hors_grille(self,symbol):
+        """Dernier cumul du capital hors grille (journal_reinjection.cumul_hors_grille, lignes
+        réelles), 0 avant la première vente suivie, ou None si la migration 4.6 n'est pas faite."""
+        try:
+            r = self.cur.execute("SELECT cumul_hors_grille FROM journal_reinjection WHERE symbol=? AND simulee=0 "
+                                 "AND cumul_hors_grille IS NOT NULL ORDER BY id DESC LIMIT 1",(symbol,)).fetchone()
+        except sqlite3.OperationalError:
+            return None
+        return float(r[0]) if r else 0.0
+
     def add_capital_injecte(self,symbol,montant):
         """Ajoute au compteur Devises.capital_injecte (part réinjectée au-delà du bénéfice)."""
         self.cur.execute("UPDATE Devises SET capital_injecte=COALESCE(capital_injecte,0)+? WHERE symbol=?",

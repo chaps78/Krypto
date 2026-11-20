@@ -66,6 +66,129 @@
 </section>
 {% endif %}
 
+{% for h in hors_grille %}
+<section class="carte graphe-grille">
+  <div class="entete-gains">
+    <h2>Capital hors grille <span class="muted">· {{ h.symbol }}</span></h2>
+    {% if gains %}<div class="nav-mois">
+      <a href="{{ gains.lien_precedent }}" title="Mois précédent">&#9664;</a>
+      <strong>{{ gains.mois|stringformat:"02d" }}/{{ gains.annee }}</strong>
+      {% if gains.lien_suivant %}<a href="{{ gains.lien_suivant }}" title="Mois suivant">&#9654;</a>{% else %}<span class="inactif">&#9654;</span>{% endif %}
+    </div>{% endif %}
+  </div>
+  {% if not h.migration %}
+  <p class="alerte" style="margin:0">Suivi indisponible : lancer <code>deploy/etape4_hors_grille.py</code> (bot arrêté).</p>
+  {% elif not h.suivi %}
+  <p class="muted" style="margin:0">Suivi démarré : la première vente apparaîtra ici.</p>
+  {% else %}
+  <div class="tuiles">
+    <div class="tuile"><div class="muted">Bénéfice non réinjecté (mois)</div><div class="valeur BUY">+{{ h.benefice_txt }} {{ h.devise2 }}</div></div>
+    <div class="tuile"><div class="muted">Pris dans la réserve (mois)</div><div class="valeur SELL">−{{ h.reinjection_txt }} {{ h.devise2 }}</div></div>
+    <div class="tuile"><div class="muted">Solde du mois · {{ h.nb }} vente{{ h.nb|pluralize }}</div><div class="valeur {% if h.solde < 0 %}SELL{% else %}BUY{% endif %}">{% if h.solde >= 0 %}+{% endif %}{{ h.solde_txt }} {{ h.devise2 }}</div></div>
+    <div class="tuile"><div class="muted">Cumul depuis le {{ h.debut_suivi_dt|date:"d/m/Y" }}</div><div class="valeur {% if h.cumul < 0 %}SELL{% else %}BUY{% endif %}">{% if h.cumul >= 0 %}+{% endif %}{{ h.cumul_txt }} {{ h.devise2 }}</div></div>
+  </div>
+  <div class="graphe" data-hg="{{ forloop.counter0 }}" style="margin-top:.8rem"></div>
+  <div class="bulle" hidden></div>
+  <div class="legende" style="margin-top:.3rem">
+    <span><i style="background:var(--buy)"></i>cumul positif</span>
+    <span><i style="background:var(--sell)"></i>cumul négatif</span>
+    <span>barres pâles : solde de chaque jour</span>
+  </div>
+  <p class="muted" style="margin:.4rem 0 0">À chaque vente : + la part du bénéfice non réinjectée dans la grille,
+    − le capital pris dans la réserve (réinjection au-delà du bénéfice, part en {{ h.devise1 }} comptée au prix de la vente au marché).
+    Lignes simulées exclues. Le cumul montre si le capital hors de la grille augmente ou diminue.</p>
+  {% endif %}
+</section>
+{% endfor %}
+{% if hors_grille %}{{ hors_grille_graphes|json_script:"donnees-hors-grille" }}
+<script>
+(function () {
+  const G = JSON.parse(document.getElementById("donnees-hors-grille").textContent);
+  const NS = "http://www.w3.org/2000/svg";
+  const eur = x => x.toLocaleString("fr-FR", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  const signe = x => (x > 0 ? "+" : x < 0 ? "−" : "") + eur(Math.abs(x));
+  function el(nom, attrs, parent) {
+    const e = document.createElementNS(NS, nom);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+  function pasRond(ecart, n) {
+    const brut = ecart / n || 1, p = Math.pow(10, Math.floor(Math.log10(brut)));
+    return [1, 2, 2.5, 5, 10].map(m => m * p).find(s => s >= brut);
+  }
+  function dessiner(zone, D, idx) {
+    zone.innerHTML = "";
+    const bulle = zone.nextElementSibling;
+    const J = D.jours, L = zone.clientWidth, H = 240, m = {h: 12, d: 12, b: 28, g: 56};
+    const l = L - m.g - m.d, h = H - m.h - m.b;
+    const valeurs = [0];
+    J.forEach(j => { valeurs.push(j.variation); if (j.cumul !== null) valeurs.push(j.cumul); });
+    let bas = Math.min(...valeurs), haut = Math.max(...valeurs);
+    if (bas === haut) { bas -= 1; haut += 1; }
+    const pas = pasRond(haut - bas, 4);
+    bas = Math.floor(bas / pas) * pas; haut = Math.ceil(haut / pas) * pas;
+    const y = v => m.h + h - (v - bas) / (haut - bas) * h;
+    const bande = l / J.length, larg = Math.max(1, Math.min(18, bande - 3));
+    const cx = i => m.g + i * bande + bande / 2;
+    const svg = el("svg", {width: L, height: H, role: "img"}, zone);
+    for (let v = bas; v <= haut + 1e-9; v += pas) {
+      el("line", {x1: m.g, x2: L - m.d, y1: y(v), y2: y(v), class: Math.abs(v) < 1e-9 ? "axe" : "quadrillage"}, svg);
+      el("text", {x: m.g - 6, y: y(v) + 4, "text-anchor": "end", class: "graduation"}, svg).textContent =
+        v.toLocaleString("fr-FR", {maximumFractionDigits: 2});
+    }
+    const tous = Math.max(1, Math.round(J.length / 8));
+    J.forEach((j, i) => {
+      if (i % tous === 0) el("text", {x: cx(i), y: H - m.b + 16, "text-anchor": "middle", class: "graduation"}, svg).textContent = j.jour;
+      if (j.variation) {
+        const y0 = y(0), y1 = y(j.variation);
+        el("rect", {x: cx(i) - larg / 2, y: Math.min(y0, y1), width: larg, height: Math.max(1, Math.abs(y1 - y0)),
+                    fill: j.variation > 0 ? "var(--buy)" : "var(--sell)", "fill-opacity": .3}, svg);
+      }
+    });
+    // Courbe du cumul : verte au-dessus de 0, rouge en dessous (deux découpes)
+    const pts = J.map((j, i) => j.cumul === null ? null : [cx(i), y(j.cumul)]);
+    let d = "", ouvert = false;
+    pts.forEach(p => { if (!p) { ouvert = false; return; } d += (ouvert ? "L" : "M") + p[0] + "," + p[1]; ouvert = true; });
+    const defs = el("defs", {}, svg);
+    const haute = el("clipPath", {id: "hg-haut-" + idx}, defs), basse = el("clipPath", {id: "hg-bas-" + idx}, defs);
+    el("rect", {x: 0, y: 0, width: L, height: y(0)}, haute);
+    el("rect", {x: 0, y: y(0), width: L, height: H}, basse);
+    [["hg-haut-", "var(--buy)"], ["hg-bas-", "var(--sell)"]].forEach(([c, couleur]) => {
+      el("path", {d, fill: "none", stroke: couleur, "stroke-width": 2, "stroke-linejoin": "round",
+                  "clip-path": "url(#" + c + idx + ")"}, svg);
+      pts.forEach(p => p && el("circle", {cx: p[0], cy: p[1], r: 2.5, fill: couleur, "clip-path": "url(#" + c + idx + ")"}, svg));
+    });
+    J.forEach((j, i) => {
+      const cible = el("rect", {x: m.g + i * bande, y: m.h, width: bande, height: h, class: "cible"}, svg);
+      cible.addEventListener("mouseenter", () => {
+        const lignes = [`<strong>${String(j.jour).padStart(2, "0")}/${D.mois}</strong>`];
+        if (j.nb) lignes.push(`${j.nb} vente${j.nb > 1 ? "s" : ""}`, `Bénéfice non réinjecté : +${eur(j.benefice)} ${D.devise}`,
+                              `Pris dans la réserve : −${eur(j.reinjection)} ${D.devise}`, `Solde du jour : ${signe(j.variation)} ${D.devise}`);
+        else lignes.push("aucune vente");
+        if (j.cumul !== null) lignes.push(`Cumul : ${signe(j.cumul)} ${D.devise}`);
+        bulle.innerHTML = lignes.join("<br>");
+        bulle.hidden = false;
+        const max = zone.clientWidth - bulle.offsetWidth;
+        bulle.style.left = zone.offsetLeft + Math.max(0, Math.min(max, cx(i) + 12)) + "px";
+        bulle.style.top = zone.offsetTop + 20 + "px";
+      });
+      cible.addEventListener("mouseleave", () => { bulle.hidden = true; });
+    });
+  }
+  function tout() {
+    document.querySelectorAll("[data-hg]").forEach(z => {
+      const D = G[+z.dataset.hg];
+      try { if (D) dessiner(z, D, z.dataset.hg); }
+      catch (e) { z.innerHTML = '<p class="alerte">Graphique impossible à afficher : ' + e + '</p>'; }
+    });
+  }
+  let attente;
+  window.addEventListener("resize", () => { clearTimeout(attente); attente = setTimeout(tout, 150); });
+  tout();
+})();
+</script>{% endif %}
+
 {% if wallets %}
 <section class="carte">
   <div class="entete-gains">
