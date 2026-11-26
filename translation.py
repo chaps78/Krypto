@@ -20,7 +20,7 @@ from datetime import timedelta
 
 from equilibrage import FRAIS, gain_unitaire
 
-DEFAUTS = {"distance": 6, "duree": 48.0, "gain_min": 3.0}
+DEFAUTS = {"distance": 6, "duree": 48.0, "gain_min": 3.1}
 
 
 def evaluer_sources(paliers, courant, etat, maintenant, distance=DEFAUTS["distance"], duree=DEFAUTS["duree"],
