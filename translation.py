@@ -10,17 +10,17 @@ Définitions :
     chronomètre    : date à laquelle D(S) est devenu ≥ distance (6), remis à
                      zéro (None) dès que D(S) repasse sous la distance ;
     source éligible : D(S) ≥ distance, chronomètre ≥ durée (48 h) et
-                     gain(S) > gain minimal (4,5 €), gain(S) = bet(S) × g(S).
+                     gain(S) > gain minimal (3 €), gain(S) = bet(S) × g(S).
 """
 import math
 from datetime import timedelta
 
 from equilibrage import FRAIS, gain_unitaire
 
-DEFAUTS = {"distance": 6, "duree": 48.0, "gain_min": 4.5}
+DEFAUTS = {"distance": 6, "duree": 48.0, "gain_min": 3.0}
 
 
-def evaluer_sources(paliers, courant, etat, maintenant, distance=6, duree=48.0, gain_min=4.5, frais=FRAIS):
+def evaluer_sources(paliers, courant, etat, maintenant, distance=6, duree=48.0, gain_min=3.0, frais=FRAIS):
     """Met à jour les chronomètres et l'éligibilité de chaque palier.
 
     paliers : {ID: (prix, bet)} ; courant : ID du palier courant ;
@@ -104,7 +104,7 @@ def cote(i, courant):
     return "PEPE" if int(i) >= int(courant) else "EUR"
 
 
-def ordonner_sources(prix, bets, courant, cible, sources, distance=6, gain_min=4.5, frais=FRAIS):
+def ordonner_sources(prix, bets, courant, cible, sources, distance=6, gain_min=3.0, frais=FRAIS):
     """Sources utilisables pour cette vente, dans l'ordre où on y puise.
 
     La plus lointaine d'abord, à égalité celle du dessous. Une source est
@@ -133,14 +133,14 @@ def ordonner_sources(prix, bets, courant, cible, sources, distance=6, gain_min=4
     return [r[2] for r in sorted(retenues, reverse=True)], ecartees
 
 
-def choisir_source(prix, bets, courant, cible, sources, distance=6, gain_min=4.5, frais=FRAIS):
+def choisir_source(prix, bets, courant, cible, sources, distance=6, gain_min=3.0, frais=FRAIS):
     """Première source de ordonner_sources() : (ID ou None, sources écartées)."""
     ordre, ecartees = ordonner_sources(prix, bets, courant, cible, sources, distance, gain_min, frais)
     return (ordre[0] if ordre else None), ecartees
 
 
 def decider_translation(paliers, courant, cible, benef, local, sources, prix_marche, seuil=15.0, plancher=3.0,
-                        ordre_mini=6.0, distance=6, gain_min=4.5, frais=FRAIS, entier=True):
+                        ordre_mini=6.0, distance=6, gain_min=3.0, frais=FRAIS, entier=True):
     """Décide la translation d'une vente (fonction pure).
 
     paliers : {ID: (prix, bet)} ; courant : palier de la vente (N) ; cible : T (N − 1) ;

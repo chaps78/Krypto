@@ -1066,7 +1066,7 @@ def modifier_reinjection(symbol: str, p: ParametresReinjection):
 # Le bot tient les chronomètres et le journal des ruptures ; l'API les lit et
 # ne modifie que les paramètres de détection (effet à la réévaluation suivante,
 # au plus tard dans l'heure).
-TR_DEFAUT = {"tr_distance": 6, "tr_duree": 48.0, "tr_gain_min": 4.5}
+TR_DEFAUT = {"tr_distance": 6, "tr_duree": 48.0, "tr_gain_min": 3.0}
 TR2_DEFAUT = {"translation": "off", "tr_plancher": 3.0, "tr_ordre_mini": 6.0,
               "tr_notif_observation": 0, "tr_cout_paye": 0.0, "tr_cout_reconnu": 0.0}
 

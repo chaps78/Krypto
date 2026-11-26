@@ -928,7 +928,7 @@ class sqlAcces():
         if r is None:
             return None
         p = {"distance":int(r[0] if r[0] is not None else 6),"duree":float(r[1] if r[1] is not None else 48),
-             "gain_min":float(r[2] if r[2] is not None else 4.5),
+             "gain_min":float(r[2] if r[2] is not None else 3.0),
              "translation":"off","plancher":3.0,"ordre_mini":6.0,"notif_observation":False}
         try:
             r = self.cur.execute("SELECT translation, tr_plancher, tr_ordre_mini, tr_notif_observation "

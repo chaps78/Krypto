@@ -4,7 +4,7 @@ Ajoute, sans rien modifier d'existant (bets, ordres, réinjection inchangés) :
   ecart_bet : eloigne_depuis (chronomètre : date à laquelle le palier est passé à
               6 paliers ou plus du palier courant), source_depuis (date à
               laquelle il est devenu source éligible) ;
-  Devises   : tr_distance (6 paliers), tr_duree (48 h), tr_gain_min (4,5) ;
+  Devises   : tr_distance (6 paliers), tr_duree (48 h), tr_gain_min (3) ;
   table journal_ruptures : une ligne quand un palier devient source éligible,
               une ligne quand il cesse de l'être.
   Consigne 2 : Devises.translation ('off' par défaut : aucun effet), tr_plancher (3),
@@ -44,7 +44,7 @@ A_AJOUTER = [
     ("ecart_bet", "source_depuis", "TEXT"),
     ("Devises", "tr_distance", "INTEGER DEFAULT 6"),
     ("Devises", "tr_duree", "REAL DEFAULT 48"),
-    ("Devises", "tr_gain_min", "REAL DEFAULT 4.5"),
+    ("Devises", "tr_gain_min", "REAL DEFAULT 3"),
     # Consigne 2 : translation
     ("Devises", "translation", "TEXT DEFAULT 'off'"),
     ("Devises", "tr_plancher", "REAL DEFAULT 3"),
@@ -79,7 +79,7 @@ TABLES = {
         symbol          TEXT NOT NULL,
         palier          INTEGER,
         evenement       TEXT,            -- eligible / fin
-        raison          TEXT,            -- source éligible, retour du prix, gain ≤ 4,5
+        raison          TEXT,            -- source éligible, retour du prix, gain ≤ 3
         gain            REAL,            -- gain(S) = bet × g(S), en cotation
         distance        INTEGER,         -- D(S) = |S − palier courant|
         palier_courant  INTEGER,
