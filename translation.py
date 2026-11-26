@@ -7,10 +7,13 @@ ne fait que les repérer ; aucun accès à Binance ni à la base.
 Définitions :
     palier courant : dernier palier exécuté (ordre limite), ID ;
     D(S)           = |S − ID|, distance en nombre de paliers ;
-    chronomètre    : date à laquelle D(S) est devenu ≥ distance (6), remis à
+    chronomètre    : date à laquelle D(S) est devenu ≥ distance, remis à
                      zéro (None) dès que D(S) repasse sous la distance ;
-    source éligible : D(S) ≥ distance, chronomètre ≥ durée (48 h) et
-                     gain(S) > gain minimal (3 €), gain(S) = bet(S) × g(S).
+    source éligible : D(S) ≥ distance, chronomètre ≥ durée (h) et
+                     gain(S) > gain minimal (DEFAUTS["gain_min"]), gain(S) = bet(S) × g(S).
+
+Valeurs par défaut du déplacement du pic : DEFAUTS et DEFAUTS_DECISION ci-dessous,
+seule source de vérité (bot, API et migration les importent).
 """
 import math
 from datetime import timedelta
@@ -20,7 +23,8 @@ from equilibrage import FRAIS, gain_unitaire
 DEFAUTS = {"distance": 6, "duree": 48.0, "gain_min": 3.0}
 
 
-def evaluer_sources(paliers, courant, etat, maintenant, distance=6, duree=48.0, gain_min=3.0, frais=FRAIS):
+def evaluer_sources(paliers, courant, etat, maintenant, distance=DEFAUTS["distance"], duree=DEFAUTS["duree"],
+                    gain_min=DEFAUTS["gain_min"], frais=FRAIS):
     """Met à jour les chronomètres et l'éligibilité de chaque palier.
 
     paliers : {ID: (prix, bet)} ; courant : ID du palier courant ;
@@ -104,7 +108,8 @@ def cote(i, courant):
     return "PEPE" if int(i) >= int(courant) else "EUR"
 
 
-def ordonner_sources(prix, bets, courant, cible, sources, distance=6, gain_min=3.0, frais=FRAIS):
+def ordonner_sources(prix, bets, courant, cible, sources, distance=DEFAUTS["distance"],
+                     gain_min=DEFAUTS["gain_min"], frais=FRAIS):
     """Sources utilisables pour cette vente, dans l'ordre où on y puise.
 
     La plus lointaine d'abord, à égalité celle du dessous. Une source est
@@ -133,14 +138,17 @@ def ordonner_sources(prix, bets, courant, cible, sources, distance=6, gain_min=3
     return [r[2] for r in sorted(retenues, reverse=True)], ecartees
 
 
-def choisir_source(prix, bets, courant, cible, sources, distance=6, gain_min=3.0, frais=FRAIS):
+def choisir_source(prix, bets, courant, cible, sources, distance=DEFAUTS["distance"],
+                   gain_min=DEFAUTS["gain_min"], frais=FRAIS):
     """Première source de ordonner_sources() : (ID ou None, sources écartées)."""
     ordre, ecartees = ordonner_sources(prix, bets, courant, cible, sources, distance, gain_min, frais)
     return (ordre[0] if ordre else None), ecartees
 
 
-def decider_translation(paliers, courant, cible, benef, local, sources, prix_marche, seuil=15.0, plancher=3.0,
-                        ordre_mini=6.0, distance=6, gain_min=3.0, frais=FRAIS, entier=True):
+def decider_translation(paliers, courant, cible, benef, local, sources, prix_marche,
+                        seuil=DEFAUTS_DECISION["seuil"], plancher=DEFAUTS_DECISION["plancher"],
+                        ordre_mini=DEFAUTS_DECISION["ordre_mini"], distance=DEFAUTS["distance"],
+                        gain_min=DEFAUTS["gain_min"], frais=FRAIS, entier=True):
     """Décide la translation d'une vente (fonction pure).
 
     paliers : {ID: (prix, bet)} ; courant : palier de la vente (N) ; cible : T (N − 1) ;

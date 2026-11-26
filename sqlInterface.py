@@ -5,6 +5,7 @@ import os
 
 from telegramInterface import teleAcces
 from messages import sur, quantite
+from translation import DEFAUTS as TR_DEF, DEFAUTS_DECISION as TR_DEC
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -927,9 +928,11 @@ class sqlAcces():
             return None
         if r is None:
             return None
-        p = {"distance":int(r[0] if r[0] is not None else 6),"duree":float(r[1] if r[1] is not None else 48),
-             "gain_min":float(r[2] if r[2] is not None else 3.0),
-             "translation":"off","plancher":3.0,"ordre_mini":6.0,"notif_observation":False}
+        p = {"distance":int(r[0] if r[0] is not None else TR_DEF["distance"]),
+             "duree":float(r[1] if r[1] is not None else TR_DEF["duree"]),
+             "gain_min":float(r[2] if r[2] is not None else TR_DEF["gain_min"]),
+             "translation":"off","plancher":TR_DEC["plancher"],"ordre_mini":TR_DEC["ordre_mini"],
+             "notif_observation":False}
         try:
             r = self.cur.execute("SELECT translation, tr_plancher, tr_ordre_mini, tr_notif_observation "
                                  "FROM Devises WHERE symbol=?",(symbol,)).fetchone()
@@ -937,8 +940,8 @@ class sqlAcces():
             self.cur.execute("SELECT tr_sources FROM journal_reinjection LIMIT 0")
         except sqlite3.OperationalError:
             return p
-        p.update({"translation":r[0] or "off","plancher":float(r[1] if r[1] is not None else 3),
-                  "ordre_mini":float(r[2] if r[2] is not None else 6),"notif_observation":bool(r[3])})
+        p.update({"translation":r[0] or "off","plancher":float(r[1] if r[1] is not None else TR_DEC["plancher"]),
+                  "ordre_mini":float(r[2] if r[2] is not None else TR_DEC["ordre_mini"]),"notif_observation":bool(r[3])})
         return p
 
     def appliquer_translation(self,symbol,sources,recepteurs,cout_paye,cout_reconnu):

@@ -52,6 +52,7 @@ from pydantic import BaseModel, Field
 
 import version as version_krypto
 import reinjection
+import translation
 import reserves as calcul_reserves
 import verrou_ecriture
 
@@ -1066,8 +1067,10 @@ def modifier_reinjection(symbol: str, p: ParametresReinjection):
 # Le bot tient les chronomètres et le journal des ruptures ; l'API les lit et
 # ne modifie que les paramètres de détection (effet à la réévaluation suivante,
 # au plus tard dans l'heure).
-TR_DEFAUT = {"tr_distance": 6, "tr_duree": 48.0, "tr_gain_min": 3.0}
-TR2_DEFAUT = {"translation": "off", "tr_plancher": 3.0, "tr_ordre_mini": 6.0,
+# Valeurs par défaut : translation.DEFAUTS / DEFAUTS_DECISION (seule source de vérité).
+TR_DEFAUT = {"tr_" + k: v for k, v in translation.DEFAUTS.items()}
+TR2_DEFAUT = {"translation": "off", "tr_plancher": translation.DEFAUTS_DECISION["plancher"],
+              "tr_ordre_mini": translation.DEFAUTS_DECISION["ordre_mini"],
               "tr_notif_observation": 0, "tr_cout_paye": 0.0, "tr_cout_reconnu": 0.0}
 
 
